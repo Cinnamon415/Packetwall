@@ -1,0 +1,16 @@
+[submodule "submodules/zdtun"]
+	path = submodules/zdtun
+	url = https://github.com/emanuele-f/zdtun
+	shallow = true
+[submodule "submodules/zstd"]
+	path = submodules/zstd
+	url = https://github.com/facebook/zstd
+	shallow = true
+[submodule "submodules/libpcap"]
+	path = submodules/libpcap
+	url = https://github.com/the-tcpdump-group/libpcap
+	shallow = true
+[submodule "submodules/nDPI"]
+	path = submodules/nDPI
+	url = https://github.com/emanuele-f/nDPI
+	shallow = true

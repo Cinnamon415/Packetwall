@@ -1,0 +1,989 @@
+<title>Прототип Packetwall</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,400..760&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: one emulated phone screen centered on a quiet page; the app inside is a flat MD3 (Graphite / baseline blue) UI. */
+:root{
+  --page:#E6E8F0; --bezel:#1B1D22;
+  --bg:#F9F9FF; --s1:#F1F2F9; --s2:#EAEBF3; --s3:#E2E3EC; --s4:#D7D9E3;
+  --on:#191C20; --on2:#44474E; --mu:#74777F; --ln:#DFE1E9; --ol:#C4C6D0;
+  --pri:#415F91; --onp:#FFFFFF; --pc:#D6E3FF; --onpc:#001B3E; --sc:#DAE2F9; --onsc:#131C2B;
+  --er:#BA1A1A; --erc:#FFDAD6; --oner:#410002; --ok:#2E6B3A; --okc:#C7EFCF; --onok:#062010;
+  --te:#6B4FA3; --tec:#EADDFF; --onte:#25005A; --wa:#7A5300; --wac:#FFDEA8;
+  --scrim:rgba(0,0,0,.32); --shadow:rgba(0,0,0,.18);
+  --font:"Roboto Flex","Noto Sans",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Noto Sans Mono",ui-monospace,monospace;
+  --ease:cubic-bezier(.2,0,0,1);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --page:#08090B; --bezel:#000;
+  --bg:#111318; --s1:#191C21; --s2:#1F2228; --s3:#282B32; --s4:#33363E;
+  --on:#E2E2E9; --on2:#C4C6D0; --mu:#8E9099; --ln:#2A2D34; --ol:#44474E;
+  --pri:#AAC7FF; --onp:#0A305F; --pc:#284777; --onpc:#D6E3FF; --sc:#3E4759; --onsc:#DAE2F9;
+  --er:#FFB4AB; --erc:#93000A; --oner:#FFDAD6; --ok:#8BD89A; --okc:#1D4A29; --onok:#BFF3C8;
+  --te:#D8BDFF; --tec:#433366; --onte:#EEDCFF; --wa:#F1C27D; --wac:#4D3610;
+  --scrim:rgba(0,0,0,.5); --shadow:rgba(0,0,0,.6); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --page:#08090B; --bezel:#000;
+  --bg:#111318; --s1:#191C21; --s2:#1F2228; --s3:#282B32; --s4:#33363E;
+  --on:#E2E2E9; --on2:#C4C6D0; --mu:#8E9099; --ln:#2A2D34; --ol:#44474E;
+  --pri:#AAC7FF; --onp:#0A305F; --pc:#284777; --onpc:#D6E3FF; --sc:#3E4759; --onsc:#DAE2F9;
+  --er:#FFB4AB; --erc:#93000A; --oner:#FFDAD6; --ok:#8BD89A; --okc:#1D4A29; --onok:#BFF3C8;
+  --te:#D8BDFF; --tec:#433366; --onte:#EEDCFF; --wa:#F1C27D; --wac:#4D3610;
+  --scrim:rgba(0,0,0,.5); --shadow:rgba(0,0,0,.6); color-scheme:dark}
+
+html,body{height:100%}
+body{background:var(--page);color:var(--on);font-family:var(--font);margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;box-sizing:border-box;overflow:hidden}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+input{font:inherit;color:inherit}
+.device{position:relative;width:min(392px,100%);height:min(840px,calc(100% - 34px));background:var(--bg);border-radius:34px;overflow:hidden;
+  box-shadow:0 0 0 10px var(--bezel),0 30px 70px -20px var(--shadow);display:flex;flex-direction:column;isolation:isolate}
+.hint{font-size:12.5px;color:var(--mu);text-align:center;max-width:560px;line-height:1.4}
+@media (max-width:440px){.device{border-radius:22px;box-shadow:0 0 0 1px var(--ln)} .hint{display:none} .device{height:calc(100% - 4px)}}
+.statusbar{height:28px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 22px 0 24px;font-size:12.5px;font-weight:600;color:var(--on2);background:var(--bg);z-index:3;font-variant-numeric:tabular-nums}
+.statusbar .r{display:flex;gap:6px;align-items:center}
+.gesture{height:18px;flex:none;display:grid;place-items:center;background:var(--bg);z-index:3}
+.gesture i{width:108px;height:4px;border-radius:2px;background:var(--on2);opacity:.55}
+.stage{position:relative;flex:1;overflow:hidden}
+.screen{position:absolute;inset:0;display:flex;flex-direction:column;background:var(--bg);will-change:transform}
+.scroll{flex:1;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+@keyframes inR{from{transform:translateX(28%);opacity:0}to{transform:none;opacity:1}}
+@keyframes outL{from{transform:none;opacity:1}to{transform:translateX(-10%);opacity:.4}}
+@keyframes inL{from{transform:translateX(-10%);opacity:.4}to{transform:none;opacity:1}}
+@keyframes outR{from{transform:none;opacity:1}to{transform:translateX(28%);opacity:0}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.a-inR{animation:inR .28s var(--ease) both}.a-outL{animation:outL .28s var(--ease) both}
+.a-inL{animation:inL .26s var(--ease) both}.a-outR{animation:outR .24s var(--ease) both}
+.a-fade{animation:fadeIn .22s var(--ease) both}
+@media (prefers-reduced-motion:reduce){*{animation-duration:1ms!important;transition-duration:1ms!important}}
+
+/* app bar */
+.ab{height:56px;flex:none;display:flex;align-items:center;gap:2px;padding:0 4px}
+.ab .tt{flex:1;min-width:0;padding-left:6px}
+.ab .tt b{display:block;font-size:20px;font-weight:650;letter-spacing:-.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ab .tt b.mono{font-family:var(--mono);font-size:15.5px;font-weight:600}
+.ab .tt span{display:block;font-size:12px;color:var(--mu);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ab .tt span.p{color:var(--pri);font-weight:600;cursor:pointer}
+.ib{width:44px;height:44px;border-radius:22px;display:grid;place-items:center;color:var(--on2);flex:none;transition:background .15s}
+.ib:hover{background:var(--s2)}.ib:active{background:var(--s3)}
+.ib.dis{opacity:.35;pointer-events:none}
+.txtbtn{font-size:14px;font-weight:650;color:var(--pri);padding:8px 12px;border-radius:18px}
+.txtbtn:active{background:var(--s2)}
+svg.i{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none}
+svg.s{width:18px;height:18px}svg.xs{width:14px;height:14px}
+.spin svg{animation:spin .9s linear infinite}
+:focus-visible{outline:2px solid var(--pri);outline-offset:2px}
+
+/* generic */
+.pad{padding:0 12px 16px;display:flex;flex-direction:column;gap:10px}
+.row{display:flex;align-items:center;gap:8px}.grow{flex:1;min-width:0}
+.mono{font-family:var(--mono)}.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mu{color:var(--mu)}.on2{color:var(--on2)}.ert{color:var(--er)}
+.card{background:var(--s1);border-radius:16px;padding:12px}
+.lbl{font-size:11px;font-weight:650;color:var(--mu);letter-spacing:.35px;text-transform:uppercase}
+.hd{display:flex;align-items:center;justify-content:space-between;padding:6px 4px 0}
+.hd b{font-size:13px;font-weight:700;color:var(--on2)}
+.hd button{font-size:12.5px;font-weight:650;color:var(--pri)}
+.t1{font-size:13.5px;font-weight:600}.t2{font-size:11.5px;color:var(--mu);margin-top:1px}
+.num{font-variant-numeric:tabular-nums}
+.av{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:12px;font-weight:750;color:#fff;flex:none}
+.av.md{width:32px;height:32px;border-radius:9px;font-size:13px}
+.av.l{width:36px;height:36px;border-radius:10px;font-size:14px}
+.av.xl{width:40px;height:40px;border-radius:12px;font-size:16px}
+.ls{background:var(--s1);border-radius:16px;overflow:hidden}
+.r2{display:flex;align-items:center;gap:10px;padding:6px 10px;min-height:42px;border-top:1px solid var(--ln);width:100%;text-align:left;transition:background .15s}
+.r2:first-child{border-top:0}
+button.r2:active,.tap:active{background:var(--s2)}
+.r2 .pt{font-family:var(--mono);font-size:12.5px}
+.r2 .mt{font-size:11px;color:var(--mu);margin-top:1px}
+.tg{font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:6px;white-space:nowrap}
+.tg.er{background:var(--erc);color:var(--oner)}.tg.ok{background:var(--okc);color:var(--onok)}
+.tg.p{background:var(--pc);color:var(--onpc)}.tg.te{background:var(--tec);color:var(--onte)}
+.tg.g{background:var(--s3);color:var(--on2)}.tg.wa{background:var(--wac);color:var(--wa)}
+.tb{font-size:12px;font-weight:650;color:var(--pri);border:1px solid var(--ol);border-radius:8px;padding:4px 9px;white-space:nowrap;flex:none}
+.tb:active{background:var(--sc)}
+.seg{display:flex;border:1px solid var(--ol);border-radius:10px;overflow:hidden;flex:none;height:34px}
+.seg button{flex:1;display:flex;align-items:center;justify-content:center;gap:5px;font-size:12.5px;font-weight:600;color:var(--on2);border-left:1px solid var(--ol);white-space:nowrap;padding:0 6px;transition:background .2s,color .2s}
+.seg button:first-child{border-left:0}
+.seg button.on{background:var(--sc);color:var(--onsc)}
+.seg.dis{opacity:.4;pointer-events:none}
+.chips{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex:none}
+.chips::-webkit-scrollbar{display:none}
+.ch{height:30px;border:1px solid var(--ol);border-radius:8px;display:flex;align-items:center;gap:5px;padding:0 10px;font-size:12.5px;font-weight:600;color:var(--on2);white-space:nowrap;flex:none;transition:background .2s}
+.ch.on{background:var(--sc);color:var(--onsc);border-color:transparent;padding-left:7px}
+.tabs{display:flex;border-bottom:1px solid var(--ln);flex:none;padding:0 6px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tabs button{padding:10px 10px 11px;font-size:13.5px;font-weight:650;color:var(--mu);position:relative;white-space:nowrap;display:flex;gap:5px;align-items:center;flex:none}
+.tabs button em{font-style:normal;font-size:10.5px;background:var(--s3);color:var(--on2);border-radius:6px;padding:0 5px}
+.tabs button.on{color:var(--pri)}
+.tabs button.on em{background:var(--pc);color:var(--onpc)}
+.tabs button.on:after{content:"";position:absolute;left:6px;right:6px;bottom:-1px;height:3px;border-radius:3px 3px 0 0;background:var(--pri);animation:fadeIn .2s var(--ease)}
+.tabs.fill button{flex:1;justify-content:center}
+.sw{width:42px;height:26px;border-radius:13px;background:var(--s4);position:relative;flex:none;border:2px solid var(--mu);transition:background .2s,border-color .2s}
+.sw:after{content:"";position:absolute;width:12px;height:12px;border-radius:6px;background:var(--mu);left:5px;top:5px;transition:all .2s var(--ease)}
+.sw.on{background:var(--pri);border-color:var(--pri)}
+.sw.on:after{width:18px;height:18px;border-radius:9px;left:18px;top:2px;background:var(--onp)}
+.empty{padding:28px 20px;text-align:center;color:var(--mu);font-size:13px;line-height:1.45}
+
+/* home (C) */
+.pw{width:60px;height:60px;border-radius:20px;background:var(--pri);color:var(--onp);display:grid;place-items:center;flex:none;transition:all .3s var(--ease)}
+.pw svg{width:28px;height:28px;stroke-width:2.4}
+.pw.off{background:var(--s3);color:var(--on2);border-radius:30px}
+.st{font-size:17px;font-weight:700}
+.st i{display:inline-block;width:8px;height:8px;border-radius:4px;background:var(--ok);margin-right:6px;vertical-align:2px;transition:background .3s}
+.st.off i{background:var(--mu)}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tile{background:var(--s1);border-radius:16px;padding:10px 12px;text-align:left;transition:background .15s,opacity .3s}
+.tile:active{background:var(--s2)}
+.tile b{display:block;font-size:20px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+.tile .ic2{color:var(--pri);margin-bottom:2px}
+.muted{opacity:.45}
+
+/* logs (D) */
+.fld{height:40px;border:1px solid var(--ol);border-radius:10px;display:flex;align-items:center;gap:8px;padding:0 8px 0 10px;flex:none;transition:border-color .2s}
+.fld:focus-within{border-color:var(--pri)}
+.fld input{flex:1;min-width:0;border:0;outline:0;background:none;font-family:var(--mono);font-size:12.5px}
+.fld input::placeholder{color:var(--mu)}
+.fld.bad{border-color:var(--er)}
+.cn{display:flex;gap:10px;padding:4px 12px 4px 8px;border-bottom:1px solid var(--ln);align-items:center;min-height:44px;width:100%;text-align:left}
+.cn:active{background:var(--s2)}
+.cn .ic{width:32px;display:flex;justify-content:center;flex:none}
+.cn .a{font-size:13px;font-weight:600}
+.cn .h{font-family:var(--mono);font-size:11.5px;color:var(--on2);margin-top:1px}
+.cn.bl .h{color:var(--er)}
+.cn .m{font-size:11px;color:var(--mu);text-align:right;flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:2px;font-variant-numeric:tabular-nums}
+.compact .cn{min-height:36px}
+.compact .cn .a{display:none}
+.compact .cn .h{font-size:12px;margin:0}
+.compact .r2{min-height:34px;padding-block:3px}
+/* log rows: detailed = PCAPdroid (variant 1), compact = two lines (variant 2) */
+.av.rd{border-radius:50%}
+.c1{display:flex;gap:14px;padding:7px 12px 7px 10px;border-bottom:1px solid var(--ln);align-items:center;width:100%;text-align:left}
+.c1:active,.c2:active{background:var(--s2)}
+.c1 .a{font-size:14.5px;font-weight:650;color:var(--on2)}
+.c1 .p,.c1 .h{font-size:13px;color:var(--mu);margin-top:1px}
+.c1 .r{text-align:right;font-size:12.5px;color:var(--mu);display:flex;flex-direction:column;gap:1px;align-items:flex-end;flex:none;font-variant-numeric:tabular-nums}
+.c1 .r .z{font-size:14.5px;color:var(--on2)}
+.st-a{color:var(--ok)}.st-c{color:var(--mu)}.st-b{color:var(--er);font-weight:650;display:flex;align-items:center;gap:3px}
+.c2{display:flex;gap:12px;padding:5px 12px 5px 10px;border-bottom:1px solid var(--ln);align-items:center;min-height:46px;position:relative;width:100%;text-align:left}
+.c2 .l1,.c2 .l2{display:flex;gap:8px;align-items:baseline}
+.c2 .l2{margin-top:1px}
+.c2 .a{font-size:13.5px;font-weight:650;color:var(--on2);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c2 .t{font-size:11.5px;color:var(--mu);font-variant-numeric:tabular-nums;flex:none}
+.c2 .h{font-size:12.5px;color:var(--mu);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c2 .h b{font-weight:500;color:var(--on2)}
+.c2 .z{font-size:12px;color:var(--on2);font-variant-numeric:tabular-nums;flex:none}
+.c2.bl:before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:0 3px 3px 0;background:var(--er)}
+.c2.bl .t{color:var(--er)}
+.c2.ac .t{color:var(--ok)}
+
+/* details */
+.kv{display:grid;grid-template-columns:118px 1fr;font-size:13px}
+.kv>div{padding:7px 12px;border-bottom:1px solid var(--ln);min-width:0;overflow-wrap:anywhere}
+.kv>div:nth-child(odd){color:var(--mu)}
+.why{background:var(--erc);color:var(--oner);font-size:12.5px;padding:8px 12px;display:flex;gap:10px;align-items:flex-start;flex:none}
+.why.okb{background:var(--sc);color:var(--onsc)}
+.why button{color:inherit;font-weight:700;text-decoration:underline;white-space:nowrap}
+.pk{display:grid;grid-template-columns:20px 84px 14px 1fr 34px;gap:6px;align-items:center;font-family:var(--mono);font-size:11.3px;padding:8px 12px;border-bottom:1px solid var(--ln);color:var(--on2);width:100%;text-align:left}
+.pk:active{background:var(--s2)}
+.pk .up{color:var(--wa);font-weight:700}.pk .dn{color:var(--pri);font-weight:700}.pk .x{color:var(--er);font-weight:700}
+.pk .r{text-align:right;color:var(--mu)}
+.tree{font-family:var(--mono);font-size:11.6px;line-height:1.5;color:var(--on2);padding:6px 8px;flex:none}
+.tree button{display:block;width:100%;text-align:left;padding:3px 4px;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tree button.sel{background:var(--pc);color:var(--onpc)}
+.tree .x{color:var(--mu)}
+.tl{padding:10px 12px 6px;border-bottom:1px solid var(--ln);flex:none;user-select:none}
+.tl .row2{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--mu);gap:8px}
+.tl svg{width:100%;height:58px;display:block;margin:4px 0;touch-action:none;cursor:crosshair}
+.tl .clr{color:var(--pri);font-weight:650;font-size:11.5px}
+.p5{display:flex;align-items:center;gap:10px;padding:5px 12px;border-bottom:1px solid var(--ln);width:100%;text-align:left;min-height:42px}
+.p5:active{background:var(--s2)}
+.p5 .n{width:18px;font-family:var(--mono);font-size:11px;color:var(--mu);flex:none}
+.p5 .d{font-weight:700;width:12px;flex:none}
+.p5 .d.up{color:var(--wa)}.p5 .d.dn{color:var(--pri)}.p5 .d.x{color:var(--er)}
+.p5 .l1{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.p5 .l2{font-size:10.8px;color:var(--mu);font-family:var(--mono);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.p5 .z{font-family:var(--mono);font-size:11px;color:var(--on2);flex:none}
+.p5.drop .l1{color:var(--er)}
+.split{height:8px;background:var(--s1);border-top:1px solid var(--ln);border-bottom:1px solid var(--ln);flex:none}
+.hex{font-family:var(--mono);font-size:11px;line-height:1.6;white-space:pre;color:var(--on);padding:6px 12px 14px}
+.hex .o{color:var(--mu)}.hex .h{background:var(--pc);color:var(--onpc);border-radius:2px}
+.chk{border-bottom:1px solid var(--ln);padding:6px 12px 8px}
+.chk .hl{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--mu)}
+.dump{font-family:var(--mono);font-size:11px;line-height:1.5;white-space:pre;color:var(--on);margin-top:4px;overflow:hidden}
+.dump.txt{white-space:pre-wrap;word-break:break-all}
+.dump .o{color:var(--mu)}
+
+/* overlays */
+.ov{position:absolute;inset:0;z-index:20;pointer-events:none}
+.scrim{position:absolute;inset:0;background:var(--scrim);opacity:0;transition:opacity .25s;pointer-events:auto}
+.ov.open .scrim{opacity:1}
+.drw{position:absolute;left:0;top:0;bottom:0;width:min(300px,82%);background:var(--s1);border-radius:0 18px 18px 0;padding:14px 10px 10px;display:flex;flex-direction:column;gap:2px;transform:translateX(-102%);transition:transform .3s var(--ease);pointer-events:auto;overflow-y:auto}
+.ov.open .drw{transform:none}
+.drw .hdr{padding:6px 12px 14px;border-bottom:1px solid var(--ln);margin-bottom:8px}
+.drw .hdr b{font-size:22px;font-weight:720}
+.drw .it{display:flex;align-items:center;gap:14px;height:46px;border-radius:23px;padding:0 16px;font-size:14px;font-weight:600;color:var(--on2);width:100%;flex:none}
+.drw .it:active{background:var(--s3)}
+.drw .it.on{background:var(--pc);color:var(--onpc)}
+.drw .it em{margin-left:auto;font-style:normal;font-size:12px;color:var(--mu);font-weight:600}
+.drw .it.on em{color:var(--onpc)}
+.drw .glbl{font-size:12px;font-weight:700;color:var(--pri);padding:8px 16px 4px;letter-spacing:.2px;flex:none}
+.drw .sep{height:1px;background:var(--ln);margin:6px 12px;flex:none}
+.sheet{position:absolute;left:0;right:0;bottom:0;max-height:82%;background:var(--s1);border-radius:24px 24px 0 0;padding:8px 0 14px;transform:translateY(102%);transition:transform .3s var(--ease);pointer-events:auto;display:flex;flex-direction:column}
+.ov.open .sheet{transform:none}
+.sheet .handle{width:32px;height:4px;border-radius:2px;background:var(--ol);margin:4px auto 8px;flex:none}
+.sheet h3{font-size:17px;font-weight:650;padding:4px 20px 8px;margin:0}
+.sheet .sc{overflow-y:auto}
+.opt{display:flex;align-items:center;gap:14px;padding:11px 20px;width:100%;text-align:left;font-size:14px}
+.opt:active{background:var(--s2)}
+.opt .d{font-size:12px;color:var(--mu);margin-top:1px}
+.radio{width:20px;height:20px;border-radius:10px;border:2px solid var(--on2);flex:none;position:relative}
+.radio.on{border-color:var(--pri)}
+.radio.on:after{content:"";position:absolute;inset:3px;border-radius:6px;background:var(--pri)}
+.menu{position:absolute;right:8px;top:4px;min-width:224px;background:var(--s3);border-radius:14px;padding:6px 0;box-shadow:0 14px 34px -10px var(--shadow);transform-origin:top right;transform:scale(.9);opacity:0;transition:all .18s var(--ease);pointer-events:auto}
+.ov.open .menu{transform:none;opacity:1}
+.menu button{display:flex;align-items:center;gap:12px;padding:10px 16px;font-size:14px;width:100%;text-align:left}
+.menu button:active{background:var(--s4)}
+.menu .ck{margin-left:auto;color:var(--pri)}
+.snack{position:absolute;left:12px;right:12px;bottom:14px;z-index:30;background:var(--on);color:var(--bg);border-radius:10px;padding:12px 14px;font-size:13.5px;display:flex;gap:10px;align-items:center;transform:translateY(160%);transition:transform .28s var(--ease);box-shadow:0 10px 26px -10px var(--shadow)}
+.snack.show{transform:none}
+.snack button{color:var(--pc);font-weight:700;font-size:13.5px}
+.fab{position:absolute;right:16px;bottom:16px;height:52px;border-radius:16px;background:var(--pc);color:var(--onpc);display:flex;align-items:center;gap:8px;padding:0 18px 0 14px;font-weight:700;font-size:14px;box-shadow:0 8px 20px -10px var(--shadow);z-index:2}
+
+/* forms */
+.form{padding:4px 16px 24px;display:flex;flex-direction:column;gap:14px}
+.ff{border:1px solid var(--ol);border-radius:10px;padding:6px 12px 7px;position:relative;transition:border-color .2s}
+.ff:focus-within{border-color:var(--pri)}
+.ff label{font-size:11px;color:var(--mu);font-weight:600;display:block}
+.ff:focus-within label{color:var(--pri)}
+.ff input{width:100%;border:0;outline:0;background:none;font-size:15px;padding:2px 0 0}
+.ff input.mono{font-family:var(--mono);font-size:14px}
+.ff.sel{cursor:pointer;display:flex;align-items:center;gap:10px}
+.ff.sel .v{font-size:15px;margin-top:2px}
+.fl-row{display:flex;align-items:center;gap:12px}
+.fl-row .grow .h{font-size:14.5px}
+.fl-row .grow .d{font-size:12px;color:var(--mu);margin-top:1px}
+.prev{background:var(--s2);border-radius:12px;padding:10px 12px;font-size:12.5px;color:var(--on2)}
+.prev b{color:var(--on)}
+.prev .mono{font-size:11.5px}
+.danger{color:var(--er);font-weight:650;font-size:14px;padding:10px 0;text-align:left}
+.sub{font-size:12px;font-weight:700;color:var(--pri);padding:14px 16px 6px;letter-spacing:.2px}
+.srow{display:flex;align-items:center;gap:14px;padding:10px 16px;min-height:56px;width:100%;text-align:left;border-bottom:1px solid var(--ln)}
+.srow:active{background:var(--s1)}
+.sform{padding:6px 16px 4px;display:grid;grid-template-columns:1fr 92px;gap:10px}
+.sform .ff.full{grid-column:1/-1}
+.off-blk{opacity:.4;pointer-events:none;transition:opacity .2s}
+.srow .ic{width:24px;color:var(--on2);display:grid;place-items:center;flex:none}
+.srow .h{font-size:15px}
+.srow .d{font-size:12.5px;color:var(--on2);margin-top:2px}
+.dragrow{position:relative;z-index:1;transition:transform .18s var(--ease),box-shadow .18s}
+.dragrow.lift{z-index:5;box-shadow:0 12px 26px -10px var(--shadow);background:var(--s3);transition:box-shadow .18s}
+.prio{width:24px;height:24px;border-radius:8px;background:var(--s3);display:grid;place-items:center;font-size:12px;font-weight:750;color:var(--on2);flex:none;font-variant-numeric:tabular-nums}
+.prio.p{background:var(--pri);color:var(--onp)}
+.handle-d{color:var(--mu);touch-action:none;cursor:grab;padding:6px;margin:-6px}
+.bar{height:4px;border-radius:2px;background:var(--s3);overflow:hidden;margin-top:5px}
+.bar i{display:block;height:100%;background:var(--pri);border-radius:2px}
+.chart text{font-size:9px;fill:var(--mu);font-family:var(--font)}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+ <symbol id="menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+ <symbol id="power" viewBox="0 0 24 24"><path d="M12 3.5v8"/><path d="M6.6 6.8a7.7 7.7 0 1 0 10.8 0"/></symbol>
+ <symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+ <symbol id="more" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="12" cy="19" r="1.2"/></symbol>
+ <symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+ <symbol id="back" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+ <symbol id="close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+ <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+ <symbol id="block" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m6 6 12 12"/></symbol>
+ <symbol id="check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+ <symbol id="pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></symbol>
+ <symbol id="play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+ <symbol id="share" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 13v6h14v-6"/></symbol>
+ <symbol id="filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 8v5l-4 2v-7z"/></symbol>
+ <symbol id="home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V20h-5v-6H9v6H4z"/></symbol>
+ <symbol id="rules" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 9h8M8 13h8M8 17h5"/></symbol>
+ <symbol id="wall" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 12h18M9 5v7M15 12v7"/></symbol>
+ <symbol id="logs" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+ <symbol id="chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+ <symbol id="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></symbol>
+ <symbol id="layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></symbol>
+ <symbol id="refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></symbol>
+ <symbol id="import" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 17v3h16v-3"/></symbol>
+ <symbol id="prev" viewBox="0 0 24 24"><path d="m15 6-6 6 6 6"/></symbol>
+ <symbol id="next" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+ <symbol id="copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+ <symbol id="info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8h.01"/></symbol>
+ <symbol id="density" viewBox="0 0 24 24"><path d="M4 5h16M4 9.5h16M4 14h16M4 18.5h16"/></symbol>
+ <symbol id="wifi" viewBox="0 0 24 24"><path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.5a9.5 9.5 0 0 1 13 0M8.6 16a5 5 0 0 1 6.8 0"/></symbol>
+ <symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+ <symbol id="screen" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="3"/><path d="M10.5 18h3"/></symbol>
+ <symbol id="drag" viewBox="0 0 24 24"><circle cx="9" cy="7" r="1"/><circle cx="15" cy="7" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="17" r="1"/><circle cx="15" cy="17" r="1"/></symbol>
+ <symbol id="dns" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="6.5" rx="2"/><rect x="3.5" y="13.5" width="17" height="6.5" rx="2"/></symbol>
+ <symbol id="key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="3.5"/><path d="m10.5 12.5 8-8M15.5 7.5l2.5 2.5"/></symbol>
+ <symbol id="backup" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.6L4 8.7M4 4v4.7h4.7"/><path d="M12 8v4l3 2"/></symbol>
+ <symbol id="palette" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0 0 18c1.2 0 1.8-.9 1.8-1.8 0-1.4-1.2-1.6-1.2-2.8 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/></symbol>
+ <symbol id="tile" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></symbol>
+ <symbol id="cap" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="8.5"/></symbol>
+ <symbol id="trash" viewBox="0 0 24 24"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13"/></symbol>
+ <symbol id="route" viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8.5 18H15a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h6.5"/></symbol>
+ <symbol id="lang" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.6 3.6 5.4 3.6 8.5s-1 5.9-3.6 8.5c-2.6-2.6-3.6-5.4-3.6-8.5s1-5.9 3.6-8.5z"/></symbol>
+</defs></svg>
+
+<div class="device" id="dev">
+  <div class="statusbar"><span>20:41</span><span class="r"><span id="sbVpn"><svg class="i xs"><use href="#key"/></svg></span><svg class="i xs"><use href="#wifi"/></svg><span>82%</span></span></div>
+  <div class="stage" id="stage"></div>
+  <div class="gesture"><i></i></div>
+  <div class="ov" id="ov"></div>
+  <div class="snack" id="snack" role="status" aria-live="polite"><span class="grow" id="snackText"></span><button type="button" id="snackBtn"></button></div>
+</div>
+<div class="hint">Прототип Packetwall: ☰ — меню, строки логов и пакеты открываются, правила редактируются и сразу меняют статусы соединений, наборы перетаскиваются за ⋮⋮, тема — Настройки → Внешний вид. Esc — назад.</div>
+
+<script>
+'use strict';
+/* ================= DATA ================= */
+const APPS={
+ tbank:{n:'T-Bank',p:'com.idamob.tinkoff.android',c:'#F6C344',f:'#222',l:'T'},
+ photomath:{n:'Photomath',p:'com.microblink.photomath',c:'#E94B3C',l:'P'},
+ files:{n:'Files by Google',p:'com.google.android.apps.nbu.files',c:'#4285F4',l:'F'},
+ youtube:{n:'YouTube',p:'com.google.android.youtube',c:'#E53935',l:'Y'},
+ telegram:{n:'Telegram',p:'org.telegram.messenger',c:'#2AABEE',l:'T'},
+ vk:{n:'VK',p:'com.vkontakte.android',c:'#0077FF',l:'V'},
+ smart:{n:'Smart Suggestion',p:'com.oplus.pantanal.ums',c:'#2F9E6E',l:'S',sys:1},
+ drs:{n:'oplus.drs',p:'com.oplus.framework.network.drs',c:'#3C7CF0',l:'O',sys:1},
+ htms:{n:'Mobile Services',p:'com.heytap.htms',c:'#0E9F9A',l:'M',sys:1},
+ rkp:{n:'RemoteProvisioner',p:'com.google.android.rkpdapp',c:'#6B5BD2',l:'R',sys:1},
+ singbox:{n:'sing-box',p:'io.nekohasekai.sfa',c:'#1F2937',l:'sb'},
+ v2rayng:{n:'v2rayNG',p:'com.v2ray.ang',c:'#0B6E4F',l:'v2'},
+ unknown:{n:'Unknown (−1)',p:'uid −1 · netd',c:'#56656B',l:'?',sys:1}
+};
+// id, app, host, ip, l4, port, proto, time, up, down, asn, cc, tags, new
+const CONNS=[
+ [1,'tbank','rtb-adevents.t-bank-app.ru','178.130.129.78','tcp',443,'TLS 1.3','20:40:12',569,0,'AS43399 TBANK','RU',['реклама']],
+ [2,'tbank','api.t-bank-app.ru','178.130.128.21','tcp',443,'TLS 1.3','20:40:12',4210,22510,'AS43399 TBANK','RU',[]],
+ [3,'tbank','as.t-bank-app.ru','178.130.129.47','tcp',443,'TLS 1.3','20:40:11',569,0,'AS43399 TBANK','RU',['аналитика']],
+ [4,'tbank','rtb-s2p.t-bank-app.ru','178.130.128.182','tcp',443,'TLS 1.3','20:40:09',2730,7310,'AS43399 TBANK','RU',['реклама']],
+ [5,'smart','oversea-nebula-sg.heytapmobi.com','47.82.156.156','tcp',443,'TLS 1.2','20:40:02',512,0,'AS45102 Alibaba','SG',['телеметрия']],
+ [6,'tbank','certs.t-bank-app.ru','91.240.170.187','tcp',443,'TLS 1.3','20:39:57',2810,60720,'AS57363 CDNvideo','RU',[]],
+ [7,'unknown','dns.adguard-dns.com','94.140.14.14','tcp',853,'DoT','20:39:55',1530,1630,'AS212772 AdGuard','CY',[]],
+ [8,'tbank','e.mail.ru','217.69.139.215','tcp',443,'TLS 1.3','20:39:51',569,0,'AS47764 VK','RU',['трекер']],
+ [9,'photomath','lapi.photomath.net','34.149.49.67','tcp',443,'TLS 1.3','20:39:40',2660,579900,'AS396982 Google Cloud','US',[]],
+ [10,'tbank','cdn-webview.t-bank-app.ru','193.17.93.194','tcp',443,'TLS 1.3','20:39:38',7410,1468000,'AS210756 EdgeCenter','RU',[]],
+ [11,'rkp','remoteprovisioning.googleapis.com','172.217.118.4','tcp',443,'TLS 1.3','20:39:30',1650,2650,'AS15169 Google','US',[]],
+ [12,'tbank','api-invest-gw.tinkoff.ru','178.130.128.31','tcp',443,'TLS 1.3','20:39:28',3060,13500,'AS43399 TBANK','RU',[]],
+ [13,'tbank','ms-loyalty-api.tinkoff.ru','178.130.129.193','tcp',443,'TLS 1.3','20:39:27',1900,8120,'AS43399 TBANK','RU',[]],
+ [14,'tbank','stories-rtb.t-bank-app.ru','178.130.128.4','tcp',443,'TLS 1.3','20:39:25',569,0,'AS43399 TBANK','RU',['реклама']],
+ [15,'photomath','firebaselogging-pa.googleapis.com','142.251.38.99','tcp',443,'TLS 1.3','20:39:20',569,0,'AS15169 Google','US',['аналитика']],
+ [16,'tbank','content-hub.t-static.ru','193.17.93.194','tcp',443,'TLS 1.3','20:39:18',1700,41500,'AS210756 EdgeCenter','RU',[]],
+ [17,'drs','obus-conf-ru.heytapmobile.com','45.192.11.3','tcp',443,'TLS 1.2','20:39:12',1020,14000,'AS135377 UCloud','HK',['телеметрия'],1],
+ [18,'htms','cloudconf-app-us.heytapmobile.com','52.21.62.97','tcp',443,'TLS 1.2','20:39:05',1330,6960,'AS14618 Amazon','US',['телеметрия']],
+ [19,'tbank','api-statist.tinkoff.ru','178.130.129.15','tcp',443,'TLS 1.3','20:38:58',569,0,'AS43399 TBANK','RU',['аналитика']],
+ [20,'tbank','transfer-scoring.t-bank-app.ru','178.130.128.35','tcp',443,'TLS 1.3','20:38:51',2760,13500,'AS43399 TBANK','RU',[],1],
+ [21,'files','www.googleapis.com','172.217.114.4','tcp',443,'TLS 1.3','20:38:44',569,0,'AS15169 Google','US',[]],
+ [22,'tbank','feedback-platform-api.t-bank-app.ru','178.130.128.40','tcp',443,'TLS 1.3','20:38:40',2560,13800,'AS43399 TBANK','RU',['опросы'],1],
+ [23,'youtube','rr4---sn-n8v7kn7s.googlevideo.com','173.194.140.73','udp',443,'QUIC','20:38:31',38100,4810000,'AS15169 Google','US',[]],
+ [24,'telegram','149.154.167.51','149.154.167.51','tcp',443,'MTProto','20:38:20',9800,52300,'AS62041 Telegram','GB',[]],
+ [25,'vk','api.vk.ru','87.240.132.67','tcp',443,'TLS 1.3','20:38:02',3900,27700,'AS47541 VK','RU',[]],
+ [26,'tbank','tm.t-bank-app.ru','178.130.128.30','tcp',443,'TLS 1.3','20:37:50',569,0,'AS43399 TBANK','RU',['аналитика']]
+].map(a=>({id:a[0],app:a[1],host:a[2],ip:a[3],l4:a[4],port:a[5],proto:a[6],t:a[7],up:a[8],down:a[9],asn:a[10],cc:a[11],tags:a[12],nw:!!a[13]}));
+const DNSLOG=[
+ ['20:40:12','tbank','rtb-adevents.t-bank-app.ru','A','178.130.129.78'],
+ ['20:40:11','tbank','as.t-bank-app.ru','A','178.130.129.47'],
+ ['20:40:02','smart','oversea-nebula-sg.heytapmobi.com','A','0.0.0.0 (блок)'],
+ ['20:39:57','tbank','certs.t-bank-app.ru','A','91.240.170.187'],
+ ['20:39:51','tbank','e.mail.ru','A','0.0.0.0 (блок)'],
+ ['20:39:40','photomath','lapi.photomath.net','A','34.149.49.67'],
+ ['20:39:30','rkp','remoteprovisioning.googleapis.com','AAAA','2a00:1450:4010::5f'],
+ ['20:39:20','photomath','firebaselogging-pa.googleapis.com','A','0.0.0.0 (блок)'],
+ ['20:39:12','drs','obus-conf-ru.heytapmobile.com','A','45.192.11.3'],
+ ['20:38:31','youtube','rr4---sn-n8v7kn7s.googlevideo.com','A','173.194.140.73']];
+let RID=100;
+const R=(set,act,who,type,pat,o={})=>({id:++RID,set,act,who,type,pat,sub:!!o.sub,block:o.block||'drop',on:o.on!==false});
+const MODES={
+ allow:{sets:[
+  {id:'default',name:'default',on:true,cond:{},rules:[
+    R('default','b','*','host','api-statist.tinkoff.ru',{sub:1}),R('default','b','*','host','tracker-api.my.com'),R('default','b','*','host','amplitude.com',{sub:1}),
+    R('default','b','*','host','appsflyer.com',{sub:1}),R('default','b','*','host','mail.ru',{sub:1}),R('default','a','*','host','rtb-s2p.t-bank-app.ru'),
+    R('default','b','*','host','googleapis.com',{sub:1,on:false}),R('default','b','*','cidr','217.69.139.0/24'),R('default','a','*','cidr','10.0.0.0/8'),
+    R('default','b','*','country','CN'),R('default','b','*','port','udp/443',{block:'reject'}),R('default','b','files','all','*')]},
+  {id:'tbank',name:'T-Bank',on:true,cond:{},rules:[
+    R('tbank','b','*','host','rtb-*.t-bank-app.ru',{block:'reject'}),R('tbank','b','*','host','stories-rtb.t-bank-app.ru'),
+    R('tbank','b','tbank','host','as.t-bank-app.ru'),R('tbank','b','tbank','host','tm.t-bank-app.ru'),R('tbank','b','tbank','host','feedback-platform-api.t-bank-app.ru'),
+    R('tbank','a','tbank','host','transfer-scoring.t-bank-app.ru')]},
+  {id:'social',name:'Соцсети',on:false,cond:{},rules:[R('social','b','vk','all','*'),R('social','b','telegram','all','*')]},
+  {id:'mobile',name:'Видео',on:false,cond:{},rules:[R('mobile','b','youtube','all','*')]},
+  {id:'realme',name:'Realme',on:true,cond:{},rules:[R('realme','b','*','host','**.heytapmobile.com'),R('realme','b','*','host','**.heytapmobi.com'),R('realme','b','smart','all','*')]}
+ ]},
+};
+const FILTERS=[
+ {id:'f1',kind:'filter',name:'HaGeZi Pro++',on:true,count:243117,cat:'ads',builtin:1,upd:'13.11 18:20',url:'raw.githubusercontent.com/hagezi/dns-blocklists/…/pro.plus-onlydomains.txt',dom:['appsflyer.com','firebaselogging-pa.googleapis.com','api-statist.tinkoff.ru','amplitude.com']},
+ {id:'f2',kind:'filter',name:'Native: Oppo / Realme',on:true,count:503,cat:'sys',builtin:1,upd:'13.11 18:20',url:'…/wildcard/native.oppo-realme-onlydomains.txt',dom:['cloudconf-app-us.heytapmobile.com','oversea-nebula-sg.heytapmobi.com']},
+ {id:'f3',kind:'filter',name:'RU AdList + EasyPrivacy',on:true,count:51204,cat:'track',skipped:3112,upd:'12.11',url:'easylist-downloads.adblockplus.org/advblock.txt',src:'uBO',dom:['api-statist.tinkoff.ru']},
+ {id:'f4',kind:'filter',name:'realme-telemetry.json',on:true,count:24,cat:'own',imp:1,dom:['obus-conf-ru.heytapmobile.com','cloudconf-app-us.heytapmobile.com']},
+ {id:'f5',kind:'filter',name:'OISD Big',on:false,count:117560,cat:'ads',url:'big.oisd.nl/domainswild2',dom:[]},
+ {id:'f6',kind:'filter',name:'AdGuard DNS filter',on:false,count:61830,cat:'ads',builtin:1,dom:[]},
+ {id:'f7',kind:'filter',name:'StevenBlack hosts',on:false,count:86120,cat:'ads',dom:[]},
+ {id:'f8',kind:'filter',name:'tbank-sdk-trackers.json',on:false,count:5,cat:'own',imp:1,dom:['tracker-api.vk-analytics.ru','in.appcenter.ms']}
+];
+FILTERS.forEach(f=>f.rules=f.dom.map(d=>({id:++RID,set:f.id,act:'b',who:'*',type:'host',pat:d,sub:true,block:'drop',on:true})));
+const PROFILES={allow:[{id:'home',n:'Дом',sets:['default','tbank','realme']},{id:'work',n:'Работа',sets:['default','tbank','mobile','realme']},{id:'strict',n:'Строгий',sets:['default','tbank','social','mobile','realme']}]};
+
+/* ================= STATE ================= */
+const S={on:true,mode:'allow',profile:{allow:'home'},logFilter:'',logStatus:'all',logTab:'conns',paused:false,compact:false,
+ ruleSet:'default',ruleType:'host',ruleSearch:null,fwSet:'*',fwHideEmpty:false,fwSys:true,dataMode:'hex',filtCat:'all',
+ dns:'adguard',dnsBlock:true,fwDefault:'drop',waitSni:true,lan:true,logFw:'db',logAn:'session',pkSel:null,up:true,upType:'socks5',upHost:'127.0.0.1',upPort:'2080',upUser:'',upPass:'',upUdp:true,upDns:true,upFail:'block',upApp:'singbox',logDays:14,theme:'system'};
+const stack=[];
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const I=(id,c='')=>`<svg class="i ${c}" aria-hidden="true"><use href="#${id}"/></svg>`;
+const AV=(app,cls='')=>{const a=APPS[app];return `<span class="av ${cls}" style="background:${a.c};color:${a.f||'#fff'}">${a.l}</span>`};
+const fmtB=b=>b>=1048576?(b/1048576).toFixed(1).replace('.',',')+' МБ':b>=1024?Math.round(b/1024)+' КБ':b+' Б';
+const fmtN=n=>n.toLocaleString('ru-RU');
+const sets=()=>MODES[S.mode].sets;
+const allSets=()=>sets().concat(FILTERS);
+const setById=id=>allSets().find(s=>s.id===id);
+const allRules=()=>allSets().flatMap(s=>s.rules);
+const ruleById=id=>allRules().find(r=>r.id==id);
+const profileName=()=>PROFILES[S.mode].find(p=>p.id===S.profile[S.mode]).n;
+
+/* ================= ENGINE ================= */
+function globRe(pat,sub){
+  let src=pat.toLowerCase().split('.').map(l=>l==='**'?'(?:[^.]+\\.)*[^.]+':l.replace(/[\\^$+?()[\]{}|]/g,'\\$&').replace(/\*/g,'[^.]*')).join('\\.');
+  return new RegExp('^'+(sub?'(?:[^.]+\\.)*':'')+src+'$');
+}
+function ip2n(ip){const p=ip.split('.').map(Number);return p.length===4&&p.every(x=>x>=0&&x<256)?((p[0]<<24)>>>0)+(p[1]<<16)+(p[2]<<8)+p[3]:null}
+function cidrMatch(c,ip){const [b,l]=c.split('/');const n=ip2n(ip),m=ip2n(b);if(n===null||m===null)return false;const len=l===undefined?32:+l;const mask=len===0?0:(~0<<(32-len))>>>0;return ((n&mask)>>>0)===((m&mask)>>>0)}
+function matches(r,c){
+  if(!r.on)return false;
+  try{
+    switch(r.type){
+      case 'all':return true;
+      case 'host':return globRe(r.pat,r.sub).test(c.host);
+      case 'ip':case 'cidr':return cidrMatch(r.pat,c.ip);
+      case 'country':return r.pat.toUpperCase()===c.cc;
+      case 'port':{const [p,po]=r.pat.split('/');return p===c.l4&&(po==='*'||+po===c.port)}
+    }
+  }catch(e){return false}
+  return false;
+}
+function spec(r){
+  if(r.type==='all')return 0;
+  if(r.type==='country')return 10;
+  if(r.type==='port')return 15;
+  if(r.type==='cidr'||r.type==='ip'){const l=+(r.pat.split('/')[1]??32);return 20+l/2}
+  const labels=r.pat.split('.');let s=100;labels.forEach(l=>{if(l==='**')s+=1;else if(l.includes('*'))s+=6;else s+=10});return s-(r.sub?3:0);
+}
+function best(rs){return rs.sort((a,b)=>spec(b)-spec(a)||(a.act==='b'?-1:1))[0]}
+function setActive(s){return s.on}
+function decide(c){
+  if(!S.on)return {act:'a',rule:null,set:null,off:true};
+  let gAllow=null;
+  for(const s of allSets()){
+    if(!setActive(s))continue;
+    const appR=best(s.rules.filter(r=>r.who===c.app&&matches(r,c)));
+    if(appR)return {act:appR.act,rule:appR,set:s};
+    if(!gAllow){const g=best(s.rules.filter(r=>r.who==='*'&&matches(r,c)));
+      if(g){if(g.act==='b')return {act:'b',rule:g,set:s};gAllow={act:'a',rule:g,set:s}}}
+  }
+  if(gAllow)return gAllow;
+  return {act:'a',rule:null,set:null};
+}
+const prioOf=s=>allSets().indexOf(s)+1;
+const blocked=c=>decide(c).act==='b';
+
+/* ================= NAV ================= */
+const stage=$('#stage');
+function build(entry){
+  const scr=SCREENS[entry.name](entry.p||{});
+  const el=document.createElement('section');el.className='screen';
+  el.innerHTML=`<div class="ab">${scr.bar}</div>${scr.top||''}<div class="scroll ${S.compact?'compact':''}">${scr.body}</div>${scr.fab||''}`;
+  entry.el=el;return el;
+}
+function go(name,p={},opts={}){
+  const prev=stack[stack.length-1];
+  const entry={name,p};
+  if(opts.root){stack.forEach(e=>{if(e!==prev&&e.el)e.el.remove()});stack.length=0;if(name!=='home')stack.push({name:'home',p:{}})}
+  stack.push(entry);
+  const el=build(entry);stage.appendChild(el);
+  if(prev&&prev.el){
+    if(opts.root){el.classList.add('a-fade');const old=prev.el;setTimeout(()=>old.remove(),230)}
+    else{el.classList.add('a-inR');prev.el.classList.add('a-outL');const old=prev.el;setTimeout(()=>{old.classList.remove('a-outL');old.style.display='none'},280)}
+  }
+  after(entry);
+}
+function back(){
+  if(closeOverlay())return;
+  if(stack.length<2)return;
+  const cur=stack.pop(),prev=stack[stack.length-1];
+  if(!prev.el){build(prev);stage.insertBefore(prev.el,cur.el);after(prev)}else refresh(prev,true);
+  prev.el.style.display='';prev.el.classList.add('a-inL');
+  cur.el.classList.add('a-outR');setTimeout(()=>{cur.el.remove();prev.el.classList.remove('a-inL')},250);
+}
+function refresh(entry=stack[stack.length-1],keepHidden){
+  if(!entry||!entry.el)return;
+  const sc=entry.el.querySelector('.scroll');const top=sc?sc.scrollTop:0;
+  const old=entry.el;const disp=old.style.display;
+  const el=build(entry);if(keepHidden)el.style.display=disp;
+  old.replaceWith(el);const sc2=el.querySelector('.scroll');if(sc2)sc2.scrollTop=top;
+  after(entry);
+}
+function after(entry){if(SCREENS[entry.name].after)SCREENS[entry.name].after(entry.el,entry.p||{})}
+function refreshAll(){stack.forEach(e=>{if(e.el)refresh(e,true)})}
+
+/* ================= OVERLAYS ================= */
+const ov=$('#ov');let ovOpen=false,ovGen=0;
+function openOverlay(html,cb){const g=++ovGen;ovOpen=true;ov.innerHTML=`<div class="scrim" data-act="closeOv"></div>${html}`;requestAnimationFrame(()=>requestAnimationFrame(()=>{if(ovOpen&&g===ovGen)ov.classList.add('open')}));if(cb)cb(ov)}
+function closeOverlay(){if(!ovOpen)return false;ovOpen=false;const g=ovGen;ov.classList.remove('open');setTimeout(()=>{if(!ovOpen&&g===ovGen)ov.innerHTML=''},300);return true}
+function sheet(title,inner){openOverlay(`<div class="sheet" role="dialog" aria-label="${esc(title)}"><div class="handle"></div><h3>${esc(title)}</h3><div class="sc">${inner}</div></div>`)}
+function menu(items){openOverlay(`<div class="menu" role="menu">${items.map(i=>`<button type="button" data-act="${i.act}" ${i.data||''}>${i.icon?I(i.icon,'s'):''}${esc(i.t)}${i.ck?I('check','s ck'):''}</button>`).join('')}</div>`)}
+let snackT=null,snackUndo=null;
+function snack(text,undo){const s=$('#snack');$('#snackText').textContent=text;const b=$('#snackBtn');snackUndo=undo||null;b.textContent=undo?'Отменить':'';b.hidden=!undo;s.classList.add('show');clearTimeout(snackT);snackT=setTimeout(()=>s.classList.remove('show'),3200)}
+$('#snackBtn').addEventListener('click',()=>{if(snackUndo){snackUndo();snackUndo=null;refreshAll()}$('#snack').classList.remove('show')});
+
+function drawer(){
+  const cur=stack[0]?.name;
+  const it=(id,ic,t,em)=>`<button type="button" class="it ${cur===id?'on':''}" data-act="nav" data-to="${id}">${I(ic,'s')}${t}${em!==undefined?`<em>${em}</em>`:''}</button>`;
+  openOverlay(`<nav class="drw" aria-label="Разделы"><div class="hdr"><b>Packetwall</b><div class="t2" style="margin-top:4px"><span style="color:${S.on?'var(--ok)':'var(--mu)'}">●</span> ${S.on?'Включено':'Выключено'} · профиль «${profileName()}»</div></div>
+  ${it('home','home','Главная')}${it('logs','logs','Логи',CONNS.length)}${it('stats','chart','Статистика')}<div class="sep"></div>
+  <div class="glbl">Файрвол</div>${it('firewall','wall','Приложения',Object.keys(APPS).length)}${it('rules','rules','Глобальные правила',sets().reduce((a,s)=>a+s.rules.filter(r=>r.who==='*').length,0))}${it('filters','filter','Блок-листы',FILTERS.filter(f=>f.on).length+' / '+FILTERS.length)}${it('sets','layers','Наборы и профили',sets().length)}<div class="sep"></div>
+  ${it('settings','gear','Настройки')}${it('about','info','О приложении')}</nav>`);
+}
+
+/* ================= SCREENS ================= */
+const AB=(left,title,sub,actions='',subCls='',titleCls='')=>`<button type="button" class="ib" data-act="${left==='menu'?'drawer':'back'}" aria-label="${left==='menu'?'Меню':'Назад'}">${I(left)}</button><div class="tt"><b class="${titleCls}">${title}</b>${sub?`<span class="${subCls}" ${subCls==='p'?'data-act="profiles"':''}>${sub}</span>`:''}</div>${actions}`;
+const ACT=(icon,act,label,extra='')=>`<button type="button" class="ib" data-act="${act}" aria-label="${label}" ${extra}>${I(icon)}</button>`;
+
+const SCREENS={};
+/* ---- HOME (C) ---- */
+SCREENS.home={render(){},};
+SCREENS.home=Object.assign(p=>{
+  const bl=CONNS.filter(blocked);const n=allRules().filter(r=>r.on).length;
+  const fRules=FILTERS.filter(f=>f.on).reduce((a,f)=>a+f.count,0);
+  const recv=CONNS.filter(c=>!blocked(c)).reduce((a,c)=>a+c.down,0);
+  return {bar:AB('menu','Packetwall','',ACT('chart','nav','Статистика','data-to="stats" data-push="1"')+ACT('logs','nav','Логи','data-to="logs" data-push="1"')),
+  body:`<div class="pad">
+   <div class="card">
+    <div class="row" style="gap:12px"><button type="button" class="pw ${S.on?'':'off'}" data-act="power" aria-label="${S.on?'Выключить':'Включить'} защиту">${I('power')}</button>
+     <div class="grow"><div class="st ${S.on?'':'off'}"><i></i>${S.on?'Включено':'Выключено'}</div>
+      <div class="t2">${S.on?'2 ч 14 мин · ':''}профиль <button type="button" data-act="profiles" style="color:var(--pri);font-weight:650">«${profileName()}» ▾</button></div>
+      <div class="t2">DoH ${S.dns==='adguard'?'AdGuard':S.dns==='quad9'?'Quad9':S.dns==='cf'?'Cloudflare':'системный'} · IPv4+IPv6</div>
+      <div class="t2">${S.up?`${I('route','xs')} через ${S.upType==='socks5'?'SOCKS5':'HTTP'} ${esc(S.upHost)}:${esc(S.upPort)} · ${APPS[S.upApp].n}`:'напрямую, без upstream'}</div></div></div>
+   </div>
+   <div class="tiles ${S.on?'':'muted'}">
+    <button type="button" class="tile" data-act="nav" data-to="logs" data-push="1"><div class="ic2">${I('logs','s')}</div><span class="lbl">Запросов</span><b>12 480</b></button>
+    <button type="button" class="tile" data-act="logsBlocked"><div class="ic2" style="color:var(--er)">${I('block','s')}</div><span class="lbl">Заблокировано</span><b style="color:var(--er)">${fmtN(1806+bl.length*11)}</b></button>
+    <button type="button" class="tile" data-act="nav" data-to="stats" data-push="1"><div class="ic2">${I('import','s')}</div><span class="lbl">Получено</span><b>${fmtB(recv*48)}</b></button>
+    <button type="button" class="tile" data-act="nav" data-to="rules" data-push="1"><div class="ic2">${I('rules','s')}</div><span class="lbl">Правил</span><b>${n} + ${Math.round(fRules/1000)}K</b></button>
+   </div>
+   <div class="hd"><b>Последние блокировки</b><button type="button" data-act="logsBlocked">Все</button></div>
+   <div class="ls">${bl.slice(0,5).map(c=>`<button type="button" class="r2" data-act="conn" data-id="${c.id}">${AV(c.app)}<div class="grow"><div class="pt ell">${esc(c.host)}</div><div class="mt">${APPS[c.app].n} · ${c.t}</div></div></button>`).join('')||`<div class="empty">Блокировок нет</div>`}</div>
+  </div>`}
+},{});
+
+/* ---- LOGS (D) ---- */
+function parseFilter(q){
+  q=q.trim();if(!q)return ()=>true;
+  const parts=q.split('&&').map(s=>s.trim()).filter(Boolean);
+  const fs=parts.map(p=>{let m;
+    if(m=p.match(/^app\s*==\s*"([^"]*)"$/i))return c=>APPS[c.app].n.toLowerCase()===m[1].toLowerCase();
+    if(m=p.match(/^host\s*~\s*"([^"]*)"$/i)){const re=new RegExp(m[1],'i');return c=>re.test(c.host)}
+    if(m=p.match(/^host\s*==\s*"([^"]*)"$/i))return c=>c.host===m[1];
+    if(m=p.match(/^ip\s*==\s*"?([\d./]+)"?$/i))return c=>cidrMatch(m[1],c.ip);
+    if(m=p.match(/^proto\s*==\s*"?([\w .]+)"?$/i))return c=>c.proto.toLowerCase().startsWith(m[1].toLowerCase());
+    if(m=p.match(/^bytes\s*>\s*(\d+)\s*([kKмМmM]?)$/)){const k={'k':1024,'K':1024,'m':1048576,'M':1048576,'м':1048576,'М':1048576}[m[2]]||1;return c=>c.up+c.down>+m[1]*k}
+    if(/^!\s*blocked$/i.test(p))return c=>!blocked(c);
+    if(/^blocked$/i.test(p))return c=>blocked(c);
+    if(m=p.match(/^cc\s*==\s*"?(\w\w)"?$/i))return c=>c.cc===m[1].toUpperCase();
+    throw new Error('bad');});
+  return c=>fs.every(f=>f(c));
+}
+const isActive=c=>!blocked(c)&&[2,7,23,24].includes(c.id);
+function connRow(c){
+  const b=blocked(c),a=isActive(c);const pr=`${c.proto.split(' ')[0]}, ${c.port}`;const size=fmtB(b?569:c.up+c.down);
+  if(S.compact)return `<button type="button" class="c2 ${b?'bl':a?'ac':''}" data-act="conn" data-id="${c.id}">${AV(c.app,'md rd')}<div class="grow"><div class="l1"><span class="a">${APPS[c.app].n}</span><span class="t">${c.t}</span></div><div class="l2"><span class="h"><b>${pr}</b> · ${esc(c.host)}</span><span class="z">${size}</span></div></div></button>`;
+  const st=b?`<span class="st-b">${I('block','xs')}Заблок.</span>`:a?'<span class="st-a">Активно</span>':'<span class="st-c">Закрыто</span>';
+  return `<button type="button" class="c1" data-act="conn" data-id="${c.id}">${AV(c.app,'xl rd')}<div class="grow"><div class="a ell">${APPS[c.app].n}</div><div class="p">${pr}</div><div class="h ell">${esc(c.host)}</div></div><div class="r">${st}<span>${c.t}</span><span class="z">${size}</span></div></button>`;
+}
+function logRows(){
+  let f;try{f=parseFilter(S.logFilter)}catch(e){return {bad:true,html:`<div class="empty">Не понял фильтр. Примеры:<br><span class="mono">app == "T-Bank" &amp;&amp; blocked</span><br><span class="mono">host ~ "rtb|stat"</span> · <span class="mono">bytes &gt; 1M</span> · <span class="mono">proto == QUIC</span></div>`}}
+  const list=CONNS.filter(c=>{const b=blocked(c);return f(c)&&(S.logStatus==='all'||(S.logStatus==='b'&&b)||(S.logStatus==='a'&&!b)||(S.logStatus==='new'&&c.nw))});
+  return {html:list.map(connRow).join('')||`<div class="empty">Нет соединений под фильтр</div>`};
+}
+SCREENS.logs=Object.assign(p=>{
+  const tabs=[['conns','Соединения'],['dns','DNS'],['http','HTTP'],['caps','Захваты']];
+  let body='';
+  if(S.logTab==='conns'){body=`<div id="logList">${logRows().html}</div>`}
+  else if(S.logTab==='dns'){body=DNSLOG.map(d=>`<div class="cn ${d[4].includes('блок')?'bl':''}"><span class="ic">${AV(d[1],'md')}</span><div class="grow"><div class="h ell" style="color:var(--on)">${esc(d[2])}</div><div class="h ell" style="${d[4].includes('блок')?'color:var(--er)':''}">${d[3]} → ${esc(d[4])}</div></div><div class="m"><span>${d[0]}</span><span>${APPS[d[1]].n}</span></div></div>`).join('')}
+  else if(S.logTab==='http'){body=`<div class="cn"><span class="ic">${AV('unknown','md')}</span><div class="grow"><div class="a">GET /generate_204</div><div class="h">connectivitycheck.gstatic.com · 204</div></div><div class="m"><span>20:36:02</span><span>HTTP/1.1</span></div></div><div class="empty">Остальное — HTTPS. Запросы внутри TLS появятся здесь после включения расшифровки (будет позже).</div>`}
+  else body=[['packetwall_14_Nov_20_34.pcapng','8,2 МБ · 12 607 пакетов · 31 мин','сейчас пишется'],['packetwall_14_Nov_19_02.pcapng','50 МБ · кольцевой буфер 1/4',''],['PCAPdroid_13_Nov_22_34_26.pcapng','8,2 МБ · импорт','']].map(x=>`<div class="r2" style="padding:10px 12px">${I('cap','s')}<div class="grow"><div class="pt ell">${x[0]}</div><div class="mt">${x[1]}</div></div>${x[2]?`<span class="tg p">${x[2]}</span>`:I('share','s')}</div>`).join('');
+  return {bar:AB('menu','Логи',`${CONNS.length} · ${S.paused?'пауза':'захват идёт'}`,ACT(S.paused?'play':'pause','pause',S.paused?'Продолжить':'Пауза')+ACT('share','exportLog','Экспорт')+ACT('more','logMenu','Ещё')),
+   top:`<div style="padding:0 12px 6px;display:flex;flex-direction:column;gap:6px">${S.logTab==='conns'?`<div class="fld" id="fldBox">${I('filter','xs')}<input id="flt" placeholder='app == "T-Bank" &amp;&amp; blocked' value="${esc(S.logFilter)}" autocomplete="off" spellcheck="false" aria-label="Фильтр соединений">${S.logFilter?`<button type="button" class="ib" style="width:28px;height:28px" data-act="clearFlt" aria-label="Очистить">${I('close','xs')}</button>`:''}</div>
+    <div class="chips">${[['all','Все'],['b','Заблок.'],['a','Разреш.'],['new','Новые']].map(([k,t])=>`<button type="button" class="ch ${S.logStatus===k?'on':''}" data-act="logStatus" data-v="${k}">${S.logStatus===k?I('check','xs'):''}${t}</button>`).join('')}<button type="button" class="ch ${S.compact?'on':''}" data-act="compact" aria-label="Плотность">${I('density','xs')}</button></div>`:''}</div>
+    <div class="tabs fill">${tabs.map(([k,t])=>`<button type="button" class="${S.logTab===k?'on':''}" data-act="logTab" data-v="${k}">${t}</button>`).join('')}</div>`,
+   body};
+},{after(el){const inp=$('#flt',el);if(!inp)return;inp.addEventListener('input',()=>{S.logFilter=inp.value;const r=logRows();$('#logList',el).innerHTML=r.html;$('#fldBox',el).classList.toggle('bad',!!r.bad)})}});
+
+/* ---- CONNECTION ---- */
+function packetsOf(c){
+  const b=blocked(c),d=decide(c);
+  const P=[['↑','SYN win=65535 MSS=1460',60,'syn'],['↓','SYN,ACK',60,'synack'],['↑','ACK',52,'ack']];
+  if(c.l4==='udp')P.length=0;
+  if(c.proto.startsWith('TLS')||c.proto==='DoT')P.push(['↑',`TLS ClientHello SNI=${c.host}`,569,'ch']);
+  else if(c.proto==='QUIC')P.push(['↑',`QUIC Initial SNI=${c.host}`,1250,'quic']);
+  else P.push(['↑','MTProto obfuscated',290,'data']);
+  if(b){P.push(['✕',`${d.rule&&d.rule.block==='reject'?'reject (RST)':'drop'} · набор ${d.set?d.set.name:'режим'}`,0,'drop']);if(c.l4==='tcp'&&!(d.rule&&d.rule.block==='reject'))P.push(['↑','TCP Retransmission',569,'ch'])}
+  else{P.push(['↓','TLS ServerHello, Certificate',1460,'sh'],['↑','TLS Finished',80,'data'],['↑','Application Data',Math.min(c.up,1400),'data'],['↓','Application Data',Math.min(c.down,1460),'data'],['↓','Application Data',1460,'data'],['↑','FIN,ACK',52,'ack'])}
+  const t0=+c.t.slice(6);let ms=204;
+  let su=1,sd=1;
+  return P.map((p,i)=>{ms+=i===0?0:[1,22,0,2,25,40,1,22][i]||5;const pl=Math.max(0,p[2]-52);const seq=p[0]==='↑'?su:sd,ack=p[0]==='↑'?sd:su;
+    if(p[0]==='↑')su+=p[3]==='syn'?1:pl;else if(p[0]==='↓')sd+=p[3]==='synack'?1:pl;
+    const proto=['syn','synack','ack'].includes(p[3])||p[1].startsWith('TCP')?'TCP':p[3]==='quic'?'QUIC':p[3]==='drop'?'':c.proto.startsWith('TLS')||c.proto==='DoT'?'TLS':'TCP';
+    return {i:i+1,dir:p[0],info:p[1],len:p[2],k:p[3],off:ms-204,proto,seq,ack,time:`${c.t.slice(0,5)}:${String(t0).padStart(2,'0')}.${String(ms%1000).padStart(3,'0')}`}});
+}
+function connTabs(c,tab){const n=packetsOf(c).length;return `<div class="tabs fill">${[['ov','Обзор'],['pk',`Пакеты <em>${n}</em>`],['data','Данные'],['http','HTTP']].map(([k,t])=>`<button type="button" class="${tab===k?'on':''}" data-act="connTab" data-v="${k}">${t}</button>`).join('')}</div>`}
+SCREENS.conn=p=>{
+  const c=CONNS.find(x=>x.id==p.id);const tab=p.tab||'ov';const d=decide(c);const b=d.act==='b';
+  const idx=CONNS.indexOf(c);
+  const bar=AB('back',esc(c.host),`#${c.id} · ${APPS[c.app].n} · ${c.proto}`,`<button type="button" class="ib ${idx<=0?'dis':''}" data-act="connStep" data-d="-1" aria-label="Предыдущее">${I('prev')}</button><button type="button" class="ib ${idx>=CONNS.length-1?'dis':''}" data-act="connStep" data-d="1" aria-label="Следующее">${I('next')}</button>`,'','mono');
+  let why='';
+  if(d.rule)why=`<div class="why ${b?'':'okb'}">${I(b?'block':'check','s')}<div class="grow">${b?'Заблокировано':'Разрешено'} правилом <b class="mono">${esc(d.rule.pat)}</b>${d.rule.who!=='*'?' ('+APPS[d.rule.who].n+')':''} · ${d.set.kind==='filter'?'блок-лист':'набор'} <b>${esc(d.set.name)}</b> (${prioOf(d.set)}) · профиль «${profileName()}»</div><button type="button" data-act="${d.set.kind==='filter'?'openFilter':'editRule'}" data-id="${d.set.kind==='filter'?d.set.id:d.rule.id}">${d.set.kind==='filter'?'К блок-листу':'К правилу'}</button></div>`;
+  let body='';
+  if(tab==='ov'){const pk=packetsOf(c);const kv=[['Протокол',`${c.proto} · ${c.l4.toUpperCase()}`],['Статус',b?`<span style="color:var(--er);font-weight:700">заблокировано · ${d.rule&&d.rule.block==='reject'?'reject':'drop'}</span>`:'<span style="color:var(--ok);font-weight:700">разрешено</span>'],['Приложение',`${APPS[c.app].n}`],['Пакет',`<span class="mono" style="font-size:12px">${APPS[c.app].p}</span>`],['Источник','<span class="mono" style="font-size:12px">10.215.173.1:41522</span>'],['Назначение',`<span class="mono" style="font-size:12px">${c.ip}:${c.port}</span>`],['Хост (SNI)',`<span class="mono" style="font-size:12px">${esc(c.host)}</span>`],['ASN',`${c.asn} · ${c.cc}`],['Метки',c.tags.map(t=>`<span class="tg ${t==='реклама'||t==='трекер'?'er':t==='аналитика'?'wa':'g'}">${t}</span>`).join(' ')||'—'],['Трафик',`↑ ${fmtB(b?569:c.up)} · ↓ ${fmtB(b?0:c.down)}`],['Пакеты',`${pk.filter(x=>x.dir==='↑').length} ↑ · ${pk.filter(x=>x.dir==='↓').length} ↓`],['Маршрут',b?'—':c.app===S.upApp?'мимо VPN (приложение-прокси)':S.up&&!(c.l4==='udp'&&(S.upType!=='socks5'||!S.upUdp))?`через ${S.upType==='socks5'?'SOCKS5':'HTTP'} ${esc(S.upHost)}:${esc(S.upPort)}`:'напрямую'],['Начало',`${c.t}.204`]];
+    body=`<div class="kv">${kv.map(([a,v])=>`<div>${a}</div><div>${v}</div>`).join('')}</div><div style="padding:12px;display:flex;gap:8px"><button type="button" class="tb" data-act="newRuleFor" data-id="${c.id}">Правило для хоста</button><button type="button" class="tb" data-act="openApp" data-id="${c.app}">Приложение</button></div>`}
+  else if(tab==='pk'){body=pkList(c)}
+  else if(tab==='data'){
+    const chunks=b?[['↑','20:40:11.207',517,'ch']]:[['↑','20:40:11.207',517,'ch'],['↓','20:40:11.260',1460,'sh'],['↑','20:40:11.302',Math.min(c.up,1400),'data'],['↓','20:40:11.330',Math.min(c.down,1460),'data']];
+    body=`<div style="padding:8px 12px" class="row"><div class="seg grow" style="height:30px">${[['hex','Hex'],['txt','Текст'],['auto','Авто']].map(([k,t])=>`<button type="button" class="${S.dataMode===k?'on':''}" data-act="dataMode" data-v="${k}">${t}</button>`).join('')}</div></div>`+
+     chunks.map((ch,i)=>{const bytes=genBytes(c,ch[3],ch[2]);return `<div class="chk"><div class="hl"><b style="color:${ch[0]==='↑'?'var(--wa)':'var(--pri)'}">${ch[0]}</b><span class="grow">${ch[1]} · ${ch[2]} Б</span><button type="button" data-act="copyChunk" aria-label="Копировать">${I('copy','xs')}</button></div><div class="dump ${S.dataMode==='txt'?'txt':''}">${S.dataMode==='txt'?esc(bytes.slice(0,240).map(x=>x>31&&x<127?String.fromCharCode(x):'.').join('')):hexLines(bytes,0,6)}</div></div>`}).join('')+
+     (b?`<div class="empty">Ответов нет: соединение остановлено до отправки данных.</div>`:'');}
+  else body=`<div class="empty">HTTP внутри TLS не виден без расшифровки.<br>Расшифровка TLS (mitm) — следующий этап.</div>`;
+  return {bar,top:connTabs(c,tab)+(tab==='ov'?why:'')+(tab==='pk'?pkTimeline(c):''),body};
+};
+const TLW=336,TLH=58;
+function pkTimeline(c){
+  const pk=packetsOf(c);const max=Math.max(1,pk.at(-1).off);const X=t=>8+t/max*(TLW-16);
+  const up=pk.filter(x=>x.dir==='↑').reduce((a,x)=>a+x.len,0),dn=pk.filter(x=>x.dir==='↓').reduce((a,x)=>a+x.len,0);
+  let bars='';pk.forEach(x=>{const xx=X(x.off);if(x.dir==='✕'){bars+=`<path d="M${xx-3} ${TLH/2-3}l6 6M${xx+3} ${TLH/2-3}l-6 6" stroke="var(--er)" stroke-width="1.8"/>`;return}
+    const h=Math.max(4,Math.min(1,Math.log10(Math.max(x.len,10))/3.4)*(TLH/2-3));const u=x.dir==='↑';bars+=`<rect x="${xx-1.3}" y="${u?TLH/2-h:TLH/2}" width="2.6" height="${h}" rx="1" fill="${u?'var(--wa)':'var(--pri)'}"/>`});
+  const sel=S.pkSel;const sr=sel?`<rect id="tlsel" x="${X(sel[0])}" y="1" width="${Math.max(2,X(sel[1])-X(sel[0]))}" height="${TLH-2}" rx="4" fill="var(--pc)" opacity=".6"/>`:`<rect id="tlsel" x="0" y="1" width="0" height="${TLH-2}" rx="4" fill="var(--pc)" opacity=".6"/>`;
+  const n=sel?pk.filter(x=>x.off>=sel[0]&&x.off<=sel[1]).length:pk.length;
+  return `<div class="tl"><div class="row2"><span>↑ приложение ${fmtB(up)}</span><span>${max} мс</span></div><svg id="tlsvg" viewBox="0 0 ${TLW} ${TLH}" preserveAspectRatio="none" role="img" aria-label="Шкала времени пакетов">${sr}<line x1="0" x2="${TLW}" y1="${TLH/2}" y2="${TLH/2}" stroke="var(--ol)"/>${bars}</svg><div class="row2"><span>↓ сервер ${fmtB(dn)}</span>${sel?`<span>выделено ${Math.round(sel[0])}–${Math.round(sel[1])} мс · ${n} пак. <button type="button" class="clr" data-act="pkClear">сбросить</button></span>`:'<span>проведите по шкале, чтобы выделить</span>'}</div></div>`;
+}
+function pkList(c){
+  const sel=S.pkSel;const pk=packetsOf(c).filter(x=>!sel||(x.off>=sel[0]&&x.off<=sel[1]));
+  return pk.map(x=>x.k==='drop'?`<div class="p5 drop"><span class="n">${x.i}</span><span class="d x">✕</span><div class="grow"><div class="l1">${esc(x.info)}</div><div class="l2">+${x.off} мс</div></div><span class="z">—</span></div>`:
+   `<button type="button" class="p5" data-act="packet" data-cid="${c.id}" data-i="${x.i}"><span class="n">${x.i}</span><span class="d ${x.dir==='↑'?'up':'dn'}">${x.dir}</span><div class="grow"><div class="l1">${x.info.startsWith(x.proto)?'':x.proto+' '}${esc(x.info)}</div><div class="l2">+${x.off} мс · seq ${x.seq} ack ${x.ack}</div></div><span class="z">${x.len}</span></button>`).join('')||'<div class="empty">В выделенном участке пакетов нет</div>';
+}
+SCREENS.conn.after=(el,p)=>{
+  const sv=$('#tlsvg',el);if(!sv)return;const c=CONNS.find(x=>x.id==p.id);const max=Math.max(1,packetsOf(c).at(-1).off);
+  const toT=e=>{const r=sv.getBoundingClientRect();const vx=(e.clientX-r.left)/r.width*TLW;return Math.max(0,Math.min(max,(vx-8)/(TLW-16)*max))};
+  const X=t=>8+t/max*(TLW-16);let t0=null;const rect=$('#tlsel',sv);
+  sv.addEventListener('pointerdown',e=>{t0=toT(e);try{sv.setPointerCapture(e.pointerId)}catch(x){}rect.setAttribute('x',X(t0));rect.setAttribute('width',0)});
+  sv.addEventListener('pointermove',e=>{if(t0===null)return;const t=toT(e);rect.setAttribute('x',X(Math.min(t0,t)));rect.setAttribute('width',Math.abs(X(t)-X(t0)))});
+  sv.addEventListener('pointerup',e=>{if(t0===null)return;const t=toT(e);const a=Math.min(t0,t),b=Math.max(t0,t);t0=null;S.pkSel=(b-a)<max*0.02?null:[a,b];refresh()});
+};
+function prng(seed){let s=seed>>>0;return ()=>{s=(s*1664525+1013904223)>>>0;return s>>>24}}
+function genBytes(c,kind,len){
+  const r=prng(c.id*97+kind.length*13+len);const a=[];for(let i=0;i<len;i++)a.push(r());
+  if(kind==='ch'||kind==='quic'){
+    a[0]=0x45;a[1]=0;a[9]=6;a[20]=0xa2;a[21]=0x32;a[22]=1;a[23]=0xbb;
+    a[52]=0x16;a[53]=3;a[54]=1;a[55]=2;a[56]=0;a[57]=1;
+    const sni=[...c.host].map(ch=>ch.charCodeAt(0));const off=0xb9;
+    a[off-9]=0;a[off-8]=0;a[off-5]=0;a[off-1]=sni.length;sni.forEach((v,i)=>a[off+i]=v);
+    const alpn=[...'h2http/1.1'].map(ch=>ch.charCodeAt(0));alpn.forEach((v,i)=>a[off+sni.length+12+i]=v);
+  }
+  return a;
+}
+function hexLines(bytes,from,maxLines,hl){
+  let out='';const n=Math.ceil(bytes.length/8);const lines=maxLines?Math.min(n,maxLines):n;
+  for(let l=0;l<lines;l++){const o=l*8;let hx='',as='';
+    for(let k=0;k<8;k++){const i=o+k;if(i>=bytes.length){hx+='   ';continue}const v=bytes[i];const h=v.toString(16).padStart(2,'0');const ch=v>31&&v<127?esc(String.fromCharCode(v)):'.';
+      const on=hl&&i>=hl[0]&&i<hl[0]+hl[1];hx+=(on?`<span class="h">${h}</span>`:h)+' ';as+=on?`<span class="h">${ch}</span>`:ch}
+    out+=`<span class="o" data-line="${l}">${o.toString(16).padStart(4,'0')}</span>  ${hx} ${as}\n`}
+  if(maxLines&&n>maxLines)out+=`<span class="o">…</span>    ещё ${n-maxLines} строк`;
+  return out;
+}
+SCREENS.packet=p=>{
+  const c=CONNS.find(x=>x.id==p.cid);const pk=packetsOf(c).filter(x=>x.k!=='drop');const x=pk.find(q=>q.i==p.i)||pk[0];const pos=pk.indexOf(x);
+  const bytes=genBytes(c,x.k,x.len);
+  const T=[];T.push(['Frame '+x.i+': '+x.len+' байт, '+(x.dir==='↑'?'приложение → сеть':'сеть → приложение'),[0,x.len],0]);
+  T.push([`IPv4, ${x.dir==='↑'?'10.215.173.1 → '+c.ip:c.ip+' → 10.215.173.1'}`,[0,20],0]);
+  if(c.l4==='tcp')T.push([`TCP, ${x.dir==='↑'?'41522 → '+c.port:c.port+' → 41522'}, ${x.info.split(' ')[0]}`,[20,32],0]);else T.push([`UDP, 41522 → ${c.port}`,[20,8],0]);
+  if(x.k==='ch'||x.k==='quic'){T.push([x.k==='quic'?'QUIC Initial':'TLS 1.3 Record: Handshake',[52,5],0],['ClientHello',[57,x.len-57],1],['Cipher Suites (17)',[100,34],2],[`server_name: ${c.host}`,[0xb9,c.host.length],2],['ALPN: h2, http/1.1',[0xb9+c.host.length+12,10],2],['JA4: t13d1516h2_8daaf6152771',null,2])}
+  else if(x.k==='sh')T.push(['TLS 1.3 Record: ServerHello, Certificate',[52,x.len-52],0]);
+  else if(x.k==='data')T.push(['TLS Application Data (зашифровано)',[52,Math.max(0,x.len-52)],0]);
+  const sel=p.sel??(T.findIndex(t=>t[0].startsWith('server_name'))>=0?T.findIndex(t=>t[0].startsWith('server_name')):T.length-1);
+  const hl=T[sel]&&T[sel][1];
+  return {bar:AB('back',`Пакет ${x.i} из ${packetsOf(c).length}`,`${x.dir} ${x.time} · ${x.len} Б · ${esc(x.info)}`,`<button type="button" class="ib ${pos<=0?'dis':''}" data-act="pktStep" data-d="-1" aria-label="Предыдущий">${I('prev')}</button><button type="button" class="ib ${pos>=pk.length-1?'dis':''}" data-act="pktStep" data-d="1" aria-label="Следующий">${I('next')}</button>${ACT('copy','copyChunk','Копировать')}`),
+   top:`<div class="tree">${T.map((t,i)=>`<button type="button" class="${i===sel?'sel':''}" data-act="treeSel" data-i="${i}" style="padding-left:${4+t[2]*16}px"><span class="x">${t[2]<2&&i<T.length-1&&T[i+1][2]>t[2]?'▾':'▸'}</span> ${esc(t[0])}</button>`).join('')}</div><div class="split"></div>`,
+   body:`<div class="hex" id="hexv">${hexLines(bytes,0,0,hl)}</div>`};
+};
+function scrollToHl(el,smooth){const h=$('.hex .h',el);if(!h)return;const sc=$('.scroll',el);const d=h.getBoundingClientRect().top-sc.getBoundingClientRect().top-sc.clientHeight/2;sc.scrollTo({top:Math.max(0,sc.scrollTop+d),behavior:smooth?'smooth':'auto'})}
+SCREENS.packet.after=(el)=>scrollToHl(el,false);
+
+/* ---- STATS ---- */
+SCREENS.stats=p=>{
+  const hrs=[3,2,1,1,0,0,1,4,9,12,10,8,11,9,8,10,12,14,13,16,22,18,0,0],blk=[1,0,0,0,0,0,0,2,3,4,3,3,4,3,2,3,4,5,4,6,9,7,0,0];
+  const W=332,H=110,bw=W/24;const mx=24;
+  const bars=hrs.map((v,i)=>{const h1=v/mx*H,h2=blk[i]/mx*H;return `<rect x="${i*bw+1}" y="${H-h1}" width="${bw-2}" height="${h1-h2}" rx="2" fill="var(--pri)" opacity=".85"/><rect x="${i*bw+1}" y="${H-h2}" width="${bw-2}" height="${h2}" rx="2" fill="var(--er)"/>`}).join('');
+  const per={};CONNS.forEach(c=>{per[c.app]=per[c.app]||{t:0,b:0};per[c.app].t+=c.up+c.down;if(blocked(c))per[c.app].b++});
+  const top=Object.entries(per).sort((a,b)=>b[1].t-a[1].t).slice(0,6);const mt=top[0][1].t;
+  return {bar:AB('menu','Статистика','Сегодня, 00:00–20:41'),
+   body:`<div class="pad"><div class="chips"><button type="button" class="ch on">${I('check','xs')}Сегодня</button><button type="button" class="ch">Неделя</button><button type="button" class="ch">Месяц</button></div>
+    <div class="card"><div class="row"><span class="lbl grow">Запросы по часам</span><span class="t2" style="margin:0"><span style="color:var(--pri)">■</span> разрешено <span style="color:var(--er)">■</span> заблок.</span></div>
+     <svg class="chart" viewBox="0 0 ${W} ${H+16}" style="width:100%;height:auto;margin-top:8px" role="img" aria-label="Запросы по часам">${[0.25,0.5,0.75].map(f=>`<line x1="0" x2="${W}" y1="${H-H*f}" y2="${H-H*f}" stroke="var(--ln)"/>`).join('')}${bars}${[0,6,12,18,23].map(h=>`<text x="${h*bw+bw/2}" y="${H+12}" text-anchor="middle">${h}:00</text>`).join('')}</svg></div>
+    <div class="hd"><b>Трафик по приложениям</b></div>
+    <div class="ls">${top.map(([a,v])=>`<button type="button" class="r2" data-act="openApp" data-id="${a}">${AV(a)}<div class="grow"><div class="row"><span class="t1 grow" style="font-size:13px">${APPS[a].n}</span><span class="mt">${fmtB(v.t)}${v.b?` · <span style="color:var(--er)">${v.b} блок.</span>`:''}</span></div><div class="bar"><i style="width:${Math.max(3,v.t/mt*100)}%"></i></div></div></button>`).join('')}</div>
+    <div class="hd"><b>Чаще всего блокируется</b></div>
+    <div class="ls">${CONNS.filter(blocked).slice(0,6).map((c,i)=>`<button type="button" class="r2" data-act="conn" data-id="${c.id}"><span class="prio">${i+1}</span><div class="grow"><div class="pt ell">${esc(c.host)}</div><div class="mt">${APPS[c.app].n}</div></div><span class="mt num">${[52,37,15,12,9,4][i]}</span></button>`).join('')}</div></div>`};
+};
+
+/* ---- FILTERS ---- */
+SCREENS.filters=p=>{
+  const on=FILTERS.filter(f=>f.on);const total=on.reduce((a,f)=>a+f.count,0);
+  const cats=[['all','Все'],['ads','Реклама'],['track','Трекеры'],['sys','Системные'],['own','Свои']];
+  const list=FILTERS.filter(f=>S.filtCat==='all'||f.cat===S.filtCat);
+  return {bar:AB('menu','Блок-листы','',`<button type="button" class="ib" id="refBtn" data-act="refreshFilters" aria-label="Обновить все">${I('refresh')}</button>`+ACT('import','importSheet','Импорт')+ACT('plus','addUrl','Список по URL')),
+   top:`<div style="padding:0 16px 8px;font-size:12.5px;color:var(--on2)" class="ell"><b style="color:var(--on)" class="num">${fmtN(total)}</b> правил · ${on.length}/${FILTERS.length} активны · 2 ч назад · ежедневно, Wi-Fi</div><div class="chips" style="padding:0 12px 8px">${cats.map(([k,t])=>`<button type="button" class="ch ${S.filtCat===k?'on':''}" data-act="filtCat" data-v="${k}">${S.filtCat===k?I('check','xs'):''}${t}</button>`).join('')}</div>`,
+   body:`<div class="pad" style="padding-top:2px"><div class="ls">${list.map(f=>`<div class="r2" style="padding:8px 10px"><button type="button" class="grow tap" style="text-align:left" data-act="openFilter" data-id="${f.id}"><div class="row" style="gap:6px"><span class="t1">${esc(f.name)}</span>${f.builtin?'<span class="tg p">встроенный</span>':''}${f.src?`<span class="tg wa">${f.src}→</span>`:''}${f.imp?'<span class="tg g">импорт</span>':''}</div><div class="mt">${fmtN(f.count)} ${f.count%10===1&&f.count%100!==11?'правило':'правил'}${f.skipped?' · пропущено '+fmtN(f.skipped):''}${f.on?' · приоритет '+prioOf(f):''}${f.upd?' · '+f.upd:''}</div></button><button type="button" class="sw ${f.on?'on':''}" data-act="toggleFilter" data-id="${f.id}" role="switch" aria-checked="${f.on}" aria-label="${esc(f.name)}"></button></div>`).join('')}</div></div>`};
+};
+
+/* ---- RULES (A) ---- */
+const TYPES=[['host','Хосты'],['cidr','IP·CIDR'],['country','Страны'],['port','Порты']];
+function ruleRow(r,showSet){
+  const props=[];if(r.who!=='*'&&!showSet)props.push(APPS[r.who].n);if(r.sub)props.push('+ поддомены');if(r.act==='b'&&r.block==='reject')props.push('reject');if(!r.on)props.push('выключено');
+  const pat=r.type==='all'?(r.act==='b'?'Запретить всё':'Разрешить всё'):r.type==='country'?r.pat+' · '+({CN:'Китай',RU:'Россия',US:'США'}[r.pat]||''):r.pat;
+  return `<button type="button" class="r2" data-act="editRule" data-id="${r.id}" style="${r.on?'':'opacity:.45'}">${r.act==='b'?I('block','s" style="color:var(--er)'):I('check','s" style="color:var(--pri)')}<div class="grow"><div class="pt ell">${esc(pat)}</div>${props.length?`<div class="mt">${props.join(' · ')}</div>`:''}</div>${showSet?`<span class="tg ${setById(r.set).kind==='filter'?'wa':'p'}">${esc(setById(r.set).name)}</span>`:''}</button>`;
+}
+SCREENS.rules=p=>{
+  const ss=sets();if(!ss.find(s=>s.id===S.ruleSet))S.ruleSet=ss[0].id;
+  const set=setById(S.ruleSet);const glob=set.rules.filter(r=>r.who==='*');
+  const byType=t=>glob.filter(r=>(t==='cidr'?(r.type==='cidr'||r.type==='ip'):r.type===t));
+  let list=byType(S.ruleType);if(S.ruleSearch)list=list.filter(r=>r.pat.toLowerCase().includes(S.ruleSearch.toLowerCase()));
+  return {bar:AB('menu','Глобальные правила',`Профиль: ${profileName()} ▾`,ACT('plus','newRule','Новое правило')+ACT('more','rulesMenu','Ещё'),'p'),
+   top:`<div class="tabs">${ss.map(s=>`<button type="button" class="${s.id===S.ruleSet?'on':''}" data-act="ruleSet" data-v="${s.id}" style="${setActive(s)?'':'opacity:.55'}">${esc(s.name)} <em>${s.rules.filter(r=>r.who==='*').length}</em></button>`).join('')}</div>
+    ${S.ruleSearch!==null?`<div style="padding:8px 12px 0"><div class="fld">${I('search','xs')}<input id="rsearch" placeholder="Поиск в наборе" value="${esc(S.ruleSearch)}" aria-label="Поиск правил"><button type="button" class="ib" style="width:28px;height:28px" data-act="ruleSearch" aria-label="Закрыть поиск">${I('close','xs')}</button></div></div>`:''}
+    <div class="chips" style="padding:8px 12px">${TYPES.map(([k,t])=>`<button type="button" class="ch ${S.ruleType===k?'on':''}" data-act="ruleType" data-v="${k}">${S.ruleType===k?I('check','xs'):''}${t} ${byType(k).length}</button>`).join('')}</div>`,
+   body:`<div class="pad" style="padding-top:0">${!set.on?`<div class="t2" style="padding:0 4px">Набор выключен · <button type="button" data-act="toggleSet" data-id="${set.id}" style="color:var(--pri);font-weight:650">включить</button></div>`:''}<div class="ls" id="rlist">${list.map(r=>ruleRow(r)).join('')||`<div class="empty">${glob.length?'В этом разделе нет правил':'Глобальных правил в наборе нет. Правила приложений — в разделе «Приложения».'}</div>`}</div></div>`};
+};
+SCREENS.rules.after=el=>{const i=$('#rsearch',el);if(i){i.focus();i.addEventListener('input',()=>{S.ruleSearch=i.value;const set=setById(S.ruleSet);const l=set.rules.filter(r=>r.who==='*'&&(S.ruleType==='cidr'?(r.type==='cidr'||r.type==='ip'):r.type===S.ruleType)&&r.pat.toLowerCase().includes(i.value.toLowerCase()));$('#rlist',el).innerHTML=l.map(r=>ruleRow(r)).join('')||'<div class="empty">Ничего не найдено</div>'})}};
+
+/* ---- FIREWALL ---- */
+function appState(a){
+  const rs=sets().filter(setActive).flatMap(s=>s.rules).filter(r=>r.who===a&&r.on);
+  const conns=CONNS.filter(c=>c.app===a);const bl=conns.filter(blocked).length;
+  if(!S.on)return ['g','выкл.'];
+  if(S.up&&a===S.upApp)return ['g','мимо VPN'];
+  const all=rs.find(r=>r.type==='all');
+  if(all&&all.act==='b'&&!rs.some(r=>r.act==='a'))return ['er','нет сети'];
+  if(bl&&bl<conns.length)return ['wa','частично'];
+  if(bl&&bl===conns.length)return ['er','нет сети'];
+  if(rs.some(r=>r.act==='a'))return ['p','исключение'];
+  return null;
+}
+SCREENS.firewall=p=>{
+  const ss=sets();
+  let apps=Object.keys(APPS).filter(a=>S.fwSys||!APPS[a].sys);
+  const rulesIn=(a,setId)=>(setId==='*'?ss:ss.filter(s=>s.id===setId)).flatMap(s=>s.rules).filter(r=>r.who===a);
+  apps=apps.filter(a=>S.fwSet==='*'||rulesIn(a,S.fwSet).length);
+  if(S.fwHideEmpty)apps=apps.filter(a=>rulesIn(a,'*').length);
+  return {bar:AB('menu','Приложения',`${apps.length} приложений`,ACT('search','noop','Поиск')+ACT('more','fwMenu','Ещё')),
+   top:`<div class="tabs"><button type="button" class="${S.fwSet==='*'?'on':''}" data-act="fwSet" data-v="*">Все наборы</button>${ss.map(s=>`<button type="button" class="${S.fwSet===s.id?'on':''}" data-act="fwSet" data-v="${s.id}">${esc(s.name)} <em>${s.rules.filter(r=>r.who!=='*').length}</em></button>`).join('')}</div>`,
+   body:`<div class="pad" style="padding-top:10px"><div class="ls">${apps.map(a=>{const n=rulesIn(a,'*').length;const tr=CONNS.filter(c=>c.app===a&&!blocked(c)).reduce((s,c)=>s+c.up+c.down,0);const st=appState(a);
+     return `<button type="button" class="r2" data-act="openApp" data-id="${a}" style="min-height:52px">${AV(a,'l')}<div class="grow"><div class="t1 ell">${APPS[a].n}</div><div class="t2">${n?n+' '+(n===1?'правило':n<5?'правила':'правил'):'без правил'}${tr?' · '+fmtB(tr):''}${APPS[a].sys?' · системное':''}</div></div>${st?`<span class="tg ${st[0]}">${st[1]}</span>`:''}<span style="color:var(--mu)">${I('next','s')}</span></button>`}).join('')||'<div class="empty">Нет приложений с правилами в этом наборе</div>'}</div></div>`};
+};
+
+/* ---- APP PAGE ---- */
+SCREENS.app=p=>{
+  const a=p.id,A=APPS[a];const ss=sets();
+  const rules=ss.flatMap(s=>s.rules).filter(r=>r.who===a);
+  return {bar:`<button type="button" class="ib" data-act="back" aria-label="Назад">${I('back')}</button>${AV(a,'xl')}<div class="tt"><b style="font-size:18px">${A.n}</b><span>${A.p}</span></div>${ACT('more','noop','Ещё')}`,
+   body:`<div class="pad">
+    <div class="hd"><b>Правила · ${rules.length}</b><button type="button" data-act="newRule" data-who="${a}">+ правило</button></div>
+    <div class="ls">${rules.map(r=>ruleRow(r,true)).join('')||'<div class="empty">Правил для приложения нет</div>'}</div>
+   </div>`};
+};
+
+/* ---- SETS & PROFILES ---- */
+SCREENS.sets=p=>{
+  const ss=sets();
+  const row=(s,i,kind)=>`<div class="r2 dragrow" data-idx="${i}" data-kind="${kind}" style="min-height:50px"><span class="prio ${i===0&&kind==='set'?'p':''}">${prioOf(s)}</span><button type="button" class="grow tap" style="text-align:left" data-act="${kind==='set'?'editSet':'openFilter'}" data-id="${s.id}"><div class="t1">${esc(s.name)}</div><div class="t2">${kind==='set'?s.rules.length+' '+(s.rules.length===1?'правило':s.rules.length<5?'правила':'правил'):fmtN(s.count)+' правил'}</div></button><button type="button" class="sw ${s.on?'on':''}" data-act="${kind==='set'?'toggleSet':'toggleFilter'}" data-id="${s.id}" role="switch" aria-checked="${s.on}" aria-label="${esc(s.name)}"></button><span class="handle-d" data-drag="1" aria-label="Перетащить">${I('drag')}</span></div>`;
+  return {bar:AB('menu','Наборы и профили','',ACT('plus','newSet','Новый набор')),
+   top:`<div class="chips" style="padding:2px 12px 10px">${PROFILES[S.mode].map(pr=>`<button type="button" class="ch ${S.profile[S.mode]===pr.id?'on':''}" data-act="setProfile" data-v="${pr.id}">${S.profile[S.mode]===pr.id?I('check','xs'):''}${pr.n}</button>`).join('')}<button type="button" class="ch" data-act="saveProfile">${I('plus','xs')}Сохранить как профиль</button></div>`,
+   body:`<div class="pad" style="padding-top:0"><div class="hd"><b>Наборы</b></div><div class="ls" data-list="set">${ss.map((s,i)=>row(s,i,'set')).join('')}</div>
+    <div class="hd"><b>Блок-листы</b></div><div class="ls" data-list="filter">${FILTERS.map((s,i)=>row(s,i,'filter')).join('')}</div></div>`};
+};
+SCREENS.sets.after=el=>{
+  el.querySelectorAll('[data-drag]').forEach(h=>h.addEventListener('pointerdown',e=>{
+    e.preventDefault();const row=h.closest('.dragrow');const list=row.parentElement;const kind=row.dataset.kind;const rows=[...list.children];
+    const from=+row.dataset.idx;const hgt=row.offsetHeight;const y0=e.clientY;let to=from;row.classList.add('lift');try{h.setPointerCapture(e.pointerId)}catch(x){}
+    const mv=ev=>{const dy=ev.clientY-y0;row.style.transform=`translateY(${dy}px)`;to=Math.max(0,Math.min(rows.length-1,from+Math.round(dy/hgt)));
+      rows.forEach((r,i)=>{if(r===row)return;let sh=0;if(from<to&&i>from&&i<=to)sh=-hgt;if(from>to&&i<from&&i>=to)sh=hgt;r.style.transform=sh?`translateY(${sh}px)`:''})};
+    const up=()=>{h.removeEventListener('pointermove',mv);h.removeEventListener('pointerup',up);h.removeEventListener('pointercancel',up);
+      const arr=kind==='set'?sets():FILTERS;if(to!==from){const [it]=arr.splice(from,1);arr.splice(to,0,it);snack(`«${it.name}» теперь на месте ${to+1}`)}
+      refreshAll()};
+    h.addEventListener('pointermove',mv);h.addEventListener('pointerup',up);h.addEventListener('pointercancel',up)}))};
+
+SCREENS.setEdit=p=>{
+  const s=setById(p.id);const c=s.cond;
+  return {bar:AB('back',esc(s.name),`приоритет ${prioOf(s)} · ${s.rules.length} правил`,ACT('trash','delSet','Удалить набор',`data-id="${s.id}"`)),
+   body:`<div class="form">
+    <div class="ff"><label for="setName">Название</label><input id="setName" value="${esc(s.name)}" data-set="${s.id}"></div>
+    <div class="fl-row"><div class="grow"><div class="h">Набор включён</div></div><button type="button" class="sw ${s.on?'on':''}" data-act="toggleSet" data-id="${s.id}" role="switch" aria-checked="${s.on}" aria-label="Набор включён"></button></div>
+    <button type="button" class="tb" style="align-self:flex-start" data-act="openSetRules" data-id="${s.id}">Открыть правила набора</button>
+   </div>`};
+};
+SCREENS.setEdit.after=(el,p)=>{const s=setById(p.id);$('#setName',el).addEventListener('change',e=>{s.name=e.target.value||s.name;refreshAll()})};
+
+/* ---- RULE EDITOR ---- */
+SCREENS.ruleEdit=p=>{
+  const r=p.draft;const isNew=!p.id;
+  const types=[['host','Хост'],['cidr','IP / CIDR'],['country','Страна'],['port','Порт'],['all','Всё']];
+  return {bar:`<button type="button" class="ib" data-act="back" aria-label="Закрыть">${I('close')}</button><div class="tt"><b>${isNew?'Новое правило':'Правило'}</b></div><button type="button" class="txtbtn" data-act="saveRule">Сохранить</button>`,
+   body:`<div class="form">
+    <div class="seg" style="height:40px"><button type="button" class="${r.act==='b'?'on':''}" data-act="draft" data-k="act" data-v="b">${I('block','s')}Запретить</button><button type="button" class="${r.act==='a'?'on':''}" data-act="draft" data-k="act" data-v="a">${I('check','s')}Разрешить</button></div>
+    <div class="row" style="gap:8px"><button type="button" class="ff sel grow" data-act="pickWho"><div class="grow" style="text-align:left"><label>Кто</label><div class="v">${r.who==='*'?'Глобально':APPS[r.who].n}</div></div>${I('down','s')}</button><button type="button" class="ff sel grow" data-act="pickSet"><div class="grow" style="text-align:left"><label>Набор</label><div class="v">${esc(setById(r.set).name)} · ${prioOf(setById(r.set))}</div></div>${I('down','s')}</button></div>
+    <div class="chips">${types.filter(t=>t[0]!=='all'||r.who!=='*').map(([k,t])=>`<button type="button" class="ch ${r.type===k?'on':''}" data-act="draft" data-k="type" data-v="${k}">${r.type===k?I('check','xs'):''}${t}</button>`).join('')}</div>
+    ${r.type!=='all'?`<div class="ff"><label for="pat">${{host:'Хост или маска',cidr:'IP или подсеть',country:'Код страны',port:'Протокол / порт'}[r.type]}</label><input id="pat" class="mono" value="${esc(r.pat)}" placeholder="${{host:'api-*.example.com',cidr:'203.0.113.0/24',country:'CN',port:'udp/443'}[r.type]}" autocomplete="off" spellcheck="false"></div>`:''}
+    ${r.type==='host'?`<div class="fl-row"><div class="grow"><div class="h">Включая поддомены</div><div class="d">* — один уровень, ** — любая глубина</div></div><button type="button" class="sw ${r.sub?'on':''}" data-act="draft" data-k="sub" data-v="${r.sub?'':'1'}" role="switch" aria-checked="${r.sub}" aria-label="Включая поддомены"></button></div>`:''}
+    ${r.act==='b'?`<div><div class="t2" style="margin:0 0 6px">Как блокировать</div><div class="seg"><button type="button" class="${r.block==='drop'?'on':''}" data-act="draft" data-k="block" data-v="drop">drop (молча)</button><button type="button" class="${r.block==='reject'?'on':''}" data-act="draft" data-k="block" data-v="reject">reject (сразу отказ)</button></div></div>`:''}
+    <div class="fl-row"><div class="grow"><div class="h">Правило включено</div></div><button type="button" class="sw ${r.on?'on':''}" data-act="draft" data-k="on" data-v="${r.on?'':'1'}" role="switch" aria-checked="${r.on}" aria-label="Правило включено"></button></div>
+    <div class="prev" id="rprev"></div>
+    ${isNew?'':`<button type="button" class="danger" data-act="delRule">Удалить правило</button>`}
+   </div>`};
+};
+function rulePreview(el,r){const m=CONNS.filter(c=>(r.who==='*'||c.app===r.who)&&matches({...r,on:true},c));
+  $('#rprev',el).innerHTML=m.length?`Совпадает с <b>${m.length}</b> ${m.length===1?'соединением':'соединениями'} за сессию:<div class="mono" style="margin-top:4px">${m.slice(0,4).map(c=>esc(c.host)).join('<br>')}${m.length>4?'<br>…':''}</div>`:'Совпадений в текущей сессии нет'}
+SCREENS.ruleEdit.after=(el,p)=>{const i=$('#pat',el);if(i)i.addEventListener('input',()=>{p.draft.pat=i.value.trim();rulePreview(el,p.draft)});rulePreview(el,p.draft)};
+
+/* ---- SETTINGS ---- */
+const SET_ROWS=[['dns','dns','DNS',()=>({system:'Системный',adguard:'DoH · AdGuard',quad9:'DoT · Quad9',cf:'DoH · Cloudflare'}[S.dns])+(S.dnsBlock?' · блокировка в DNS':'')],
+ ['up','route','Upstream (цепочка)',()=>S.up?`${S.upType==='socks5'?'SOCKS5':'HTTP CONNECT'} ${S.upHost}:${S.upPort} · через ${APPS[S.upApp].n}${S.upUdp&&S.upType==='socks5'?' · UDP':''}`:'выключено · трафик идёт напрямую'],
+ ['fw','wall','Файрвол',()=>`по умолчанию ${S.fwDefault} · ${S.waitSni?'ждать SNI':'по IP'} · LAN ${S.lan?'разрешена':'по правилам'}`],
+ ['log','logs','Журнал и хранение',()=>`файрвол: ${LOGM[S.logFw]} · анализ: ${LOGM[S.logAn]}`],
+ ['cap','cap','Захват и экспорт',()=>'pcapng · кольцевой буфер 4×50 МБ · pcap-over-IP выкл.'],
+ ['upd','filter','Обновление блок-листов',()=>'ежедневно · только Wi-Fi'],
+ ['backup','backup','Бэкап и импорт',()=>'автобэкап еженедельно · /Documents/Packetwall'],
+ ['tile','tile','Плитка и виджет',()=>'вкл/выкл · режим · профиль'],
+ ['look','palette','Внешний вид',()=>`${{system:'как в системе',light:'светлая',dark:'тёмная'}[S.theme]} · ${S.compact?'компактно':'обычная плотность'}`],
+ ['lang','lang','Язык',()=>'Русский']];
+const LOGM={none:'не сохранять',session:'сессия',stats:'статистика и блокировки',db:'база 14 дней'};
+SCREENS.settings=p=>({bar:AB('menu','Настройки',''),body:SET_ROWS.map(([k,ic,t,d])=>`<button type="button" class="srow" data-act="setSub" data-v="${k}"><span class="ic">${I(ic)}</span><div class="grow"><div class="h">${t}</div><div class="d">${d()}</div></div><span style="color:var(--mu)">${I('next','s')}</span></button>`).join('')});
+const RADIO=(key,opts,title)=>`<div class="sub">${title}</div>${opts.map(([v,t,d])=>`<button type="button" class="srow" data-act="setVal" data-k="${key}" data-v="${v}" style="min-height:52px"><span class="radio ${S[key]===v?'on':''}"></span><div class="grow"><div class="h">${t}</div>${d?`<div class="d">${d}</div>`:''}</div></button>`).join('')}`;
+const SWROW=(key,t,d)=>`<div class="srow"><div class="grow"><div class="h">${t}</div>${d?`<div class="d">${d}</div>`:''}</div><button type="button" class="sw ${S[key]?'on':''}" data-act="setBool" data-k="${key}" role="switch" aria-checked="${!!S[key]}" aria-label="${t}"></button></div>`;
+SCREENS.settingsSub=p=>{
+  const t=SET_ROWS.find(x=>x[0]===p.v)[2];let body='';
+  if(p.v==='dns')body=RADIO('dns',[['system','Системный DNS','как настроено в Android'],['adguard','AdGuard','DoH · dns.adguard-dns.com'],['quad9','Quad9','DoT · dns.quad9.net'],['cf','Cloudflare','DoH · 1.1.1.1']],'Сервер')+`<div class="sub">Блокировка</div>`+SWROW('dnsBlock','Блокировать на уровне DNS','заблокированные домены получают 0.0.0.0')+`<div class="empty" style="text-align:left;padding:12px 16px">Системный «Частный DNS» можно выключить: запросы всё равно уйдут зашифрованными, а имена будут видны в логах.</div>`;
+  else if(p.v==='fw')body=RADIO('fwDefault',[['drop','drop','пакеты молча отбрасываются'],['reject','reject','TCP RST / ICMP / NXDOMAIN']],'Действие блокировки по умолчанию')+`<div class="sub">Поведение</div>`+SWROW('waitSni','Ждать SNI, если имя неизвестно','решение по имени, а не по общему IP')+SWROW('lan','Разрешать локальную сеть','10.0.0.0/8, 192.168.0.0/16 мимо правил');
+  else if(p.v==='log')body=RADIO('logFw',[['none','Не сохранять'],['session','Только сессия'],['stats','Статистика и блокировки'],['db','Полная база','хранить '+S.logDays+' дней']],'Журнал файрвола')+RADIO('logAn',[['none','Не сохранять'],['session','Только сессия'],['db','Полная база']],'Журнал анализатора');
+  else if(p.v==='up')body=SWROW('up','Отправлять разрешённый трафик через upstream','фильтрация и анализ остаются в Packetwall')+`<div class="${S.up?'':'off-blk'}">`+
+    RADIO('upType',[['socks5','SOCKS5','TCP и UDP (UDP ASSOCIATE)'],['http','HTTP CONNECT','только TCP']],'Протокол')+
+    `<div class="sub">Адрес</div><div class="sform"><div class="ff"><label for="upHost">Хост</label><input id="upHost" class="mono" data-s="upHost" value="${esc(S.upHost)}" autocomplete="off"></div><div class="ff"><label for="upPort">Порт</label><input id="upPort" class="mono" data-s="upPort" value="${esc(S.upPort)}" inputmode="numeric" autocomplete="off"></div>
+     <div class="ff"><label for="upUser">Логин (если нужен)</label><input id="upUser" data-s="upUser" value="${esc(S.upUser)}" autocomplete="off"></div><div class="ff"><label for="upPass">Пароль</label><input id="upPass" type="password" data-s="upPass" value="${esc(S.upPass)}" autocomplete="off"></div></div>
+     <button type="button" class="srow" data-act="pickUpApp"><span class="ic">${AV(S.upApp)}</span><div class="grow"><div class="h">Приложение-прокси: ${APPS[S.upApp].n}</div><div class="d">${APPS[S.upApp].p} · исключено из VPN Packetwall, иначе его трафик вернётся в петлю</div></div><span style="color:var(--mu)">${I('next','s')}</span></button>
+     <div class="sub">Трафик</div>`+(S.upType==='socks5'?SWROW('upUdp','UDP и QUIC через upstream','SOCKS5 UDP ASSOCIATE; выключено — UDP идёт напрямую'):'<div class="srow"><div class="grow"><div class="d">HTTP CONNECT не передаёт UDP: QUIC и прочий UDP идут напрямую.</div></div></div>')+
+     SWROW('upDns','DNS через upstream','запросы встроенного DoH не уходят мимо прокси')+
+     RADIO('upFail',[['block','Блокировать трафик','kill switch: ничего не уходит напрямую'],['direct','Пускать напрямую','пока upstream снова не ответит']],'Если upstream недоступен')+
+     `<div style="padding:12px 16px 20px;display:flex;gap:10px;align-items:center"><button type="button" class="tb" id="upTestBtn" data-act="upTest">Проверить соединение</button><span class="t2" id="upTestRes" style="margin:0"></span></div></div>`;
+  else if(p.v==='look')body=RADIO('theme',[['system','Как в системе'],['light','Светлая'],['dark','Тёмная']],'Тема')+`<div class="sub">Плотность</div>`+SWROW('compact','Компактные списки','больше строк на экране в логах и правилах');
+  else body=`<div class="empty">Экран «${t}» в прототипе не детализирован.</div>`;
+  return {bar:AB('back',t,''),body};
+};
+SCREENS.settingsSub.after=el=>{el.querySelectorAll('[data-s]').forEach(i=>i.addEventListener('change',()=>{S[i.dataset.s]=i.value.trim();refreshAll()}))};
+SCREENS.about=p=>({bar:AB('menu','О приложении',''),body:`<div class="pad"><div class="card"><div class="row">${'<span class="av xl" style="background:var(--pri);color:var(--onp)">'+I('wall','s')+'</span>'}<div class="grow"><div class="t1" style="font-size:17px">Packetwall</div><div class="t2">0.1-prototype · GPL-3.0</div></div></div></div><div class="ls">${[['Сетевой движок','zdtun + nDPI (LGPL-3)'],['Минимальный Android','10 (API 29)'],['Исходный код','github.com/…/packetwall'],['Лицензии компонентов','zdtun, nDPI, zstd, MaxMind']].map(([a,b])=>`<div class="r2" style="padding:10px 12px"><div class="grow"><div class="t1" style="font-size:13px">${a}</div><div class="mt">${b}</div></div></div>`).join('')}</div></div>`});
+
+/* ================= ACTIONS ================= */
+const cur=()=>stack[stack.length-1];
+function applyTheme(){const r=document.documentElement;if(S.theme==='system')r.removeAttribute('data-theme');else r.setAttribute('data-theme',S.theme);try{localStorage.setItem('pw-theme',S.theme)}catch(e){}}
+function addRule(r){const s=setById(r.set);s.rules.unshift(r);return ()=>{const i=s.rules.indexOf(r);if(i>=0)s.rules.splice(i,1)}}
+const A={
+ drawer:()=>drawer(),
+ closeOv:()=>closeOverlay(),
+ back:()=>back(),
+ noop:()=>snack('В прототипе не реализовано'),
+ nav:d=>{closeOverlay();const top=stack[stack.length-1];if(top&&top.name===d.to)return;go(d.to,{},{root:true})},
+ power:()=>{S.on=!S.on;$('#sbVpn').hidden=!S.on;refreshAll();snack(S.on?'Защита включена':'Защита выключена')},
+ profiles:()=>sheet('Профиль',PROFILES[S.mode].map(pr=>`<button type="button" class="opt" data-act="setProfile" data-v="${pr.id}"><span class="radio ${S.profile[S.mode]===pr.id?'on':''}"></span><div class="grow"><div>${pr.n}</div><div class="d">${pr.sets.map(id=>setById(id).name).join(', ')}</div></div></button>`).join('')),
+ setProfile:d=>{S.profile[S.mode]=d.v;const pr=PROFILES[S.mode].find(p=>p.id===d.v);sets().forEach(s=>s.on=pr.sets.includes(s.id));closeOverlay();refreshAll();snack(`Профиль «${pr.n}»`)},
+ saveProfile:()=>{const n='Профиль '+(PROFILES[S.mode].length+1);PROFILES[S.mode].push({id:'p'+Date.now(),n,sets:sets().filter(s=>s.on).map(s=>s.id)});S.profile[S.mode]=PROFILES[S.mode].at(-1).id;refreshAll();snack(`Сохранено как «${n}»`)},
+ logsBlocked:()=>{S.logStatus='b';S.logTab='conns';go('logs',{},{root:true})},
+ allowHost:d=>{const c=CONNS.find(x=>x.id==d.id);const undo=addRule({id:++RID,set:sets()[0].id,act:'a',who:'*',type:'host',pat:c.host,sub:false,block:'drop',on:true});refreshAll();snack(`Разрешено: ${c.host}`,undo)},
+ conn:d=>{closeOverlay();S.pkSel=null;go('conn',{id:+d.id,tab:'ov'})},
+ pkClear:()=>{S.pkSel=null;refresh()},
+ connTab:d=>{cur().p.tab=d.v;refresh()},
+ connStep:d=>{const e=cur();const i=CONNS.findIndex(c=>c.id==e.p.id)+(+d.d);if(i<0||i>=CONNS.length)return;e.p.id=CONNS[i].id;S.pkSel=null;refresh();e.el.classList.add('a-fade')},
+ packet:d=>go('packet',{cid:+d.cid,i:+d.i}),
+ pktStep:d=>{const e=cur();const c=CONNS.find(x=>x.id==e.p.cid);const pk=packetsOf(c).filter(x=>x.k!=='drop');const pos=pk.findIndex(x=>x.i==e.p.i)+(+d.d);if(pos<0||pos>=pk.length)return;e.p.i=pk[pos].i;e.p.sel=undefined;refresh();e.el.classList.add('a-fade')},
+ treeSel:d=>{cur().p.sel=+d.i;refresh();scrollToHl(cur().el,true)},
+ dataMode:d=>{S.dataMode=d.v;refresh()},
+ copyChunk:()=>{try{navigator.clipboard.writeText('16 03 01 02 00 01 00 01 fc 03 03').then(()=>snack('Скопировано'),()=>snack('Буфер обмена недоступен'))}catch(e){snack('Буфер обмена недоступен')}},
+ logStatus:d=>{S.logStatus=d.v;refresh()},
+ logTab:d=>{S.logTab=d.v;refresh()},
+ clearFlt:()=>{S.logFilter='';refresh()},
+ compact:()=>{closeOverlay();S.compact=!S.compact;refreshAll()},
+ pause:()=>{S.paused=!S.paused;refresh();snack(S.paused?'Захват на паузе':'Захват продолжается')},
+ exportLog:()=>sheet('Экспорт',[['pcapng','с метаданными приложений'],['pcapng (отфильтрованное)','только соединения под фильтр'],['JSON','для своих скриптов'],['CSV','таблица соединений'],['Трансляция на ПК','pcap-over-IP · порт 57012']].map(([t,dd])=>`<button type="button" class="opt" data-act="exported" data-v="${t}">${I('share','s')}<div class="grow"><div>${t}</div><div class="d">${dd}</div></div></button>`).join('')),
+ exported:d=>{closeOverlay();snack(d.v==='Трансляция на ПК'?'Ожидание подключения Wireshark: 192.168.1.37:57012':`Экспорт: ${d.v}`)},
+ logMenu:()=>menu([{t:'Компактные строки',act:'compact',icon:'density',ck:S.compact},{t:'Очистить журнал',act:'noop',icon:'trash'},{t:'Справка по фильтрам',act:'fltHelp',icon:'info'}]),
+ fltHelp:()=>{closeOverlay();sheet('Фильтры',`<div style="padding:0 20px 10px;font-size:13px;line-height:1.7" class="mono">app == "T-Bank"<br>host ~ "rtb|stat"<br>host == "api.vk.ru"<br>ip == 178.130.0.0/16<br>proto == QUIC<br>bytes &gt; 1M<br>cc == RU<br>blocked · !blocked<br>условия через &amp;&amp;</div>`)},
+ refreshFilters:()=>{const b=$('#refBtn',cur().el);b.classList.add('spin');setTimeout(()=>{b.classList.remove('spin');FILTERS.forEach(f=>{if(f.on&&f.upd)f.upd='14.11 20:41'});refresh();snack(`Обновлено ${FILTERS.filter(f=>f.on&&f.upd).length} списка`)},1300)},
+ filtCat:d=>{S.filtCat=d.v;refresh()},
+ toggleFilter:d=>{const f=FILTERS.find(x=>x.id===d.id);f.on=!f.on;refreshAll()},
+ openFilter:d=>{const f=FILTERS.find(x=>x.id===d.id);sheet(f.name,`<div style="padding:0 20px 8px;font-size:13px;color:var(--on2);line-height:1.6">${fmtN(f.count)} правил${f.skipped?', пропущено при конвертации '+fmtN(f.skipped):''}<br>${f.url?`<span class="mono" style="font-size:11.5px;overflow-wrap:anywhere">${esc(f.url)}</span><br>`:'файл, без автообновления<br>'}Приоритет ${prioOf(f)} · ${f.on?'включён':'выключен'}</div><button type="button" class="opt" data-act="toggleFilter" data-id="${f.id}">${I(f.on?'close':'check','s')}${f.on?'Выключить':'Включить'}</button><button type="button" class="opt" data-act="nav" data-to="sets" data-push="1">${I('layers','s')}Изменить приоритет</button><button type="button" class="opt" data-act="noop" style="color:var(--er)">${I('trash','s')}Удалить</button>`)},
+ importSheet:()=>sheet('Импорт: исходный формат',[['hosts','0.0.0.0 example.com'],['Список доменов','один домен на строку'],['uBlock Origin / AdGuard','||x^, @@||x^, $app=, $important'],['CIDR-список','IP и подсети'],['PCAPdroid','JSON-экспорт правил'],['NetGuard / AFWall+ / RethinkDNS','экспорт приложений и хостов'],['sing-box rule-set','.json / .srs']].map(([t,dd])=>`<button type="button" class="opt" data-act="importFmt" data-v="${t}">${I('import','s')}<div class="grow"><div>${t}</div><div class="d">${dd}</div></div></button>`).join('')),
+ importFmt:d=>{closeOverlay();const f={id:'f'+Date.now(),kind:'filter',name:'Импорт: '+d.v,on:true,count:1284,cat:'own',imp:1,skipped:d.v.startsWith('uBlock')?211:0,dom:[],rules:[]};FILTERS.push(f);setTimeout(()=>{refreshAll();snack(`Импортировано 1 284 правила в набор с приоритетом ${prioOf(f)}`)},320)},
+ addUrl:()=>sheet('Список по URL',`<div class="form" style="padding-top:0"><div class="ff"><label for="newUrl">Адрес списка</label><input id="newUrl" class="mono" placeholder="https://…/list.txt"></div><div class="row"><span class="t2 grow" style="margin:0">Формат определится автоматически</span><button type="button" class="tb" data-act="importFmt" data-v="URL-список">Добавить</button></div></div>`),
+ ruleSet:d=>{S.ruleSet=d.v;S.ruleSearch=null;refresh()},
+ ruleType:d=>{S.ruleType=d.v;refresh()},
+ ruleSearch:()=>{S.ruleSearch=S.ruleSearch===null?'':null;refresh()},
+ ruleSearchM:()=>{closeOverlay();S.ruleSearch='';refresh()},
+ rulesMenu:()=>menu([{t:'Поиск в наборе',act:'ruleSearchM',icon:'search'},{t:'Порядок наборов',act:'nav',data:'data-to="sets" data-push="1"',icon:'layers'},{t:'Настроить набор',act:'editSet',data:`data-id="${S.ruleSet}"`,icon:'gear'},{t:'Импорт в набор',act:'importSheet',icon:'import'},{t:'Экспорт набора',act:'exportLog',icon:'share'}]),
+ newRule:d=>{closeOverlay();const who=d.who||'*';go('ruleEdit',{draft:{id:null,set:who==='*'?S.ruleSet:sets()[0].id,act:'b',who,type:who==='*'?S.ruleType:'host',pat:'',sub:false,block:S.fwDefault,on:true}})},
+ newRuleFor:d=>{const c=CONNS.find(x=>x.id==d.id);go('ruleEdit',{draft:{id:null,set:sets()[0].id,act:blocked(c)?'a':'b',who:'*',type:'host',pat:c.host,sub:false,block:S.fwDefault,on:true}})},
+ editRule:d=>{closeOverlay();const r=ruleById(d.id);if(!r)return;if(setById(r.set).kind==='filter'){A.openFilter({id:r.set});return}go('ruleEdit',{id:r.id,draft:{...r}})},
+ draft:d=>{const dr=cur().p.draft;const pat=$('#pat',cur().el);if(pat)dr.pat=pat.value.trim();dr[d.k]=d.k==='sub'||d.k==='on'?!!d.v:d.v;if(d.k==='type'){dr.pat=dr.type==='all'?'*':''}refresh()},
+ pickWho:()=>{const dr=cur().p.draft;sheet('Кто',[['*','Глобально','для всех приложений']].concat(Object.keys(APPS).map(a=>[a,APPS[a].n,APPS[a].p])).map(([k,t,dd])=>`<button type="button" class="opt" data-act="draftPick" data-k="who" data-v="${k}">${k==='*'?I('lang','s'):AV(k)}<div class="grow"><div>${t}</div><div class="d">${dd}</div></div>${dr.who===k?I('check','s'):''}</button>`).join(''))},
+ pickSet:()=>{const dr=cur().p.draft;sheet('Набор',sets().map(s=>`<button type="button" class="opt" data-act="draftPick" data-k="set" data-v="${s.id}"><span class="prio">${prioOf(s)}</span><div class="grow"><div>${esc(s.name)}</div><div class="d">${s.rules.length} правил${s.on?'':' · выключен'}</div></div>${dr.set===s.id?I('check','s'):''}</button>`).join(''))},
+ draftPick:d=>{const dr=cur().p.draft;const pat=$('#pat',cur().el);if(pat)dr.pat=pat.value.trim();dr[d.k]=d.v;if(d.k==='who'&&d.v==='*'&&dr.type==='all')dr.type='host';closeOverlay();refresh()},
+ saveRule:()=>{const e=cur();const dr=e.p.draft;const pat=$('#pat',e.el);if(pat)dr.pat=pat.value.trim();
+   if(dr.type!=='all'&&!dr.pat){snack('Заполните хост, адрес или порт');return}
+   if(dr.type==='host'){try{globRe(dr.pat,dr.sub)}catch(x){snack('Маска не распознана');return}}
+   if(e.p.id){const old=ruleById(e.p.id);const os=setById(old.set);os.rules.splice(os.rules.indexOf(old),1);setById(dr.set).rules.unshift({...dr,id:old.id})}
+   else addRule({...dr,id:++RID});
+   back();setTimeout(()=>{refreshAll();snack(e.p.id?'Правило сохранено':'Правило добавлено в «'+setById(dr.set).name+'»')},260)},
+ delRule:()=>{const e=cur();const old=ruleById(e.p.id);const os=setById(old.set);const i=os.rules.indexOf(old);os.rules.splice(i,1);back();setTimeout(()=>{refreshAll();snack('Правило удалено',()=>os.rules.splice(i,0,old))},260)},
+ fwSet:d=>{S.fwSet=d.v;refresh()},
+ fwMenu:()=>menu([{t:'Скрыть приложения без правил',act:'fwHide',icon:'filter',ck:S.fwHideEmpty},{t:'Показывать системные',act:'fwSys',icon:'screen',ck:S.fwSys},{t:'Группы приложений',act:'noop',icon:'layers'}]),
+ fwHide:()=>{S.fwHideEmpty=!S.fwHideEmpty;closeOverlay();refresh()},
+ fwSys:()=>{S.fwSys=!S.fwSys;closeOverlay();refresh()},
+ openApp:d=>{closeOverlay();go('app',{id:d.id})},
+ toggleHost:d=>{const own=sets().find(x=>x.rules.some(r=>r.who===d.app&&r.type==='host'&&r.pat===d.host));
+   if(own){const i=own.rules.findIndex(r=>r.who===d.app&&r.type==='host'&&r.pat===d.host);const [old]=own.rules.splice(i,1);refreshAll();snack(`Правило для ${d.host} удалено из «${own.name}»`,()=>own.rules.splice(i,0,old));return}
+   const s=sets()[0];
+   const c=CONNS.find(x=>x.app===d.app&&x.host===d.host);const act=blocked(c)?'a':'b';const undo=addRule({id:++RID,set:s.id,act,who:d.app,type:'host',pat:d.host,sub:false,block:S.fwDefault,on:true});refreshAll();
+   snack(`${act==='a'?'Разрешено':'Запрещено'} для ${APPS[d.app].n} в «${s.name}»${blocked(c)===(act==='b')?'':' (перекрыто набором выше)'}`,undo)},
+ editSet:d=>{closeOverlay();go('setEdit',{id:d.id})},
+ toggleSet:d=>{const s=setById(d.id);s.on=!s.on;refreshAll()},
+ openSetRules:d=>{S.ruleSet=d.id;go('rules',{},{root:true})},
+ delSet:d=>{const ss=sets();if(ss.length<2){snack('Нельзя удалить последний набор');return}const i=ss.findIndex(s=>s.id===d.id);const [old]=ss.splice(i,1);back();setTimeout(()=>{refreshAll();snack(`Набор «${old.name}» удалён`,()=>ss.splice(i,0,old))},260)},
+ newSet:()=>{const s={id:'s'+Date.now(),name:'Новый набор',on:true,cond:{},rules:[]};sets().push(s);refreshAll();go('setEdit',{id:s.id})},
+ setSub:d=>go('settingsSub',{v:d.v}),
+ setVal:d=>{closeOverlay();S[d.k]=d.v;if(d.k==='theme')applyTheme();refreshAll()},
+ setBool:d=>{S[d.k]=!S[d.k];refreshAll()},
+ pickUpApp:()=>sheet('Приложение-прокси',['singbox','v2rayng'].concat(Object.keys(APPS).filter(a=>!APPS[a].sys&&!['singbox','v2rayng'].includes(a))).map(a=>`<button type="button" class="opt" data-act="setVal" data-k="upApp" data-v="${a}">${AV(a)}<div class="grow"><div>${APPS[a].n}</div><div class="d">${APPS[a].p}</div></div>${S.upApp===a?I('check','s'):''}</button>`).join('')),
+ upTest:()=>{const r=$('#upTestRes',cur().el);if(r)r.textContent='проверка…';setTimeout(()=>{const r2=$('#upTestRes',cur().el);const ok=/^\d+$/.test(S.upPort)&&S.upHost;if(r2){r2.style.color=ok?'var(--ok)':'var(--er)';r2.textContent=ok?`отвечает · 38 мс · внешний IP 203.0.113.24${S.upType==='socks5'&&S.upUdp?' · UDP ок':''}`:'не отвечает: проверьте адрес и порт'}},700)},
+};
+document.getElementById('dev').addEventListener('click',e=>{
+  const t=e.target.closest('[data-act]');if(!t||t.closest('.dis'))return;
+  const f=A[t.dataset.act];if(f){e.preventDefault();f(t.dataset,t)}
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')back()});
+try{const th=localStorage.getItem('pw-theme');if(th){S.theme=th;applyTheme()}}catch(e){}
+go('home');
+</script>
