@@ -57,6 +57,8 @@ sealed interface Dest {
     data object Settings : Dest
     data object About : Dest
     data class Connection(val id: Int) : Dest
+    data class AppRules(val pkg: String) : Dest
+    data class GroupRules(val id: Int) : Dest
 }
 
 private data class DrawerEntry(val dest: Dest, @StringRes val label: Int, @DrawableRes val icon: Int)
@@ -105,13 +107,17 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                 Dest.Home -> HomeScreen(app, state, onToggleProtection, openDrawer, onOpenLogs = { nav.root(Dest.Logs) },
                     onOpenStats = { nav.root(Dest.Stats) }, onOpenConn = { nav.push(Dest.Connection(it)) })
                 Dest.Logs -> LogsScreen(app, state, openDrawer, onOpenConn = { nav.push(Dest.Connection(it)) })
-                is Dest.Connection -> ConnectionScreen(app, d.id, onBack = { nav.pop() })
+                is Dest.Connection -> ConnectionScreen(app, d.id, onBack = { nav.pop() },
+                    onOpenApp = { nav.push(Dest.AppRules(it)) })
                 Dest.Stats -> PlaceholderScreen(R.string.nav_stats, "M2", openDrawer)
-                Dest.Apps -> PlaceholderScreen(R.string.nav_apps, "M1", openDrawer)
-                Dest.Global -> PlaceholderScreen(R.string.nav_global, "M1", openDrawer)
-                Dest.Blocklists -> PlaceholderScreen(R.string.nav_blocklists, "M1", openDrawer)
-                Dest.Sets -> PlaceholderScreen(R.string.nav_sets, "M1", openDrawer)
-                Dest.Settings -> PlaceholderScreen(R.string.nav_settings, "M1", openDrawer)
+                Dest.Apps -> AppsScreen(app, openDrawer, onOpenApp = { nav.push(Dest.AppRules(it)) },
+                    onOpenGroup = { nav.push(Dest.GroupRules(it)) })
+                is Dest.AppRules -> WhoRulesScreen(app, io.github.cinnamon415.packetwall.fw.Who.App(d.pkg), onBack = { nav.pop() })
+                is Dest.GroupRules -> WhoRulesScreen(app, io.github.cinnamon415.packetwall.fw.Who.Group(d.id), onBack = { nav.pop() })
+                Dest.Global -> GlobalScreen(app, openDrawer)
+                Dest.Blocklists -> BlocklistsScreen(app, openDrawer)
+                Dest.Sets -> SetsScreen(app, openDrawer)
+                Dest.Settings -> PlaceholderScreen(R.string.nav_settings, "M3", openDrawer)
                 Dest.About -> AboutScreen(openDrawer)
             }
         }

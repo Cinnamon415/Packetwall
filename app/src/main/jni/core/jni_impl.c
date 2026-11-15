@@ -21,6 +21,7 @@
 
 #include <pthread.h>
 #include "pcapdroid.h"
+#include "pw_rules.h"
 #include "common/utils.h"
 #include "log_writer.h"
 #include "port_map.h"
@@ -180,7 +181,8 @@ static jobject getConnUpdate(pcapdroid_t *pd, const conn_and_tuple_t *conn) {
                                     (blocked << 10) |
                                     (data->blacklisted_domain << 9) |
                                     (data->blacklisted_ip << 8) |
-                                    (data->status & 0xFF) /* 8 bits */);
+                                    (data->status & 0xFF) /* 8 bits */,
+                               (jint) data->fw_rule);
         failed = jniCheckException(env);
     }
     if(!failed && (data->update_type & CONN_UPDATE_INFO)) {
@@ -628,7 +630,7 @@ static void init_jni(JNIEnv *env) {
     mids.connInit = jniGetMethodID(env, cls.conn, "<init>", "(IIILjava/lang/String;Ljava/lang/String;Ljava/lang/String;IIIIIIZJ)V");
     mids.connProcessUpdate = jniGetMethodID(env, cls.conn, "processUpdate", "(Lio/github/cinnamon415/packetwall/engine/model/ConnectionUpdate;)V");
     mids.connUpdateInit = jniGetMethodID(env, cls.conn_update, "<init>", "(I)V");
-    mids.connUpdateSetStats = jniGetMethodID(env, cls.conn_update, "setStats", "(JJJJIIIII)V");
+    mids.connUpdateSetStats = jniGetMethodID(env, cls.conn_update, "setStats", "(JJJJIIIIII)V");
     mids.connUpdateSetInfo = jniGetMethodID(env, cls.conn_update, "setInfo", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V");
     mids.connUpdateSetPayload = jniGetMethodID(env, cls.conn_update, "setPayload", "(Ljava/util/ArrayList;I)V");
     mids.statsInit = jniGetMethodID(env, cls.stats, "<init>", "()V");
@@ -1538,3 +1540,16 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_nativeIsKnownDnsServ
 }
 
 #endif // ANDROID
+
+/* ******************************************************* */
+
+// Packetwall: load a compiled rules file (see pw_rules.c). Can be called while stopped.
+JNIEXPORT jint JNICALL
+Java_io_github_cinnamon415_packetwall_engine_CaptureService_loadRules(JNIEnv *env, jclass clazz, jstring path) {
+    const char *p = (*env)->GetStringUTFChars(env, path, NULL);
+    if(!p)
+        return -1;
+    int rv = pw_fw_load(p);
+    (*env)->ReleaseStringUTFChars(env, path, p);
+    return rv;
+}

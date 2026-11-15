@@ -1,6 +1,10 @@
 package io.github.cinnamon415.packetwall.ui
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +48,9 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
     var filter by rememberSaveable { mutableStateOf("") }
     var status by rememberSaveable { mutableStateOf(0) } // 0 all, 1 blocked, 2 allowed
     var compact by rememberSaveable { mutableStateOf(false) }
+    var quick by remember { mutableStateOf<Conn?>(null) }
+    val ctx = LocalContext.current
+    val fw by app.firewall.state.collectAsState()
     val q = filter.trim().lowercase()
     val list = conns.filter { c ->
         (status == 0 || (status == 1) == c.blocked) &&
@@ -69,19 +76,26 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
             }
         } else LazyColumn {
             items(list, key = { it.id }) { c ->
-                ConnRow(c, compact) { onOpenConn(c.id) }
+                ConnRow(c, compact, onLongClick = { quick = c }) { onOpenConn(c.id) }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
             }
         }
     }
+    quick?.let { c ->
+        QuickRuleSheet(c, app, fw, onDismiss = { quick = null }) { msg ->
+            quick = null
+            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ConnRow(c: Conn, compact: Boolean, onClick: () -> Unit) {
+private fun ConnRow(c: Conn, compact: Boolean, onLongClick: () -> Unit, onClick: () -> Unit) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val time = formatTime(c.firstSeen)
     val proto = "${c.protoLabel}, ${c.dstPort}"
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = if (compact) 5.dp else 7.dp),
+    Row(Modifier.fillMaxWidth().combinedClickable(onLongClick = onLongClick, onClick = onClick).padding(horizontal = 10.dp, vertical = if (compact) 5.dp else 7.dp),
         verticalAlignment = Alignment.CenterVertically) {
         AppIcon(c.app, if (compact) 32.dp else 40.dp)
         Spacer(Modifier.width(12.dp))

@@ -124,6 +124,8 @@ typedef struct {
     bool blacklisted_domain;
     bool whitelisted_app;
     bool to_block;
+    bool fw_reject;      // Packetwall: reject instead of drop
+    int32_t fw_rule;     // Packetwall: matched rule ref (0 = none)
     bool fw_app_block;
     bool netd_block_missed;
     bool proxied;

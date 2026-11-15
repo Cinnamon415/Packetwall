@@ -25,6 +25,7 @@
 #include "common/utils.h"
 #include "pcapd/pcapd.h"
 #include "ndpi_protocol_ids.h"
+#include "pw_rules.h"
 
 extern int run_vpn(pcapdroid_t *pd);
 extern int run_pcap(pcapdroid_t *pd);
@@ -477,24 +478,44 @@ const char* pd_get_proto_name(pcapdroid_t *pd, uint16_t proto, uint16_t alpn, in
 
 /* ******************************************************* */
 
-// Check the per-app allowlist of the firewall blocklist for this connection's app.
-// A domain match requires data->info to be known before the connection's first packet: either from
-// a prior DNS reply (host LRU, at connection creation) or, for a DNS request, from the query name
-// DPI parses on the first packet. The TLS SNI cannot exempt a blocked TLS flow, as the connection
-// is dropped on its first packet (the SYN) and the ClientHello carrying the SNI is never sent; such
-// flows can only be allowed via the host resolved from a prior DNS reply
-static bool firewall_app_allowlisted(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
-    if(!pd->firewall.enabled || !pd->firewall.bl)
-        return false;
+// Packetwall: evaluate the rule engine for this connection and update data->to_block.
+// Returns true if the block state changed.
+static bool pw_fw_apply(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
+    const pw_engine_t *e = pw_fw_current();
+    bool fw_block = false;
 
-    blacklist_t *allowlist = blacklist_get_app_allowlist(pd->firewall.bl, data->uid);
-    if(allowlist == NULL)
-        return false;
+    data->fw_rule = 0;
+    data->fw_reject = false;
 
-    const zdtun_ip_t dst_ip = tuple->dst_ip;
+    if(e && pd->vpn_capture) {
+        zdtun_ip_t dst_ip = tuple->dst_ip;
+        uint16_t dport = ntohs(tuple->dst_port);
+        pw_query_t q = {
+            .uid = data->uid,
+            .ipver = tuple->ipver,
+            .ip = &dst_ip,
+            .host = data->info,
+            .country = data->country_code,
+            .proto = tuple->ipproto,
+            .port = dport,
+            .dns_query = (dport == 53) && ((data->uid == UID_NETD) || (data->uid == UID_UNKNOWN)),
+        };
+        pw_verdict_t v = pw_engine_eval(e, &q);
 
-    return blacklist_match_ip(allowlist, &dst_ip, tuple->ipver) ||
-           (data->info && data->info[0] && blacklist_match_domain(allowlist, data->info));
+        if(v.matched) {
+            data->fw_rule = v.ref;
+            fw_block = v.block;
+            data->fw_reject = v.block && v.reject;
+        }
+    }
+
+    bool block = data->blacklisted_internal || data->blacklisted_ip || data->blacklisted_domain || fw_block;
+    if(block != data->to_block) {
+        data->to_block = block;
+        data->update_type |= CONN_UPDATE_STATS;
+        return true;
+    }
+    return false;
 }
 
 /* ******************************************************* */
@@ -521,49 +542,7 @@ static void check_domain_block_rules(pcapdroid_t *pd, pd_conn_t *data, const zdt
             }
         }
 
-        if(pd->firewall.enabled && pd->firewall.bl && (!data->to_block || data->fw_app_block)) {
-            char appbuf[64];
-            char buf[512];
-
-            if(blacklist_match_domain(pd->firewall.bl, data->info)) {
-                data->to_block = true;
-                data->fw_app_block = false;
-                get_appname_by_uid(pd, data->uid, appbuf, sizeof(appbuf));
-                log_d("Blocked domain [%s]: %s [%s]", data->info, zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
-            } else if(data->fw_app_block) {
-                blacklist_t *allowlist = blacklist_get_app_allowlist(pd->firewall.bl, data->uid);
-
-                if((allowlist != NULL) && blacklist_match_domain(allowlist, data->info)) {
-                    data->to_block = (data->blacklisted_internal || data->blacklisted_ip || data->blacklisted_domain);
-                    data->fw_app_block = false;
-                    get_appname_by_uid(pd, data->uid, appbuf, sizeof(appbuf));
-                    log_d("App allowlist exempted (domain) [%s]: %s [%s]", data->info,
-                          zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
-                }
-            }
-        }
-    }
-}
-
-/* ******************************************************* */
-
-static void check_whitelist_mode_block(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
-    // whitelist mode: block any app unless it's explicitly whitelisted.
-    // The blocklist still has priority to determine if a connection should be blocked.
-
-    // NOTE: data->l7proto is not computed yet
-    bool is_dns = (tuple->ipproto == IPPROTO_UDP) && (ntohs(tuple->dst_port) == 53);
-
-    if(pd->firewall.enabled && pd->firewall.wl_enabled && pd->firewall.wl && !data->to_block &&
-            // always allow DNS traffic from unspecified apps
-            (!is_dns || ((data->uid != UID_NETD) && (data->uid != UID_PHONE) && (data->uid != UID_UNKNOWN))))
-    {
-        // The per-app allowlist is consulted before the whitelist
-        if(!firewall_app_allowlisted(pd, tuple, data)) {
-            data->to_block = !blacklist_match_uid(pd->firewall.wl, data->uid);
-            if(data->to_block)
-                data->fw_app_block = true;
-        }
+        pw_fw_apply(pd, tuple, data);
     }
 }
 
@@ -686,42 +665,8 @@ pd_conn_t* pd_new_connection(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, int u
         bl_num_checked_connections++;
     }
 
-    if(pd->firewall.enabled && pd->firewall.bl && !data->to_block) {
-        char appbuf[64];
-        char buf[256];
-
-        data->to_block |= blacklist_match_ip(pd->firewall.bl, &dst_ip, tuple->ipver);
-        if(data->to_block) {
-            get_appname_by_uid(pd, data->uid, appbuf, sizeof(appbuf));
-            log_d("Blocked ip: %s [%s]", zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
-        }
-
-        // Global IP/domain/country block rules keep precedence over the per-app allowlist
-        if(!data->to_block) {
-            data->to_block = blacklist_match_country(pd->firewall.bl, data->country_code);
-            if(data->to_block) {
-                get_appname_by_uid(pd, data->uid, appbuf, sizeof(appbuf));
-                log_d("Blocked country \"%s\": %s [%s]", data->country_code,
-                      zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
-            }
-        }
-
-        if(!data->to_block && blacklist_match_uid(pd->firewall.bl, data->uid)) {
-            if(!firewall_app_allowlisted(pd, tuple, data)) {
-                data->to_block = true;
-                data->fw_app_block = true;
-                get_appname_by_uid(pd, data->uid, appbuf, sizeof(appbuf));
-                log_d("Blocked app: %s [%s]", zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
-            } else {
-                get_appname_by_uid(pd, data->uid, appbuf, sizeof(appbuf));
-                log_d("App allowlist exempted: %s [%s]", zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
-            }
-        }
-
-        fw_num_checked_connections++;
-    }
-
-    check_whitelist_mode_block(pd, tuple, data);
+    pw_fw_apply(pd, tuple, data);
+    fw_num_checked_connections++;
 
     return(data);
 }
@@ -1215,27 +1160,9 @@ static void iter_active_connections(pcapdroid_t *pd, conn_cb cb) {
 /* ******************************************************* */
 
 static int recompute_conn_block_cb(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
-    zdtun_ip_t dst_ip = tuple->dst_ip;
-    blacklist_t *fw_bl = pd->firewall.bl;
-    bool old_block = data->to_block;
+    int32_t old_rule = data->fw_rule;
 
-    data->to_block = (data->blacklisted_internal || data->blacklisted_ip || data->blacklisted_domain);
-    data->fw_app_block = false;
-    if(!data->to_block && pd->firewall.enabled && fw_bl) {
-        // Global IP/domain/country block rules have precedence over the per-app allowlist
-        data->to_block = blacklist_match_ip(fw_bl, &dst_ip, tuple->ipver) ||
-                         (data->info && data->info[0] && blacklist_match_domain(fw_bl, data->info)) ||
-                         blacklist_match_country(fw_bl, data->country_code);
-
-        if(!data->to_block && blacklist_match_uid(fw_bl, data->uid) && !firewall_app_allowlisted(pd, tuple, data)) {
-            data->to_block = true;
-            data->fw_app_block = true;
-        }
-    }
-
-    check_whitelist_mode_block(pd, tuple, data);
-
-    if(old_block != data->to_block) {
+    if(pw_fw_apply(pd, tuple, data) || (old_rule != data->fw_rule)) {
         data->update_type |= CONN_UPDATE_STATS;
         pd_notify_connection_update(pd, tuple, data);
     }
@@ -1296,6 +1223,10 @@ static void stop_pcap_dump(pcapdroid_t *pd) {
 /* Perfom periodic tasks. This should be called after processing a packet or after some time has
  * passed (e.g. after a select with no packet). */
 void pd_housekeeping(pcapdroid_t *pd) {
+    // Packetwall: new rules loaded from the UI
+    if(pw_fw_swap_pending() && pd->vpn_capture)
+        iter_active_connections(pd, recompute_conn_block_cb);
+
     if(dump_capture_stats_now ||
             (pd->capture_stats.new_stats && ((pd->now_ms - pd->capture_stats.last_update_ms) >= CAPTURE_STATS_UPDATE_FREQUENCY_MS))) {
         dump_capture_stats_now = false;

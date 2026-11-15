@@ -13,6 +13,40 @@ class AppsResolver(private val ctx: Context) {
 
     fun get(uid: Int): AppInfo = cache.getOrPut(uid) { resolve(uid) }
 
+    /** Package (or pseudo-package of a system uid) to uid; null if not installed. */
+    fun uidOf(pkg: String): Int? {
+        SPECIAL.entries.firstOrNull { it.value == pkg }?.let { return it.key }
+        if (pkg.startsWith("uid:")) return pkg.removePrefix("uid:").toIntOrNull()
+        return try {
+            ctx.packageManager.getApplicationInfo(pkg, 0).uid
+        } catch (e: PackageManager.NameNotFoundException) {
+            null
+        }
+    }
+
+    /** Installed apps (one entry per package) plus the system pseudo-apps. */
+    fun installed(): List<AppInfo> {
+        val pm = ctx.packageManager
+        val list = pm.getInstalledApplications(0).map { ai ->
+            AppInfo(ai.uid, ai.packageName, pm.getApplicationLabel(ai).toString(),
+                (ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0)
+        }
+        return SPECIAL.keys.map { get(it) } + list.filter { it.packageName !in SPECIAL.values }
+    }
+
+    /** Info for a package, also when it is not the "main" package of its uid. */
+    fun byPackage(pkg: String): AppInfo? {
+        uidOf(pkg)?.let { uid -> if (SPECIAL.containsKey(uid) || pkg.startsWith("uid:")) return get(uid) }
+        return try {
+            val pm = ctx.packageManager
+            val ai = pm.getApplicationInfo(pkg, 0)
+            AppInfo(ai.uid, pkg, pm.getApplicationLabel(ai).toString(),
+                (ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0)
+        } catch (e: PackageManager.NameNotFoundException) {
+            null
+        }
+    }
+
     private fun resolve(uid: Int): AppInfo {
         special(uid)?.let { return it }
         val pm = ctx.packageManager
@@ -30,13 +64,21 @@ class AppsResolver(private val ctx: Context) {
         }
     }
 
-    private fun special(uid: Int): AppInfo? = when (uid) {
-        -1 -> AppInfo(uid, "unknown", "Unknown (−1)", true)
-        0 -> AppInfo(uid, "root", "root", true)
-        Process.SYSTEM_UID -> AppInfo(uid, "android", "Android System", true)
-        1001 -> AppInfo(uid, "phone", "Phone (radio)", true)
-        1051 -> AppInfo(uid, "netd", "netd (DNS)", true)
-        1052 -> AppInfo(uid, "dns_tether", "DNS tether", true)
-        else -> null
+    private fun special(uid: Int): AppInfo? = SPECIAL[uid]?.let { pkg -> AppInfo(uid, pkg, specialName(uid), true) }
+
+    private fun specialName(uid: Int): String = when (uid) {
+        -1 -> "Unknown (−1)"
+        0 -> "root"
+        Process.SYSTEM_UID -> "Android System"
+        1001 -> "Phone (radio)"
+        1051 -> "netd (DNS)"
+        1052 -> "DNS tether"
+        else -> "uid $uid"
+    }
+
+    companion object {
+        /** System uids without a package of their own, mapped to pseudo-package names. */
+        val SPECIAL = linkedMapOf(-1 to "unknown", 0 to "root", Process.SYSTEM_UID to "android",
+            1001 to "phone", 1051 to "netd", 1052 to "dns_tether")
     }
 }

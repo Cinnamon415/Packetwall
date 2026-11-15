@@ -12,6 +12,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.Handler
@@ -46,6 +50,9 @@ class CaptureService : VpnService() {
     private lateinit var apps: AppsResolver
     private lateinit var register: ConnectionsRegister
     private var dnsServer = FALLBACK_DNS4
+    private var netCallback: ConnectivityManager.NetworkCallback? = null
+    /** Non-VPN networks: link properties and transports, to follow DNS and Private DNS changes. */
+    private val networks = HashMap<Network, Pair<LinkProperties?, NetworkCapabilities?>>()
 
     override fun onCreate() {
         super.onCreate()
@@ -77,7 +84,11 @@ class CaptureService : VpnService() {
     }
 
     private fun startCapture() {
+        (application as io.github.cinnamon415.packetwall.PacketwallApp).firewall.compileNow()
         dnsServer = detectSystemDns() ?: FALLBACK_DNS4
+        getSystemService(ConnectivityManager::class.java)?.let { cm ->
+            cm.activeNetwork?.let { handleLinkProperties(cm.getLinkProperties(it), initial = true) }
+        }
         Log.i(TAG, "Starting capture, upstream DNS $dnsServer")
 
         val builder = Builder()
@@ -113,6 +124,7 @@ class CaptureService : VpnService() {
         register.reset()
         state.value = CaptureState.Running(System.currentTimeMillis())
 
+        startNetworkTracking()
         loopThread = Thread({
             try {
                 runPacketLoop(fd.fd, this, Build.VERSION.SDK_INT)
@@ -124,7 +136,71 @@ class CaptureService : VpnService() {
         }, "PacketLoop").also { it.start() }
     }
 
+    /**
+     * Private DNS in "automatic" mode is blocked, so Android falls back to plain DNS that the
+     * firewall can see (as PCAPdroid does). In strict mode names stay hidden: the UI shows a notice.
+     */
+    private fun handleLinkProperties(lp: LinkProperties?, initial: Boolean = false) {
+        if (lp == null) return
+        val strict = lp.privateDnsServerName != null
+        // Off or automatic: DoT to our DNS addresses is dropped so Android uses plain DNS.
+        // Checking isPrivateDnsActive is not enough: it is per network and the VPN network
+        // may enable it while the underlying one did not.
+        setPrivateDnsBlocked(!strict)
+        privateDnsStrict.value = strict
+        val dns = lp.dnsServers.firstOrNull { it is Inet4Address }?.hostAddress ?: return
+        if (dns != dnsServer) {
+            Log.i(TAG, "DNS server changed: $dnsServer -> $dns")
+            dnsServer = dns
+            if (!initial) setDnsServer(dns)
+        }
+    }
+
+    private fun pickUnderlying(): LinkProperties? {
+        fun rank(c: NetworkCapabilities?) = when {
+            c == null -> 9
+            c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> 0
+            c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> 1
+            c.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> 2
+            else -> 3
+        }
+        return networks.values.filter { it.first != null }.minByOrNull { rank(it.second) }?.first
+    }
+
+    private fun startNetworkTracking() {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        val req = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            .build()
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                handler.post { networks[network] = networks[network]?.first to caps; handleLinkProperties(pickUnderlying()) }
+            }
+            override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) {
+                handler.post { networks[network] = lp to networks[network]?.second; handleLinkProperties(pickUnderlying()) }
+            }
+            override fun onLost(network: Network) {
+                handler.post { networks.remove(network); handleLinkProperties(pickUnderlying()) }
+            }
+        }
+        try {
+            cm.registerNetworkCallback(req, cb)
+            netCallback = cb
+        } catch (e: Exception) {
+            Log.w(TAG, "registerNetworkCallback failed", e)
+        }
+    }
+
+    private fun stopNetworkTracking() {
+        netCallback?.let { cb -> try { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } catch (_: Exception) {} }
+        netCallback = null
+        networks.clear()
+        setPrivateDnsBlocked(false)
+    }
+
     private fun onLoopExited() {
+        stopNetworkTracking()
         try { pfd?.close() } catch (_: Exception) {}
         pfd = null
         loopThread = null
@@ -286,6 +362,12 @@ class CaptureService : VpnService() {
         @JvmStatic external fun runPacketLoop(fd: Int, vpn: CaptureService, sdk: Int)
         @JvmStatic external fun stopPacketLoop()
         @JvmStatic external fun askStatsDump()
+        @JvmStatic external fun setDnsServer(server: String)
+        @JvmStatic external fun setPrivateDnsBlocked(block: Boolean)
+        /** Private DNS is in strict mode: queries are encrypted, rules by name only see SNI. */
+        val privateDnsStrict = kotlinx.coroutines.flow.MutableStateFlow(false)
+        /** Loads a compiled rules file into the native engine; works while stopped too. */
+        @JvmStatic external fun loadRules(path: String): Int
     }
 }
 

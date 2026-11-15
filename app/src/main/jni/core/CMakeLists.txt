@@ -13,6 +13,7 @@ add_library(capture SHARED
         log_writer.c
         port_map.c
         ushark_dll.c
+        pw_rules.c
         jni_impl.c)
 
 # nDPI

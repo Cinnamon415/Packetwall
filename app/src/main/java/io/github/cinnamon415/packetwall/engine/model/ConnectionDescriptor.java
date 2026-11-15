@@ -45,6 +45,7 @@ public class ConnectionDescriptor {
     public int error;
 
     public boolean is_blocked;
+    public int fw_rule;
     public boolean blacklisted_ip;
     public boolean blacklisted_host;
     public boolean netd_block_missed;
@@ -96,6 +97,7 @@ public class ConnectionDescriptor {
             last_seen = update.last_seen;
             tcp_flags = update.tcp_flags;
             payload_length = update.payload_length;
+            fw_rule = update.fw_rule;
         }
         if ((update.update_type & ConnectionUpdate.UPDATE_INFO) != 0) {
             info = update.info;

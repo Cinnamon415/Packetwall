@@ -1,0 +1,6 @@
+# test list
+doubleclick.net
+=exact.tracker.com
+!good.doubleclick.net
+10.0.0.0/8
+ads*.example.org

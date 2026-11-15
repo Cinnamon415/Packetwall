@@ -98,13 +98,19 @@ fun HomeScreen(
                         if (state is CaptureState.Running)
                             Text(formatDuration(now - state.since), style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("VPN · IPv4+IPv6", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val strictDns by io.github.cinnamon415.packetwall.engine.CaptureService.privateDnsStrict.collectAsState()
+                        if (on && strictDns)
+                            Text(stringResource(R.string.private_dns_strict), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error)
+                        val fwState by app.firewall.state.collectAsState()
+                        Text(listOfNotNull("VPN", fwState.profile?.name).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
 
             // Tiles 2x2
-            val blocked = conns.count { it.blocked }
+            // only decisions of the rules (not the internal Private DNS drops)
+            val blocked = conns.count { it.blocked && it.fwRule != 0 }
             val alpha = if (on) 1f else 0.5f
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Tile(Modifier.weight(1f), R.drawable.ic_logs, stringResource(R.string.tile_requests), "${stats.totalConns}", alpha, onClick = onOpenLogs)
@@ -118,7 +124,7 @@ fun HomeScreen(
 
             // Recent blocks (max 5)
             SectionHeader(stringResource(R.string.recent_blocks), stringResource(R.string.all), onOpenLogs)
-            val recent = conns.filter { it.blocked }.take(5)
+            val recent = conns.filter { it.blocked && it.fwRule != 0 }.take(5)
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 if (recent.isEmpty()) {
                     Text(stringResource(R.string.no_blocks), color = MaterialTheme.colorScheme.onSurfaceVariant,

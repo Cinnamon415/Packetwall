@@ -25,6 +25,8 @@ public class ConnectionUpdate {
     public int blocked_pkts;
     public int tcp_flags;
     public int status;
+    /** Packetwall: matched rule ref (> 0 rule id, < 0 -setId of a blocklist, 0 none). */
+    public int fw_rule;
     public int info_flags;
 
     public String info;
@@ -38,12 +40,13 @@ public class ConnectionUpdate {
     public ConnectionUpdate(int _incr_id) { incr_id = _incr_id; }
 
     public void setStats(long _last_seen, long _payload_length, long _sent_bytes, long _rcvd_bytes,
-                         int _sent_pkts, int _rcvd_pkts, int _blocked_pkts, int _tcp_flags, int _status) {
+                         int _sent_pkts, int _rcvd_pkts, int _blocked_pkts, int _tcp_flags, int _status,
+                         int _fw_rule) {
         update_type |= UPDATE_STATS;
         last_seen = _last_seen; payload_length = _payload_length;
         sent_bytes = _sent_bytes; rcvd_bytes = _rcvd_bytes;
         sent_pkts = _sent_pkts; rcvd_pkts = _rcvd_pkts; blocked_pkts = _blocked_pkts;
-        tcp_flags = _tcp_flags; status = _status;
+        tcp_flags = _tcp_flags; status = _status; fw_rule = _fw_rule;
     }
 
     public void setInfo(String _info, String _url, String _l7proto, int flags) {

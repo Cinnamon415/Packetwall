@@ -10,6 +10,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
@@ -31,10 +38,13 @@ import io.github.cinnamon415.packetwall.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConnectionScreen(app: PacketwallApp, id: Int, onBack: () -> Unit) {
+fun ConnectionScreen(app: PacketwallApp, id: Int, onBack: () -> Unit, onOpenApp: (String) -> Unit) {
     val conns by app.connections.conns.collectAsState()
     val c = conns.firstOrNull { it.id == id }
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val fw by app.firewall.state.collectAsState()
+    var quick by remember { mutableStateOf(false) }
+    val ctx = LocalContext.current
     ScreenScaffold(title = c?.title ?: "#$id", subtitle = c?.let { "#${it.id} · ${it.app.name} · ${it.protoLabel}" },
         monoTitle = true, onBack = onBack) {
         val tabs = listOf(R.string.conn_overview, R.string.conn_packets, R.string.conn_data, R.string.tab_http)
@@ -47,7 +57,9 @@ fun ConnectionScreen(app: PacketwallApp, id: Int, onBack: () -> Unit) {
             }
             return@ScreenScaffold
         }
-        val rows = listOf(
+        val decision = decisionText(c.fwRule, c.blocked, fw, app)
+        val rows = listOfNotNull(
+            decision?.let { R.string.kv_rule to it },
             R.string.kv_protocol to "${c.protoLabel} · ${c.l4} · IPv${c.ipver}",
             R.string.kv_status to stringResource(when { c.blocked -> R.string.st_blocked; c.active -> R.string.st_active; else -> R.string.st_closed }),
             R.string.kv_app to "${c.app.name} (uid ${c.uid})",
@@ -61,6 +73,10 @@ fun ConnectionScreen(app: PacketwallApp, id: Int, onBack: () -> Unit) {
             R.string.kv_last_seen to formatTime(c.lastSeen),
         )
         Column(Modifier.verticalScroll(rememberScrollState())) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { quick = true }) { Text(stringResource(R.string.rule_add)) }
+                OutlinedButton(onClick = { onOpenApp(c.app.packageName) }) { Text(stringResource(R.string.app_rules)) }
+            }
             rows.forEach { (k, v) ->
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
                     Text(stringResource(k), color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(130.dp))
@@ -68,6 +84,10 @@ fun ConnectionScreen(app: PacketwallApp, id: Int, onBack: () -> Unit) {
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
             }
+        }
+        if (quick) QuickRuleSheet(c, app, fw, onDismiss = { quick = false }) { msg ->
+            quick = false
+            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
         }
     }
 }

@@ -296,6 +296,45 @@ static bool spoof_dns_reply(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_context_t *
 
 /* ******************************************************* */
 
+// Packetwall: answer a rejected TCP segment with a RST, so the client fails fast instead of
+// waiting for a timeout.
+static void send_tcp_rst(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_context_t *pctx) {
+    zdtun_pkt_t *pkt = pctx->pkt;
+    const zdtun_5tuple_t *tuple = pctx->tuple;
+
+    if((tuple->ipproto != IPPROTO_TCP) || !pkt->tcp || (pkt->tcp->th_flags & TH_RST))
+        return;
+
+    int iplen = zdtun_iphdr_len(pd->zdt, conn);
+    int len = iplen + (int) sizeof(struct tcphdr);
+    char buf[len];
+    memset(buf, 0, len);
+
+    zdtun_make_iphdr(pd->zdt, conn, buf, len - iplen);
+
+    struct tcphdr *tcp = (struct tcphdr*)(buf + iplen);
+    tcp->th_sport = tuple->dst_port;
+    tcp->th_dport = tuple->src_port;
+    tcp->th_off = 5;
+
+    if(pkt->tcp->th_flags & TH_ACK) {
+        tcp->th_seq = pkt->tcp->th_ack;
+        tcp->th_flags = TH_RST;
+    } else {
+        uint32_t seglen = pkt->l7_len + ((pkt->tcp->th_flags & TH_SYN) ? 1 : 0) +
+                ((pkt->tcp->th_flags & TH_FIN) ? 1 : 0);
+        tcp->th_seq = 0;
+        tcp->th_ack = htonl(ntohl(pkt->tcp->th_seq) + seglen);
+        tcp->th_flags = TH_RST | TH_ACK;
+    }
+
+    tcp->th_sum = 0;
+    tcp->th_sum = zdtun_l3_checksum(pd->zdt, conn, buf, (char*)tcp, len - iplen);
+    write(pd->vpn.tunfd, buf, len);
+}
+
+/* ******************************************************* */
+
 static int handle_new_connection(zdtun_t *zdt, zdtun_conn_t *conn_info) {
     pcapdroid_t *pd = ((pcapdroid_t *) zdtun_userdata(zdt));
     const zdtun_5tuple_t *tuple = zdtun_conn_get_5tuple(conn_info);
@@ -587,6 +626,13 @@ int run_vpn(pcapdroid_t *pd) {
                     data->blocked_pkts++;
                     data->update_type |= CONN_UPDATE_STATS;
                     pd_notify_connection_update(pd, tuple, data);
+
+                    // Reject on request; also when a flow gets blocked after it was established
+                    // (e.g. by SNI / HTTP Host): dropping it would leave the client hanging.
+                    if((data->fw_reject || (data->sent_pkts > 0)) && (tuple->ipproto == IPPROTO_TCP)) {
+                        send_tcp_rst(pd, conn, &pctx);
+                        zdtun_conn_close(zdt, conn, CONN_STATUS_CLOSED);
+                    }
                     goto housekeeping;
                 }
 

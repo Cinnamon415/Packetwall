@@ -34,6 +34,8 @@ data class Conn(
     val lastSeen: Long,
     val status: Int,
     val blocked: Boolean,
+    /** Matched rule: > 0 rule id, < 0 = -(set id) of a blocklist, 0 = none. */
+    val fwRule: Int,
 ) {
     val active get() = status < ConnectionDescriptor.CONN_STATUS_CLOSED
     val l4 get() = when (ipproto) { 6 -> "TCP"; 17 -> "UDP"; 1, 58 -> "ICMP"; else -> "IP/$ipproto" }
@@ -102,7 +104,7 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
             byId.values.map { c ->
                 Conn(c.incr_id, c.uid, apps.get(c.uid), c.ipver, c.ipproto, c.src_ip, c.src_port,
                     c.dst_ip, c.dst_port, c.l7proto ?: "", c.info, c.url, c.sent_bytes, c.rcvd_bytes,
-                    c.sent_pkts, c.rcvd_pkts, c.blocked_pkts, c.first_seen, c.last_seen, c.status, c.is_blocked)
+                    c.sent_pkts, c.rcvd_pkts, c.blocked_pkts, c.first_seen, c.last_seen, c.status, c.is_blocked, c.fw_rule)
             }
         }
         _conns.value = snap.asReversed()
