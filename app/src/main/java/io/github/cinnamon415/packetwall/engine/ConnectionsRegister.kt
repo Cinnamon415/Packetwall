@@ -64,6 +64,11 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
     private val _stats = MutableStateFlow(Stats())
     val stats: StateFlow<Stats> = _stats
 
+    /** Recent totals (time ms, sent, received) for the speed chart. */
+    data class Sample(val t: Long, val sent: Long, val rcvd: Long)
+    private val _history = MutableStateFlow<List<Sample>>(emptyList())
+    val history: StateFlow<List<Sample>> = _history
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     init {
@@ -78,6 +83,7 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
     fun reset() {
         synchronized(lock) { byId.clear() }
         _stats.value = Stats()
+        _history.value = emptyList()
         dirty = true
     }
 
@@ -94,6 +100,7 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
     }
 
     fun onStats(s: CaptureStats) {
+        _history.value = (_history.value + Sample(System.currentTimeMillis(), s.bytes_sent, s.bytes_rcvd)).takeLast(HISTORY)
         _stats.value = Stats(s.bytes_sent, s.bytes_rcvd, s.pkts_sent, s.pkts_rcvd,
             s.active_conns, s.tot_conns, s.num_dns_queries)
     }
@@ -112,5 +119,6 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
 
     companion object {
         const val PUBLISH_MS = 500L
+        const val HISTORY = 600
     }
 }

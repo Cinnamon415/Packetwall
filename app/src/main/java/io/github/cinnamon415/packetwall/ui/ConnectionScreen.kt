@@ -10,6 +10,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.res.painterResource
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.Arrangement
@@ -38,7 +47,7 @@ import io.github.cinnamon415.packetwall.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConnectionScreen(app: PacketwallApp, id: Int, onBack: () -> Unit, onOpenApp: (String) -> Unit) {
+fun ConnectionScreen(app: PacketwallApp, id: Int, onBack: () -> Unit, onOpenApp: (String) -> Unit, onOpenPacket: (Long) -> Unit) {
     val conns by app.connections.conns.collectAsState()
     val c = conns.firstOrNull { it.id == id }
     var tab by rememberSaveable { mutableIntStateOf(0) }
@@ -46,16 +55,36 @@ fun ConnectionScreen(app: PacketwallApp, id: Int, onBack: () -> Unit, onOpenApp:
     var quick by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     ScreenScaffold(title = c?.title ?: "#$id", subtitle = c?.let { "#${it.id} · ${it.app.name} · ${it.protoLabel}" },
-        monoTitle = true, onBack = onBack) {
+        monoTitle = true, onBack = onBack, actions = {
+            if (c != null) {
+                val scope = rememberCoroutineScope()
+                val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+                    if (uri != null) scope.launch {
+                        val ok = runCatching { withContext(Dispatchers.IO) {
+                            ctx.contentResolver.openOutputStream(uri, "wt")!!.use { app.packets.writePcapng(it, app.packets.packetsOf(c)) }
+                        } }.isSuccess
+                        Toast.makeText(ctx, if (ok) R.string.exported else R.string.export_failed, Toast.LENGTH_SHORT).show()
+                    }
+                }
+                IconButton(onClick = { exportLauncher.launch("conn-${c.id}-${c.title.take(40)}.pcapng") }) {
+                    Icon(painterResource(R.drawable.ic_save), stringResource(R.string.export_pcapng))
+                }
+            }
+        }) {
         val tabs = listOf(R.string.conn_overview, R.string.conn_packets, R.string.conn_data, R.string.tab_http)
         PrimaryTabRow(selectedTabIndex = tab) {
             tabs.forEachIndexed { i, s -> Tab(tab == i, { tab = i }, text = { Text(stringResource(s)) }) }
         }
-        if (c == null || tab != 0) {
+        if (c == null) {
             Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.coming_in, "M2"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.conn_gone), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             return@ScreenScaffold
+        }
+        when (tab) {
+            1 -> { PacketsTab(app, c, onOpenPacket); return@ScreenScaffold }
+            2 -> { DataTab(app, c); return@ScreenScaffold }
+            3 -> { HttpTab(app, c); return@ScreenScaffold }
         }
         val decision = decisionText(c.fwRule, c.blocked, fw, app)
         val rows = listOfNotNull(

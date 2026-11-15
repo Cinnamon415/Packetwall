@@ -626,6 +626,7 @@ int run_vpn(pcapdroid_t *pd) {
                     data->blocked_pkts++;
                     data->update_type |= CONN_UPDATE_STATS;
                     pd_notify_connection_update(pd, tuple, data);
+                    pd_dump_packet(pd, pkt.buf, pkt.len, &pctx.tv, data->uid, 0, true, true);
 
                     // Reject on request; also when a flow gets blocked after it was established
                     // (e.g. by SNI / HTTP Host): dropping it would leave the client hanging.

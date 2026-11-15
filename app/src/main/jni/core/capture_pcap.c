@@ -944,7 +944,7 @@ int run_pcap(pcapdroid_t *pd) {
         if(!handle_packet(pd, &hdr, buffer, ipoffset, data_offset)) {
             // packet was rejected (unsupported/corrupted), dump to PCAP file anyway
             struct timeval tv = hdr.ts;
-            pd_dump_packet(pd, buffer + ipoffset, hdr.len - ipoffset, &tv, hdr.uid, hdr.ifid, (hdr.flags & PCAPD_FLAG_TX) != 0);
+            pd_dump_packet(pd, buffer + ipoffset, hdr.len - ipoffset, &tv, hdr.uid, hdr.ifid, (hdr.flags & PCAPD_FLAG_TX) != 0, false);
         }
 
     housekeeping:

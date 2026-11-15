@@ -58,6 +58,7 @@ sealed interface Dest {
     data object About : Dest
     data class Connection(val id: Int) : Dest
     data class AppRules(val pkg: String) : Dest
+    data class Packet(val connId: Int, val seq: Long) : Dest
     data class GroupRules(val id: Int) : Dest
 }
 
@@ -74,6 +75,8 @@ class Navigator {
 @Composable
 fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
     val nav = remember { Navigator() }
+    // keeps tab selections etc. of screens below the top of the stack
+    val saveable = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val state by CaptureService.state.collectAsState()
@@ -103,13 +106,16 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
             },
             label = "nav",
         ) { stack ->
-            when (val d = stack.last()) {
+            val d0 = stack.last()
+            saveable.SaveableStateProvider("${stack.size}:$d0") {
+            when (val d = d0) {
                 Dest.Home -> HomeScreen(app, state, onToggleProtection, openDrawer, onOpenLogs = { nav.root(Dest.Logs) },
                     onOpenStats = { nav.root(Dest.Stats) }, onOpenConn = { nav.push(Dest.Connection(it)) })
                 Dest.Logs -> LogsScreen(app, state, openDrawer, onOpenConn = { nav.push(Dest.Connection(it)) })
                 is Dest.Connection -> ConnectionScreen(app, d.id, onBack = { nav.pop() },
-                    onOpenApp = { nav.push(Dest.AppRules(it)) })
-                Dest.Stats -> PlaceholderScreen(R.string.nav_stats, "M2", openDrawer)
+                    onOpenApp = { nav.push(Dest.AppRules(it)) }, onOpenPacket = { nav.push(Dest.Packet(d.id, it)) })
+                is Dest.Packet -> PacketScreen(app, d.connId, d.seq, onBack = { nav.pop() })
+                Dest.Stats -> StatsScreen(app, openDrawer)
                 Dest.Apps -> AppsScreen(app, openDrawer, onOpenApp = { nav.push(Dest.AppRules(it)) },
                     onOpenGroup = { nav.push(Dest.GroupRules(it)) })
                 is Dest.AppRules -> WhoRulesScreen(app, io.github.cinnamon415.packetwall.fw.Who.App(d.pkg), onBack = { nav.pop() })
@@ -117,8 +123,9 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                 Dest.Global -> GlobalScreen(app, openDrawer)
                 Dest.Blocklists -> BlocklistsScreen(app, openDrawer)
                 Dest.Sets -> SetsScreen(app, openDrawer)
-                Dest.Settings -> PlaceholderScreen(R.string.nav_settings, "M3", openDrawer)
+                Dest.Settings -> SettingsScreen(app, openDrawer)
                 Dest.About -> AboutScreen(openDrawer)
+            }
             }
         }
     }

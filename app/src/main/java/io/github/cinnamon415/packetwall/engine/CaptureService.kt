@@ -44,6 +44,7 @@ import java.net.InetSocketAddress
  */
 class CaptureService : VpnService() {
 
+    private val app get() = application as PacketwallApp
     private var pfd: ParcelFileDescriptor? = null
     private var loopThread: Thread? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -84,7 +85,8 @@ class CaptureService : VpnService() {
     }
 
     private fun startCapture() {
-        (application as io.github.cinnamon415.packetwall.PacketwallApp).firewall.compileNow()
+        app.firewall.compileNow()
+        app.packets.reset(app.settings.current.bufferMb.toLong() shl 20)
         dnsServer = detectSystemDns() ?: FALLBACK_DNS4
         getSystemService(ConnectivityManager::class.java)?.let { cm ->
             cm.activeNetwork?.let { handleLinkProperties(cm.getLinkProperties(it), initial = true) }
@@ -265,7 +267,7 @@ class CaptureService : VpnService() {
     fun getPackageNameByUid(uid: Int): String = apps.get(uid).packageName
     fun loadUidMapping(uid: Int, packageName: String, appName: String) {}
     fun getCountryCode(host: String): String = ""
-    fun dumpPcapData(data: ByteArray) {}
+    fun dumpPcapData(data: ByteArray) = app.packets.feed(data)
     fun stopPcapDump() {}
     fun startConnectionsUpdate() {}
 
@@ -300,10 +302,10 @@ class CaptureService : VpnService() {
     fun isRootCapture(): Int = 0
     fun isPcapFileCapture(): Int = 0
     fun getPayloadMode(): Int = 0           // NONE (M2 enables payload)
-    fun pcapDumpEnabled(): Int = 0
-    fun dumpExtensionsEnabled(): Int = 0
+    fun pcapDumpEnabled(): Int = if (app.settings.current.capturePackets) 1 else 0
+    fun dumpExtensionsEnabled(): Int = 1
     fun isPcapngEnabled(): Int = 1
-    fun getSnaplen(): Int = 0
+    fun getSnaplen(): Int = app.settings.current.snaplen
     fun getMaxPktsPerFlow(): Int = 0
     fun getMaxDumpSize(): Int = 0
     fun getSocks5Enabled(): Int = 0

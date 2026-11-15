@@ -542,7 +542,7 @@ static bool dump_pcapng_interface(pcap_dumper_t *dumper, u_int ifidx) {
 }
 
 static bool dump_packet_pcapng(pcap_dumper_t *dumper, const char *pkt, int pktlen,
-                                      const struct timeval *tv, int uid, u_int ifidx, bool is_tx) {
+                                      const struct timeval *tv, int uid, u_int ifidx, bool is_tx, bool dropped) {
     u_int pcapng_ifid = 0;
 
     if(ifidx > 0) {
@@ -580,9 +580,8 @@ static bool dump_packet_pcapng(pcap_dumper_t *dumper, const char *pkt, int pktle
     uint8_t padding = (~incl_len + 1) & 0x3; // packet data must be padded to 32 bits
     int total_length = epb_size + incl_len + padding;
 
-    // EPB flags option (root mode only, to store the direction heuristic result)
-    // Don't dump it in vpn mode to save space
-    bool dump_direction = !dumper->pd->vpn_capture;
+    // EPB flags option: packet direction (Packetwall: also in VPN mode, used by the packets view)
+    bool dump_direction = true;
     if(dump_direction)
         total_length += sizeof(pcapng_enh_option_t) + 4;
 
@@ -598,7 +597,12 @@ static bool dump_packet_pcapng(pcap_dumper_t *dumper, const char *pkt, int pktle
         has_comment = true;
     }
 
-    bool has_options = dump_direction || has_comment;
+    // Packetwall: packets dropped by the firewall carry a second comment
+    static const char drop_comment[] = "dropped";
+    if(dropped)
+        total_length += sizeof(pcapng_enh_option_t) + 8 /* "dropped" padded */;
+
+    bool has_options = dump_direction || has_comment || dropped;
     if(has_options)
         total_length += sizeof(pcapng_enh_option_t); // opt_endofopt
 
@@ -651,6 +655,16 @@ static bool dump_packet_pcapng(pcap_dumper_t *dumper, const char *pkt, int pktle
             *(buffer++) = 0x00;
     }
 
+    if(dropped) {
+        pcapng_enh_option_t *option = (pcapng_enh_option_t *) buffer;
+        option->code = 0x0001;
+        option->length = sizeof(drop_comment) - 1;
+        buffer += sizeof(pcapng_enh_option_t);
+        memset(buffer, 0, 8);
+        memcpy(buffer, drop_comment, sizeof(drop_comment) - 1);
+        buffer += 8;
+    }
+
     if(has_options)
         buffer += write_pcapng_opt_end(buffer);
 
@@ -661,10 +675,10 @@ static bool dump_packet_pcapng(pcap_dumper_t *dumper, const char *pkt, int pktle
 /* Dump a single packet into the buffer. Returns false if PCAP dump must be stopped (e.g. if max
  * dump size reached or an error occurred). */
 bool pcap_dump_packet(pcap_dumper_t *dumper, const char *pkt, int pktlen,
-                      const struct timeval *tv, int uid, u_int ifidx, bool is_tx) {
+                      const struct timeval *tv, int uid, u_int ifidx, bool is_tx, bool dropped) {
     bool rv;
     if (dumper->format == PCAPNG_DUMP)
-        rv = dump_packet_pcapng(dumper, pkt, pktlen, tv, uid, ifidx, is_tx);
+        rv = dump_packet_pcapng(dumper, pkt, pktlen, tv, uid, ifidx, is_tx, dropped);
     else
         rv = dump_packet_pcap(dumper, pkt, pktlen, tv, uid);
 
