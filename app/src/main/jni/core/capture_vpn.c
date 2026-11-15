@@ -201,7 +201,8 @@ static bool check_dns_req_allowed(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_conte
                  */
                 zdtun_ip_t ip = {0};
                 ip.ip4 = pd->vpn.ipv4.dns_server;
-                zdtun_conn_dnat(conn, &ip, htons(53), 4);
+                // Packetwall: the port is not 53 when the built-in DoH proxy (127.0.0.1) is used
+                zdtun_conn_dnat(conn, &ip, htons(dns_server_port), 4);
             }
 
             return(true);
@@ -411,7 +412,7 @@ static bool matches_decryption_whitelist(pcapdroid_t *pd, const zdtun_5tuple_t *
 
 // NOTE: this handles both user-specified SOCKS5 and TLS decryption
 static bool should_proxify(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
-    if(!pd->socks5.enabled)
+    if(!pd->socks5.enabled || !upstream_active)
         return false;
 
     if (pd->tls_decryption.list) {
@@ -601,6 +602,13 @@ int run_vpn(pcapdroid_t *pd) {
                     else if(should_proxify(pd, tuple, data)) {
                         zdtun_conn_proxy(conn);
                         data->proxied = true;
+                    } else if(pd->socks5.enabled && upstream_active && upstream_block_udp &&
+                              (tuple->ipproto == IPPROTO_UDP) &&
+                              !((tuple->ipver == 4) && (tuple->dst_ip.ip4 == pd->vpn.ipv4.internal_dns))) {
+                        // Packetwall: SOCKS5 here carries TCP only; UDP (QUIC…) is blocked on request
+                        // so that apps fall back to TCP through the upstream
+                        data->blacklisted_internal = true;
+                        data->to_block = true;
                     }
                 }
 

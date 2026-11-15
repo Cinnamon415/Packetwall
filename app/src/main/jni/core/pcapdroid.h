@@ -417,6 +417,9 @@ extern jni_enum_t enums;
 extern bool running;
 extern uint32_t new_dns_server;
 extern bool block_private_dns;
+extern uint16_t dns_server_port;
+extern bool upstream_active;     // SOCKS5 upstream reachable (or kill switch on)
+extern bool upstream_block_udp;  // block UDP while the upstream is active
 extern bool dump_capture_stats_now;
 extern bool reload_blacklists_now;
 extern bool has_seen_dump_extensions;

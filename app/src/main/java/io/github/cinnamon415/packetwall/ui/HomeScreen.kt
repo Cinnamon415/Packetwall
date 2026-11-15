@@ -103,7 +103,9 @@ fun HomeScreen(
                             Text(stringResource(R.string.private_dns_strict), style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error)
                         val fwState by app.firewall.state.collectAsState()
-                        Text(listOfNotNull("VPN", fwState.profile?.name).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val doh by io.github.cinnamon415.packetwall.engine.CaptureService.dohActive.collectAsState()
+                        Text(listOfNotNull("VPN", fwState.profile?.name, doh?.let { "DoH " + (java.net.URI(it).host ?: "") })
+                            .joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

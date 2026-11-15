@@ -7,4 +7,7 @@
     </style>
     <color name="bg">#F9F9FF</color>
     <color name="brand">#415F91</color>
+    <color name="widget_bg">#FFF9F9FF</color>
+    <color name="widget_fg">#FF1A1C20</color>
+    <color name="widget_fg2">#FF44474E</color>
 </resources>

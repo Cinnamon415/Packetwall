@@ -37,6 +37,9 @@ extern void vpn_process_ndpi(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_co
 bool running = false;
 uint32_t new_dns_server = 0;
 bool block_private_dns = false;
+uint16_t dns_server_port = 53;
+bool upstream_active = true;
+bool upstream_block_udp = false;
 bool has_seen_dump_extensions = false;
 
 bool dump_capture_stats_now = false;

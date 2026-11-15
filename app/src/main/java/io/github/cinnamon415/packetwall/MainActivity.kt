@@ -36,6 +36,24 @@ class MainActivity : ComponentActivity() {
                 AppRoot(app = app, onToggleProtection = ::toggleProtection)
             }
         }
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    /** The tile / widget asked to turn protection on but the VPN consent is still needed. */
+    private fun handleIntent(intent: android.content.Intent?) {
+        if (intent?.action == ACTION_TOGGLE_ON) {
+            intent.action = null
+            toggleProtection(true)
+        }
+    }
+
+    companion object {
+        const val ACTION_TOGGLE_ON = "io.github.cinnamon415.packetwall.TOGGLE_ON"
     }
 
     private fun toggleProtection(on: Boolean) {

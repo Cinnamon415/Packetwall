@@ -190,7 +190,8 @@ fun AboutScreen(openDrawer: () -> Unit) {
                     style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Text("GPL-3.0-or-later. Native engine adapted from PCAPdroid (Emanuele Faranda), " +
-                        "zdtun and nDPI (LGPL-3.0), zstd, libpcap.",
+                        "zdtun and nDPI (LGPL-3.0), zstd, libpcap, OkHttp (Apache-2.0). " +
+                        "IP Geolocation by DB-IP (db-ip.com), CC BY 4.0.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

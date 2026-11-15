@@ -46,6 +46,7 @@ public class ConnectionDescriptor {
 
     public boolean is_blocked;
     public int fw_rule;
+    public boolean proxied;
     public boolean blacklisted_ip;
     public boolean blacklisted_host;
     public boolean netd_block_missed;
@@ -89,6 +90,7 @@ public class ConnectionDescriptor {
             status = (update.status & 0x00FF);
             error = (update.status & 0xFF0000) >> 16;
             port_mapping_applied = (update.status & 0x2000) != 0;
+            proxied = (update.status & 0x4000) != 0;
             decryption_ignored = (update.status & 0x1000) != 0;
             netd_block_missed = (update.status & 0x0800) != 0;
             is_blocked = (update.status & 0x0400) != 0;

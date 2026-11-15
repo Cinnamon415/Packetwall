@@ -245,6 +245,16 @@ class FirewallStore(
 
     fun updateList(id: Int) = scope.launch { download(id) }
 
+    /** For the scheduled worker: updates every subscription and waits. Returns the number of failures. */
+    suspend fun updateAllNow(): Int {
+        var failed = 0
+        _state.value.blocklists.filter { it.url != null }.forEach { s ->
+            download(s.id)
+            if (_state.value.set(s.id)?.error != null) failed++
+        }
+        return failed
+    }
+
     private suspend fun download(id: Int) {
         val set = _state.value.set(id) ?: return
         val url = set.url ?: return

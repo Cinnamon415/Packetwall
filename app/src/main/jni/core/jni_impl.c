@@ -175,6 +175,7 @@ static jobject getConnUpdate(pcapdroid_t *pd, const conn_and_tuple_t *conn) {
                                data->payload_length, data->sent_bytes, data->rcvd_bytes, data->sent_pkts, data->rcvd_pkts, data->blocked_pkts,
                                (data->tcp_flags[0] << 8) | data->tcp_flags[1],
                                (data->error << 16) /* 8 bits are enough for socket errno */ |
+                                    (data->proxied << 14) |
                                     (data->port_mapping_applied << 13) |
                                     (data->decryption_ignored << 12) |
                                     (data->netd_block_missed << 11) |
@@ -1552,4 +1553,22 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_loadRules(JNIEnv *en
     int rv = pw_fw_load(p);
     (*env)->ReleaseStringUTFChars(env, path, p);
     return rv;
+}
+
+/* ******************************************************* */
+
+// Packetwall: port of the upstream DNS server (53, or the local DoH proxy port)
+JNIEXPORT void JNICALL
+Java_io_github_cinnamon415_packetwall_engine_CaptureService_setDnsServerPort(JNIEnv *env, jclass clazz, jint port) {
+    dns_server_port = (uint16_t) port;
+}
+
+/* ******************************************************* */
+
+// Packetwall: upstream (SOCKS5) runtime state
+JNIEXPORT void JNICALL
+Java_io_github_cinnamon415_packetwall_engine_CaptureService_setUpstreamState(JNIEnv *env, jclass clazz,
+        jboolean active, jboolean block_udp) {
+    upstream_active = active;
+    upstream_block_udp = block_udp;
 }

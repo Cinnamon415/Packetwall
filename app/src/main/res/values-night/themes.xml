@@ -6,4 +6,7 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
     <color name="bg">#111318</color>
+    <color name="widget_bg">#FF1D2024</color>
+    <color name="widget_fg">#FFE2E2E9</color>
+    <color name="widget_fg2">#FFC4C6D0</color>
 </resources>

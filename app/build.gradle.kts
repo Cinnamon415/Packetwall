@@ -22,7 +22,7 @@ android {
         minSdk = 29
         targetSdk = 37
         versionCode = 1
-        versionName = "0.3.0-m2"
+        versionName = "0.4.0-m3"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -94,6 +94,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-service:2.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.work:work-runtime-ktx:2.10.1")
 
     testImplementation("junit:junit:4.13.2")
 }
