@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConnectionScreen(app: PacketwallApp, id: Int, onBack: () -> Unit) {
     val conns by app.connections.conns.collectAsState()

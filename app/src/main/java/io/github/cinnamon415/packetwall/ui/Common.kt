@@ -62,11 +62,23 @@ fun AppIcon(app: AppInfo, size: Dp = 40.dp) {
     }
 }
 
+/** Units follow the current locale (RU or EN); kept non-composable so it works anywhere. */
+private object Units {
+    private val ru get() = Locale.getDefault().language == "ru"
+    val b get() = if (ru) "Б" else "B"
+    val kb get() = if (ru) "КБ" else "KB"
+    val mb get() = if (ru) "МБ" else "MB"
+    val gb get() = if (ru) "ГБ" else "GB"
+    val h get() = if (ru) "ч" else "h"
+    val m get() = if (ru) "мин" else "min"
+    val s get() = if (ru) "с" else "s"
+}
+
 fun formatBytes(b: Long): String = when {
-    b >= 1L shl 30 -> String.format(Locale.getDefault(), "%.1f ГБ", b / 1073741824.0)
-    b >= 1L shl 20 -> String.format(Locale.getDefault(), "%.1f МБ", b / 1048576.0)
-    b >= 1L shl 10 -> "${b / 1024} КБ"
-    else -> "$b Б"
+    b >= 1L shl 30 -> String.format(Locale.getDefault(), "%.1f %s", b / 1073741824.0, Units.gb)
+    b >= 1L shl 20 -> String.format(Locale.getDefault(), "%.1f %s", b / 1048576.0, Units.mb)
+    b >= 1L shl 10 -> "${b / 1024} ${Units.kb}"
+    else -> "$b ${Units.b}"
 }
 
 private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
@@ -74,5 +86,5 @@ fun formatTime(ms: Long): String = timeFmt.format(Date(ms))
 
 fun formatDuration(ms: Long): String {
     val s = ms / 1000
-    return if (s >= 3600) "${s / 3600} ч ${s % 3600 / 60} мин" else if (s >= 60) "${s / 60} мин ${s % 60} с" else "$s с"
+    return if (s >= 3600) "${s / 3600} ${Units.h} ${s % 3600 / 60} ${Units.m}" else if (s >= 60) "${s / 60} ${Units.m} ${s % 60} ${Units.s}" else "$s ${Units.s}"
 }
