@@ -31,8 +31,13 @@ typedef struct {
     bool matched;
     bool block;
     bool reject;
+    uint8_t route;  // PW_ROUTE_*: only for allow verdicts
     int32_t ref;    // rule id (> 0) or -(set id) for blocklist entries
 } pw_verdict_t;
+
+#define PW_ROUTE_DEFAULT  0
+#define PW_ROUTE_DIRECT   1
+#define PW_ROUTE_UPSTREAM 2
 
 typedef struct {
     int uid;

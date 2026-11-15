@@ -78,6 +78,11 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     Text(stringResource(if (s.logDays == 0) R.string.storage_session_hint else R.string.storage_db_hint),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (s.logDays > 0) {
+                        Row(Modifier.fillMaxWidth().clickable { app.settings.update { it.copy(logBlockedOnly = !it.logBlockedOnly) } },
+                            verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Checkbox(s.logBlockedOnly, { v -> app.settings.update { it.copy(logBlockedOnly = v) } })
+                            Text(stringResource(R.string.log_blocked_only))
+                        }
                         val scope = androidx.compose.runtime.rememberCoroutineScope()
                         androidx.compose.material3.TextButton({
                             scope.launch(kotlinx.coroutines.Dispatchers.IO) { app.logDb.clear(); app.connections.configureLog(app.logDb, s.logDays) }
@@ -157,7 +162,8 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
             .padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.upstream_socks))
-                Text(when (up) { true -> stringResource(R.string.upstream_up); false -> stringResource(R.string.upstream_down)
+                val relay by io.github.cinnamon415.packetwall.engine.CaptureService.udpRelayUp.collectAsState()
+                Text(when (up) { true -> stringResource(R.string.upstream_up) + if (relay) " · UDP ✓" else ""; false -> stringResource(R.string.upstream_down)
                     else -> stringResource(R.string.upstream_hint) }, style = MaterialTheme.typography.bodySmall,
                     color = if (up == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -166,6 +172,14 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
         if (s.upstream) {
             HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(s.upAll, { app.settings.update { it.copy(upAll = true) } }, { Text(stringResource(R.string.upstream_all)) })
+                    FilterChip(!s.upAll, { app.settings.update { it.copy(upAll = false) } }, { Text(stringResource(R.string.upstream_rules_only)) })
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(s.upType == 0, { app.settings.update { it.copy(upType = 0) } }, { Text("SOCKS5") })
+                    FilterChip(s.upType == 1, { app.settings.update { it.copy(upType = 1, upUdp = if (it.upUdp == 2) 1 else it.upUdp) } }, { Text("HTTP CONNECT") })
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     androidx.compose.material3.OutlinedTextField(s.upHost, { v -> app.settings.update { it.copy(upHost = v.trim()) } },
                         Modifier.weight(1f), singleLine = true, label = { Text(stringResource(R.string.host)) })
@@ -192,6 +206,7 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
                 Text(stringResource(R.string.upstream_udp), style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(s.upUdp == 1, { app.settings.update { it.copy(upUdp = 1) } }, { Text(stringResource(R.string.upstream_udp_block)) })
+                    if (s.upType == 0) FilterChip(s.upUdp == 2, { app.settings.update { it.copy(upUdp = 2) } }, { Text(stringResource(R.string.upstream_udp_proxy)) })
                     FilterChip(s.upUdp == 0, { app.settings.update { it.copy(upUdp = 0) } }, { Text(stringResource(R.string.upstream_udp_direct)) })
                 }
                 Text(stringResource(R.string.upstream_on_down), style = MaterialTheme.typography.labelLarge)
@@ -216,20 +231,45 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
     }
 }
 
-/** TCP connect time to the proxy, then the external IP seen through it. */
+/** TCP connect time to the proxy, the external IP seen through it, and for SOCKS5 a DNS query over UDP ASSOCIATE. */
 private suspend fun upstreamTest(s: Settings.Values): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
     try {
         val addr = java.net.InetSocketAddress(java.net.InetAddress.getByName(s.upHost), s.upPort)
         val t0 = System.nanoTime()
         java.net.Socket().use { it.connect(addr, 3000) }
         val ms = (System.nanoTime() - t0) / 1_000_000
-        val ip = if (s.upUser.isNotEmpty()) null else try {
-            okhttp3.OkHttpClient.Builder().proxy(java.net.Proxy(java.net.Proxy.Type.SOCKS, addr))
+        val ip = if (s.upType == 0 && s.upUser.isNotEmpty()) null else try {
+            okhttp3.OkHttpClient.Builder()
+                .proxy(java.net.Proxy(if (s.upType == 1) java.net.Proxy.Type.HTTP else java.net.Proxy.Type.SOCKS, addr))
+                .apply { if (s.upType == 1 && s.upUser.isNotEmpty()) proxyAuthenticator { _, r ->
+                    r.request.newBuilder().header("Proxy-Authorization", okhttp3.Credentials.basic(s.upUser, s.upPass)).build() } }
                 .callTimeout(8, java.util.concurrent.TimeUnit.SECONDS).build()
                 .newCall(okhttp3.Request.Builder().url("https://api.ipify.org").build()).execute().use { it.body?.string()?.trim() }
         } catch (e: Exception) { "? (${e.message})" }
-        "TCP $ms ms" + (ip?.let { " · IP $it" } ?: "") + " · UDP —"
+        val udp = if (s.upType == 1) "UDP —" else udpTest(s)
+        "TCP $ms ms" + (ip?.let { " · IP $it" } ?: "") + " · $udp"
     } catch (e: Exception) { "✕ ${e.message ?: e.javaClass.simpleName}" }
+}
+
+/** DNS query for example.com to 1.1.1.1 through a fresh UDP ASSOCIATE. */
+private fun udpTest(s: Settings.Values): String {
+    val a = io.github.cinnamon415.packetwall.engine.UdpAssociation(s.upHost, s.upPort, s.upUser, s.upPass)
+    if (!a.open()) return "UDP ✕"
+    return try {
+        java.net.DatagramSocket().use { ds ->
+            ds.soTimeout = 3000
+            val q = byteArrayOf(0x12, 0x34, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 7) + "example".toByteArray() + byteArrayOf(3) +
+                "com".toByteArray() + byteArrayOf(0, 0, 1, 0, 1)
+            val hdr = byteArrayOf(0, 0, 0, 1, 1, 1, 1, 1, 0, 53)
+            val out = hdr + q
+            val t0 = System.nanoTime()
+            ds.send(java.net.DatagramPacket(out, out.size, java.net.InetAddress.getByName(a.relayIp), a.relayPort))
+            val buf = ByteArray(1500); val p = java.net.DatagramPacket(buf, buf.size)
+            ds.receive(p)
+            val ok = p.length > 12 && buf[10] == 0x12.toByte() && buf[11] == 0x34.toByte()
+            if (ok) "UDP ${(System.nanoTime() - t0) / 1_000_000} ms" else "UDP ?"
+        }
+    } catch (e: Exception) { "UDP ✕" } finally { a.close() }
 }
 
 @Composable

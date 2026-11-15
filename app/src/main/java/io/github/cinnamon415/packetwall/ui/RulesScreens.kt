@@ -66,6 +66,7 @@ import io.github.cinnamon415.packetwall.fw.TargetKind
 import io.github.cinnamon415.packetwall.fw.Who
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 
 @Composable
 private fun SearchField(q: String, onChange: (String) -> Unit) {
@@ -199,6 +200,7 @@ fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     var rename by remember { mutableStateOf(false) }
     var members by remember { mutableStateOf(false) }
+    var selection by remember { mutableStateOf(setOf<Int>()) }
 
     if (who is Who.Group && group == null) { LaunchedEffect(Unit) { onBack() }; return }
 
@@ -207,7 +209,9 @@ fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit) {
     val title = info?.name ?: group?.name ?: (who as? Who.App)?.pkg ?: ""
     val subtitle = info?.let { "${it.packageName} · uid ${it.uid}" } ?: group?.let { stringResource(R.string.group_members, it.packages.size) }
 
-    ScreenScaffold(title = title, subtitle = subtitle, onBack = onBack, actions = {
+    androidx.activity.compose.BackHandler(selection.isNotEmpty()) { selection = emptySet() }
+    ScreenScaffold(title = if (selection.isEmpty()) title else stringResource(R.string.selected_n, selection.size), subtitle = subtitle, onBack = onBack, actions = {
+        if (selection.isNotEmpty()) { SelectionActions(app, st, selection) { selection = emptySet() }; return@ScreenScaffold }
         if (group != null) {
             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
             DropdownMenu(menu, { menu = false }) {
@@ -224,7 +228,10 @@ fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit) {
                 if (rules.isEmpty()) EmptyHint(stringResource(R.string.no_rules_app))
                 else {
                     Spacer(Modifier.height(4.dp))
-                    RulesList(rules, st, withSet = true, withWho = false, app = app) { editing = it }
+                    RulesList(rules, st, withSet = true, withWho = false, app = app, selection = selection,
+                        onLongClick = { r -> selection = selection + r.id }) { r ->
+                        if (selection.isNotEmpty()) selection = if (r.id in selection) selection - r.id else selection + r.id else editing = r
+                    }
                 }
             }
             ExtendedFloatingActionButton(onClick = {
@@ -297,6 +304,7 @@ fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
     var editing by remember { mutableStateOf<Rule?>(null) }
     var sortNew by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var selection by remember { mutableStateOf(setOf<Int>()) }
 
     val needle = q.trim().lowercase()
     val rules = st.rules.filter { r ->
@@ -305,7 +313,10 @@ fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
             (needle.isEmpty() || r.target.value.contains(needle))
     }.let { l -> if (sortNew) l.sortedByDescending { it.created } else l.sortedWith(compareBy({ it.target.kind }, { it.target.value })) }
 
-    ScreenScaffold(title = stringResource(R.string.nav_global), subtitle = "${rules.size}", onMenu = openDrawer, actions = {
+    androidx.activity.compose.BackHandler(selection.isNotEmpty()) { selection = emptySet() }
+    ScreenScaffold(title = if (selection.isEmpty()) stringResource(R.string.nav_global) else stringResource(R.string.selected_n, selection.size),
+        subtitle = "${rules.size}", onMenu = openDrawer, actions = {
+        if (selection.isNotEmpty()) { SelectionActions(app, st, selection) { selection = emptySet() }; return@ScreenScaffold }
         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
         DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem({ Text(stringResource(R.string.sort_name)) }, { sortNew = false; menu = false },
@@ -328,7 +339,12 @@ fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                 }
                 LazyColumn(contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 88.dp)) {
                     if (rules.isEmpty()) item { EmptyHint(stringResource(R.string.no_rules_global)) }
-                    else item { RulesList(rules, st, withSet = setFilter == null, withWho = false, app = app) { editing = it } }
+                    else item {
+                        RulesList(rules, st, withSet = setFilter == null, withWho = false, app = app, selection = selection,
+                            onLongClick = { r -> selection = selection + r.id }) { r ->
+                            if (selection.isNotEmpty()) selection = if (r.id in selection) selection - r.id else selection + r.id else editing = r
+                        }
+                    }
                 }
             }
             ExtendedFloatingActionButton(onClick = {
@@ -344,3 +360,31 @@ fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
     }
 }
 
+
+/** Top bar actions for selected rules: move to a set, export, delete. */
+@Composable
+private fun androidx.compose.foundation.layout.RowScope.SelectionActions(app: PacketwallApp, st: FwState, selection: Set<Int>, onDone: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var moveMenu by remember { mutableStateOf(false) }
+    val doneMsg = stringResource(R.string.exported)
+    val export = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) scope.launch {
+            val text = app.firewall.exportRules(selection)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(text) }
+            }
+            android.widget.Toast.makeText(ctx, doneMsg, android.widget.Toast.LENGTH_SHORT).show()
+            onDone()
+        }
+    }
+    Box {
+        TextButton({ moveMenu = true }) { Text(stringResource(R.string.move_to_set)) }
+        DropdownMenu(moveMenu, { moveMenu = false }) {
+            st.userSets.forEach { s -> DropdownMenuItem({ Text(s.name) }, { moveMenu = false; app.firewall.moveRules(selection, s.id); onDone() }) }
+        }
+    }
+    IconButton({ export.launch("packetwall-rules-${selection.size}.json") }) { Icon(painterResource(R.drawable.ic_save), stringResource(R.string.export)) }
+    IconButton({ app.firewall.deleteRules(selection); onDone() }) { Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.delete)) }
+}

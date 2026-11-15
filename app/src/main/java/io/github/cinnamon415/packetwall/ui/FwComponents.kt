@@ -2,6 +2,7 @@ package io.github.cinnamon415.packetwall.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -91,6 +92,8 @@ fun ruleProps(r: Rule, st: FwState, withSet: Boolean, withWho: Boolean, app: Pac
         parts.add(if (r.port != 0) "$p/${r.port}" else p)
     }
     if (r.action == Action.BLOCK && r.reject) parts.add("reject")
+    if (r.action == Action.ALLOW && r.route != io.github.cinnamon415.packetwall.fw.Route.DEFAULT)
+        parts.add("→ " + stringResource(if (r.route == io.github.cinnamon415.packetwall.fw.Route.UPSTREAM) R.string.route_upstream else R.string.route_direct))
     if (withSet) st.set(r.setId)?.let { parts.add(it.name) }
     return parts.joinToString(" · ")
 }
@@ -135,8 +138,11 @@ fun ActionDot(action: Action) {
 }
 
 @Composable
-fun RuleRow(r: Rule, props: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 9.dp),
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+fun RuleRow(r: Rule, props: String, selected: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth()
+        .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+        .combinedClickable(onLongClick = onLongClick, onClick = onClick).padding(horizontal = 12.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically) {
         ActionDot(r.action)
         Spacer(Modifier.width(12.dp))
@@ -151,11 +157,12 @@ fun RuleRow(r: Rule, props: String, onClick: () -> Unit) {
 }
 
 @Composable
-fun RulesList(rules: List<Rule>, st: FwState, withSet: Boolean, withWho: Boolean, app: PacketwallApp, onClick: (Rule) -> Unit) {
+fun RulesList(rules: List<Rule>, st: FwState, withSet: Boolean, withWho: Boolean, app: PacketwallApp,
+              selection: Set<Int> = emptySet(), onLongClick: ((Rule) -> Unit)? = null, onClick: (Rule) -> Unit) {
     RoundedGroup {
         rules.forEachIndexed { i, r ->
             if (i > 0) HorizontalDivider(Modifier.padding(start = 52.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh)
-            RuleRow(r, ruleProps(r, st, withSet, withWho, app)) { onClick(r) }
+            RuleRow(r, ruleProps(r, st, withSet, withWho, app), r.id in selection, onLongClick?.let { { it(r) } }) { onClick(r) }
         }
     }
 }
@@ -201,6 +208,7 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
     var port by remember { mutableStateOf(if (initial.port == 0) "" else initial.port.toString()) }
     var reject by remember { mutableStateOf(initial.reject) }
     var setId by remember { mutableStateOf(initial.setId) }
+    var route by remember { mutableStateOf(initial.route) }
 
     val target = Target(kind, value.trim().lowercase(), subs)
     val portNum = port.toIntOrNull()
@@ -252,6 +260,16 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
                 }
                 if (action == Action.BLOCK)
                     CheckRow(reject, stringResource(R.string.reject_label)) { reject = it }
+                if (action == Action.ALLOW) {
+                    Text(stringResource(R.string.kv_route), style = MaterialTheme.typography.labelMedium)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(io.github.cinnamon415.packetwall.fw.Route.DEFAULT to R.string.route_default,
+                            io.github.cinnamon415.packetwall.fw.Route.DIRECT to R.string.route_direct,
+                            io.github.cinnamon415.packetwall.fw.Route.UPSTREAM to R.string.route_upstream).forEach { (rt, s) ->
+                            FilterChip(route == rt, { route = rt }, { Text(stringResource(s)) })
+                        }
+                    }
+                }
 
                 SetDropdown(st, setId) { setId = it }
             }
@@ -259,7 +277,8 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
         confirmButton = {
             Button(enabled = ok, onClick = {
                 onSave(initial.copy(action = action, target = target.copy(subdomains = kind == TargetKind.DOMAIN && subs),
-                    proto = proto, port = portNum ?: 0, reject = action == Action.BLOCK && reject, setId = setId))
+                    proto = proto, port = portNum ?: 0, reject = action == Action.BLOCK && reject, setId = setId,
+                    route = if (action == Action.ALLOW) route else io.github.cinnamon415.packetwall.fw.Route.DEFAULT))
             }) { Text(stringResource(R.string.save)) }
         },
         dismissButton = {

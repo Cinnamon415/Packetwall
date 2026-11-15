@@ -19,6 +19,20 @@ class PacketwallApp : Application() {
     lateinit var settings: Settings
         private set
     val packets = PacketStore()
+    val pcapServer by lazy { io.github.cinnamon415.packetwall.analysis.PcapServer(packets) }
+    val recorder by lazy { io.github.cinnamon415.packetwall.analysis.DiskRecorder(packets, java.io.File(filesDir, "captures")) }
+
+    /** Starts/stops streaming and recording to match the settings while protection is on. */
+    fun applySinks(running: Boolean) {
+        val s = settings.current
+        val wantStream = running && s.capturePackets && s.stream
+        val st = pcapServer.state.value
+        if (wantStream && (!st.running || st.port != s.streamPort || st.lan != s.streamLan)) pcapServer.start(s.streamPort, s.streamLan)
+        else if (!wantStream && st.running) pcapServer.stop()
+        val wantRec = running && s.capturePackets && s.record
+        if (wantRec && !recorder.state.value.running) recorder.start(s.recordMb, s.recordMinutes, s.recordKeep)
+        else if (!wantRec && recorder.state.value.running) recorder.stop()
+    }
     val logDb by lazy { io.github.cinnamon415.packetwall.engine.LogDb(this) }
     lateinit var geo: io.github.cinnamon415.packetwall.analysis.GeoIp
         private set
@@ -42,7 +56,16 @@ class PacketwallApp : Application() {
             settings.values.collect { s -> io.github.cinnamon415.packetwall.system.Schedules.apply(this@PacketwallApp, s) }
         }
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
-            settings.values.map { it.logDays }.distinctUntilChanged().collect { d -> connections.configureLog(logDb, d) }
+            settings.values.map { it.logDays to it.logBlockedOnly }.distinctUntilChanged().collect { (d, b) ->
+                connections.blockedOnly = b
+                connections.configureLog(logDb, d)
+            }
+        }
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            kotlinx.coroutines.flow.combine(settings.values, io.github.cinnamon415.packetwall.engine.CaptureService.state) { s, st ->
+                Triple(listOf(s.stream, s.streamLan, s.record, s.capturePackets), listOf(s.streamPort, s.recordMb, s.recordMinutes, s.recordKeep),
+                    st is io.github.cinnamon415.packetwall.engine.CaptureState.Running)
+            }.distinctUntilChanged().collect { (_, _, running) -> applySinks(running) }
         }
     }
 

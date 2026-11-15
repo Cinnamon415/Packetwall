@@ -33,6 +33,27 @@ class PacketStore {
         val dataOff get() = DATA_OFF
     }
 
+    /** Live consumers of the pcapng stream (PC streaming, disk recording). */
+    interface Sink {
+        /** Called first with the file preamble + metadata blocks, then with every new block. */
+        fun onBlock(block: ByteArray)
+    }
+    private val sinks = java.util.concurrent.CopyOnWriteArrayList<Sink>()
+
+    fun addSink(s: Sink) {
+        synchronized(lock) { s.onBlock(header()) }
+        sinks.add(s)
+    }
+    fun removeSink(s: Sink) { sinks.remove(s) }
+
+    /** SHB + IDB + metadata blocks: the start of a valid pcapng file. */
+    fun header(): ByteArray = synchronized(lock) {
+        val o = java.io.ByteArrayOutputStream()
+        o.write(if (preamble.isEmpty()) defaultPreamble() else preamble)
+        extraBlocks.values.forEach { o.write(it) }
+        o.toByteArray()
+    }
+
     private val lock = Any()
     private val packets = ArrayDeque<Pkt>()
     private val byKey = HashMap<String, ArrayDeque<Pkt>>()
@@ -74,8 +95,10 @@ class PacketStore {
                 val block = data.copyOfRange(pos, pos + len)
                 when (type) {
                     0x0A0D0D0A, 0x00000001 -> preamble += block               // SHB, IDB
-                    0x00000006 -> addEpb(block)
-                    else -> extraBlocks[block.contentHashCode().toString()] = block // uid map, secrets…
+                    0x00000006 -> { addEpb(block); sinks.forEach { it.onBlock(block) } }
+                    else -> {                                                   // uid map, secrets…
+                        if (extraBlocks.put(block.contentHashCode().toString(), block) == null) sinks.forEach { it.onBlock(block) }
+                    }
                 }
                 pos += len
             }

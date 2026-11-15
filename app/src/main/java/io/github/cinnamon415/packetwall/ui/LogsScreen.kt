@@ -6,6 +6,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -87,7 +89,34 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
         else -> list
     }
 
-    ScreenScaffold(title = stringResource(R.string.nav_logs), subtitle = "${conns.size}", onMenu = openDrawer) {
+    val scope = rememberCoroutineScope()
+    var menu by remember { mutableStateOf(false) }
+    val doneMsg = stringResource(R.string.exported)
+    val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) scope.launch {
+            val ok = runCatching { withContext(Dispatchers.IO) {
+                ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { w -> writeCsv(w, shown, app) }
+            } }.isSuccess
+            Toast.makeText(ctx, if (ok) doneMsg else "Error", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val pcapLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        if (uri != null) scope.launch {
+            val ok = runCatching { withContext(Dispatchers.IO) {
+                val pkts = shown.flatMap { app.packets.packetsOf(it) }.sortedBy { it.seq }
+                ctx.contentResolver.openOutputStream(uri, "wt")!!.use { app.packets.writePcapng(it, pkts) }
+            } }.isSuccess
+            Toast.makeText(ctx, if (ok) doneMsg else "Error", Toast.LENGTH_SHORT).show()
+        }
+    }
+    val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
+    ScreenScaffold(title = stringResource(R.string.nav_logs), subtitle = "${shown.size} / ${conns.size}", onMenu = openDrawer, actions = {
+        IconButton(onClick = { menu = true }) { Icon(androidx.compose.material.icons.Icons.Filled.MoreVert, null) }
+        androidx.compose.material3.DropdownMenu(menu, { menu = false }) {
+            androidx.compose.material3.DropdownMenuItem({ Text(stringResource(R.string.export_csv)) }, { menu = false; csvLauncher.launch("packetwall-log-$stamp.csv") })
+            androidx.compose.material3.DropdownMenuItem({ Text(stringResource(R.string.export_pcapng_filtered)) }, { menu = false; pcapLauncher.launch("packetwall-filtered-$stamp.pcapng") })
+        }
+    }) {
         Column(Modifier.padding(horizontal = 12.dp)) {
             OutlinedTextField(filter, { filter = it }, Modifier.fillMaxWidth(), singleLine = true,
                 leadingIcon = { Icon(painterResource(R.drawable.ic_filter), null) },
@@ -116,6 +145,7 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
         } else LazyColumn {
             items(shown, key = { it.id }) { c ->
                 when (tab) {
+                    1 -> DnsRow(app, c, onLongClick = { quick = c }) { onOpenConn(c.id) }
                     2 -> HttpRow(c, onLongClick = { quick = c }) { onOpenConn(c.id) }
                     else -> ConnRow(c, compact, app.trackers.trackingOf(c.host)?.name, onLongClick = { quick = c }) { onOpenConn(c.id) }
                 }
@@ -255,6 +285,8 @@ private fun CapturesTab(app: PacketwallApp) {
                 }
             }
         }
+        item { StreamCard(app, settings) }
+        item { RecordCard(app, settings) { refresh() } }
         if (files.isEmpty()) item { EmptyHint(stringResource(R.string.no_captures)) }
         else item {
             RoundedGroup {
@@ -275,5 +307,112 @@ private fun CapturesTab(app: PacketwallApp) {
         item {
             Text(stringResource(R.string.captures_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+@Composable
+private fun StreamCard(app: PacketwallApp, s: io.github.cinnamon415.packetwall.Settings.Values) {
+    val st by app.pcapServer.state.collectAsState()
+    RoundedGroup {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.stream_title), style = MaterialTheme.typography.titleSmall)
+                    Text(when {
+                        st.error != null -> st.error!!
+                        st.running -> stringResource(R.string.stream_running, st.port, st.clients)
+                        else -> stringResource(R.string.stream_off)
+                    }, style = MaterialTheme.typography.bodySmall,
+                        color = if (st.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(s.stream, { v -> app.settings.update { it.copy(stream = v) } })
+            }
+            if (s.stream) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(s.streamLan, { v -> app.settings.update { it.copy(streamLan = v) } })
+                    Text(stringResource(R.string.stream_lan), style = MaterialTheme.typography.bodySmall)
+                }
+                if (s.streamLan) Text(stringResource(R.string.stream_lan_warn), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error)
+                val cmd = if (s.streamLan) "nc <phone-ip> ${s.streamPort} | wireshark -k -i -"
+                    else "adb forward tcp:${s.streamPort} tcp:${s.streamPort}\nnc 127.0.0.1 ${s.streamPort} | wireshark -k -i -"
+                Text(cmd, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecordCard(app: PacketwallApp, s: io.github.cinnamon415.packetwall.Settings.Values, onChanged: () -> Unit) {
+    val st by app.recorder.state.collectAsState()
+    androidx.compose.runtime.LaunchedEffect(st.file) { onChanged() }
+    RoundedGroup {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.record_title), style = MaterialTheme.typography.titleSmall)
+                    Text(if (st.running && st.file != null) "${st.file} · ${formatBytes(st.bytes)}" else stringResource(R.string.record_hint),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(s.record, { v -> app.settings.update { it.copy(record = v) } })
+            }
+            if (s.record) {
+                @Composable fun chips(label: String, options: List<Int>, value: Int, fmt: (Int) -> String, set: (Int) -> Unit) {
+                    Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
+                    Row(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        options.forEach { o -> FilterChip(o == value, { set(o) }, { Text(fmt(o)) }) }
+                    }
+                }
+                chips(stringResource(R.string.record_size), listOf(8, 32, 128, 512), s.recordMb, { "$it MB" }) { v -> app.settings.update { it.copy(recordMb = v) } }
+                chips(stringResource(R.string.record_age), listOf(10, 60, 360, 1440), s.recordMinutes, { if (it < 60) "$it min" else "${it / 60} h" }) { v -> app.settings.update { it.copy(recordMinutes = v) } }
+                chips(stringResource(R.string.record_keep), listOf(2, 5, 10, 24), s.recordKeep, { "$it" }) { v -> app.settings.update { it.copy(recordKeep = v) } }
+            }
+        }
+    }
+}
+
+/** CSV of the shown connections (the current filter), RFC 4180 quoting. */
+fun writeCsv(w: java.io.Writer, list: List<Conn>, app: PacketwallApp) {
+    fun q(v: Any?) = v?.toString()?.let { if (it.any { c -> c == ',' || c == '"' || c == '\n' }) "\"" + it.replace("\"", "\"\"") + "\"" else it } ?: ""
+    w.write("id,first_seen,last_seen,app,package,uid,l4,l7,src_ip,src_port,dst_ip,dst_port,host,url,country,sent_bytes,rcvd_bytes,sent_pkts,rcvd_pkts,status,blocked,rule,route,tracker\n")
+    val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", Locale.US)
+    for (c in list) {
+        val status = when { c.blocked -> "blocked"; c.active -> "active"; else -> "closed" }
+        w.write(listOf(c.id, iso.format(Date(c.firstSeen)), iso.format(Date(c.lastSeen)), c.app.name, c.app.packageName, c.uid, c.l4, c.l7proto,
+            c.srcIp, c.srcPort, c.dstIp, c.dstPort, c.host, c.url, c.country, c.sentBytes, c.rcvdBytes, c.sentPkts, c.rcvdPkts, status,
+            c.blocked, if (c.fwRule != 0) c.fwRule else null, if (c.proxied) "upstream" else "direct", app.trackers.trackingOf(c.host)?.name)
+            .joinToString(",") { q(it) })
+        w.write("\n")
+    }
+}
+
+/** DNS tab row: the query and, when its packets are still in the buffer, the answer. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun DnsRow(app: PacketwallApp, c: Conn, onLongClick: () -> Unit, onClick: () -> Unit) {
+    val answer by androidx.compose.runtime.produceState<String?>(null, c.id, c.lastSeen) {
+        value = withContext(Dispatchers.Default) {
+            app.packets.packetsOf(c).asReversed().firstOrNull { !it.tx }?.let {
+                io.github.cinnamon415.packetwall.analysis.Dissector.summary(it.block, it.dataOff, it.capLen).info.substringAfter("→ ", "")
+            }?.takeIf { it.isNotEmpty() }
+        }
+    }
+    Row(Modifier.fillMaxWidth().combinedClickable(onLongClick = onLongClick, onClick = onClick).padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        AppIcon(c.app, 32.dp)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(c.host ?: "?", fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(when {
+                c.blocked -> stringResource(R.string.dns_blocked_answer)
+                answer != null -> "→ $answer"
+                else -> c.app.name
+            }, style = MaterialTheme.typography.bodySmall, fontFamily = if (answer != null && !c.blocked) FontFamily.Monospace else null,
+                color = if (c.blocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Text(formatTime(c.firstSeen), style = MaterialTheme.typography.bodySmall,
+            color = if (c.blocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

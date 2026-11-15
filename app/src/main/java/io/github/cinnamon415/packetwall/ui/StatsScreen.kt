@@ -184,7 +184,7 @@ private fun SplitBar(a: Float, b: Float, ca: Color, cb: Color) {
 
 /** Bytes/s over the last minutes, up and down. */
 @Composable
-private fun SpeedChart(h: List<ConnectionsRegister.Sample>, up: Color, down: Color) {
+fun SpeedChart(h: List<ConnectionsRegister.Sample>, up: Color, down: Color, height: androidx.compose.ui.unit.Dp = 120.dp) {
     val grid = MaterialTheme.colorScheme.outlineVariant
     val rates = remember(h) {
         h.zipWithNext { a, b ->
@@ -202,7 +202,7 @@ private fun SpeedChart(h: List<ConnectionsRegister.Sample>, up: Color, down: Col
             Text("max ${formatBytes(peak.toLong())}/s", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(8.dp))
-        Canvas(Modifier.fillMaxWidth().height(120.dp)) {
+        Canvas(Modifier.fillMaxWidth().height(height)) {
             for (i in 0..3) { val y = size.height * i / 3; drawLine(grid, Offset(0f, y), Offset(size.width, y), 1f) }
             if (rates.size < 2 || peak <= 0f) return@Canvas
             val t0 = rates.first().first; val span = max(1L, rates.last().first - t0).toFloat()

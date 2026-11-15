@@ -124,6 +124,14 @@ fun HomeScreen(
                 Tile(Modifier.weight(1f), R.drawable.ic_wall, stringResource(R.string.tile_active), "${stats.activeConns}", alpha, onClick = onOpenLogs)
             }
 
+            // Speed ↑↓ (spec: home shows the speed graph)
+            if (on) {
+                val history by app.connections.history.collectAsState()
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    SpeedChart(history, LocalExtraColors.current.up, LocalExtraColors.current.down, height = 64.dp)
+                }
+            }
+
             // Recent blocks (max 5)
             SectionHeader(stringResource(R.string.recent_blocks), stringResource(R.string.all), onOpenLogs)
             val recent = conns.filter { it.blocked && it.fwRule != 0 }.take(5)

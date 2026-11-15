@@ -21,6 +21,7 @@
 #include <netinet/udp.h>
 
 #include "pcapdroid.h"
+#include "pw_rules.h"
 #include "common/utils.h"
 #include "port_map.h"
 
@@ -411,8 +412,19 @@ static bool matches_decryption_whitelist(pcapdroid_t *pd, const zdtun_5tuple_t *
 /* ******************************************************* */
 
 // NOTE: this handles both user-specified SOCKS5 and TLS decryption
-static bool should_proxify(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
+// Packetwall: is this connection meant to go through the upstream? (rule route, else the scope)
+static bool wants_upstream(pcapdroid_t *pd, const pd_conn_t *data) {
     if(!pd->socks5.enabled || !upstream_active)
+        return false;
+    if(data->fw_route == PW_ROUTE_DIRECT)
+        return false;
+    if(data->fw_route == PW_ROUTE_UPSTREAM)
+        return true;
+    return upstream_all;
+}
+
+static bool should_proxify(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
+    if(!wants_upstream(pd, data))
         return false;
 
     if (pd->tls_decryption.list) {
@@ -502,6 +514,7 @@ int run_vpn(pcapdroid_t *pd) {
 
     if(pd->socks5.enabled) {
         zdtun_set_socks5_proxy(zdt, &pd->socks5.proxy_ip, pd->socks5.proxy_port, pd->socks5.proxy_ipver);
+        zdtun_set_proxy_http(zdt, upstream_http);
 
         if(pd->socks5.proxy_user[0] && pd->socks5.proxy_pass[0])
             zdtun_set_socks5_userpass(zdt, pd->socks5.proxy_user, pd->socks5.proxy_pass);
@@ -596,13 +609,25 @@ int run_vpn(pcapdroid_t *pd) {
                 pd_conn_t *data = zdtun_conn_get_userdata(conn);
 
                 // To be run before pd_process_packet/process_payload
+                if(udp_relay_dirty) {
+                    udp_relay_dirty = false;
+                    zdtun_set_udp_relay(zdt, &udp_relay_ip, udp_relay_port, udp_relay_ipver);
+                    log_i("UDP relay %s", udp_relay_port ? "set" : "removed");
+                }
+
                 if(data->sent_pkts == 0) {
                     if(pd_check_port_map(conn, data->uid))
                         data->port_mapping_applied = true;
                     else if(should_proxify(pd, tuple, data)) {
                         zdtun_conn_proxy(conn);
                         data->proxied = true;
-                    } else if(pd->socks5.enabled && upstream_active && upstream_block_udp &&
+                    } else if(wants_upstream(pd, data) && zdtun_has_udp_relay(zdt) &&
+                              (tuple->ipproto == IPPROTO_UDP) &&
+                              !((tuple->ipver == 4) && (tuple->dst_ip.ip4 == pd->vpn.ipv4.internal_dns))) {
+                        // Packetwall: UDP through the SOCKS5 UDP ASSOCIATE relay
+                        zdtun_conn_udp_relay(conn);
+                        data->proxied = true;
+                    } else if(wants_upstream(pd, data) && upstream_block_udp &&
                               (tuple->ipproto == IPPROTO_UDP) &&
                               !((tuple->ipver == 4) && (tuple->dst_ip.ip4 == pd->vpn.ipv4.internal_dns))) {
                         // Packetwall: SOCKS5 here carries TCP only; UDP (QUIC…) is blocked on request

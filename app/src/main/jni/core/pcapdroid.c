@@ -40,6 +40,13 @@ bool block_private_dns = false;
 uint16_t dns_server_port = 53;
 bool upstream_active = true;
 bool upstream_block_udp = false;
+bool upstream_http = false;
+bool upstream_all = true;
+// SOCKS5 UDP relay requested by the app, applied by the capture thread
+volatile bool udp_relay_dirty = false;
+zdtun_ip_t udp_relay_ip;
+uint16_t udp_relay_port = 0;   // network order, 0 = none
+uint8_t udp_relay_ipver = 4;
 bool has_seen_dump_extensions = false;
 
 bool dump_capture_stats_now = false;
@@ -489,6 +496,7 @@ static bool pw_fw_apply(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t 
 
     data->fw_rule = 0;
     data->fw_reject = false;
+    data->fw_route = PW_ROUTE_DEFAULT;
 
     if(e && pd->vpn_capture) {
         zdtun_ip_t dst_ip = tuple->dst_ip;
@@ -507,6 +515,7 @@ static bool pw_fw_apply(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t 
 
         if(v.matched) {
             data->fw_rule = v.ref;
+            data->fw_route = v.route;
             fw_block = v.block;
             data->fw_reject = v.block && v.reject;
         }

@@ -365,6 +365,16 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
         }
     }
     val openJson = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { importJsonUri = it }
+    var exportProfileId by remember { mutableStateOf<Int?>(null) }
+    val exportProfile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        val id = exportProfileId
+        if (uri != null && id != null) scope.launch {
+            val ok = runCatching { withContext(Dispatchers.IO) {
+                ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(app.firewall.exportProfile(id)) }
+            } }.isSuccess
+            Toast.makeText(ctx, if (ok) doneMsg else "Error", Toast.LENGTH_SHORT).show()
+        }
+    }
     val openList = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { importListUri = it }
 
     ScreenScaffold(title = stringResource(R.string.nav_sets), onMenu = openDrawer, actions = {
@@ -396,6 +406,10 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                         }
                         DropdownMenu(profileMenu == p.id, { profileMenu = null }) {
                             DropdownMenuItem({ Text(stringResource(R.string.rename)) }, { profileMenu = null; renameProfile = p.id })
+                            DropdownMenuItem({ Text(stringResource(R.string.export)) }, {
+                                profileMenu = null; exportProfileId = p.id
+                                exportProfile.launch("packetwall-profile-${p.name.replace(Regex("[^A-Za-z0-9._-]+"), "_")}.json")
+                            })
                             DropdownMenuItem({ Text(stringResource(R.string.delete)) }, { profileMenu = null; app.firewall.deleteProfile(p.id) },
                                 enabled = st.profiles.size > 1)
                         }

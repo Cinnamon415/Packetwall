@@ -19,6 +19,10 @@ enum class TargetKind { ALL, DOMAIN, IP, COUNTRY, ASN }
 @Serializable
 enum class Proto(val ipproto: Int) { ANY(0), TCP(6), UDP(17) }
 
+/** Where allowed traffic goes (spec 2.8 "route as a rule action"). */
+@Serializable
+enum class Route(val code: Int) { DEFAULT(0), DIRECT(1), UPSTREAM(2) }
+
 @Serializable
 data class Target(
     val kind: TargetKind,
@@ -52,6 +56,8 @@ data class Rule(
     /** 0 = any port. */
     val port: Int = 0,
     val created: Long = 0,
+    /** For allow rules: send the matching traffic directly or through the upstream proxy. */
+    val route: Route = Route.DEFAULT,
 )
 
 @Serializable

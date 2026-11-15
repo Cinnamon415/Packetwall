@@ -43,7 +43,7 @@ object RulesCompiler {
                     val reject = if (r.action == Action.BLOCK && r.reject) 1 else 0
                     val subs = if (r.target.kind == TargetKind.DOMAIN && r.target.subdomains) 1 else 0
                     for (uid in uids) for (v in values) {
-                        w.write("R\t${r.id}\t$prio\t$who\t$uid\t$block\t$reject\t$kind\t$v\t$subs\t${r.proto.ipproto}\t${r.port}\n")
+                        w.write("R\t${r.id}\t$prio\t$who\t$uid\t$block\t$reject\t$kind\t$v\t$subs\t${r.proto.ipproto}\t${r.port}\t${if (r.action == Action.ALLOW) r.route.code else 0}\n")
                         lines++
                     }
                 }

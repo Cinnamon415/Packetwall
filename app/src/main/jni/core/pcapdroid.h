@@ -126,6 +126,7 @@ typedef struct {
     bool to_block;
     bool fw_reject;      // Packetwall: reject instead of drop
     int32_t fw_rule;     // Packetwall: matched rule ref (0 = none)
+    uint8_t fw_route;    // Packetwall: PW_ROUTE_* of the allow rule that matched
     bool fw_app_block;
     bool netd_block_missed;
     bool proxied;
@@ -420,6 +421,12 @@ extern bool block_private_dns;
 extern uint16_t dns_server_port;
 extern bool upstream_active;     // SOCKS5 upstream reachable (or kill switch on)
 extern bool upstream_block_udp;  // block UDP while the upstream is active
+extern bool upstream_http;       // the upstream is an HTTP CONNECT proxy
+extern bool upstream_all;        // proxy everything (true) or only "via upstream" rules (false)
+extern volatile bool udp_relay_dirty;
+extern zdtun_ip_t udp_relay_ip;
+extern uint16_t udp_relay_port;
+extern uint8_t udp_relay_ipver;
 extern bool dump_capture_stats_now;
 extern bool reload_blacklists_now;
 extern bool has_seen_dump_extensions;

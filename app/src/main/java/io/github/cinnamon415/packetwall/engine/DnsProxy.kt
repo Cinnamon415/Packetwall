@@ -18,8 +18,14 @@ import java.util.concurrent.TimeUnit
  *
  * Packetwall itself is excluded from its VPN, so these HTTPS requests go straight to the network.
  */
-class DnsProxy(private val url: String, upstream: java.net.Proxy? = null) {
-    private val http = baseClient.newBuilder().proxy(upstream).build()
+class DnsProxy(private val url: String, upstream: java.net.Proxy? = null, proxyAuth: Pair<String, String>? = null) {
+    private val http = baseClient.newBuilder().proxy(upstream).apply {
+        // HTTP CONNECT proxies with a login (Basic auth)
+        if (proxyAuth != null) proxyAuthenticator { _, resp ->
+            if (resp.request.header("Proxy-Authorization") != null) null
+            else resp.request.newBuilder().header("Proxy-Authorization", okhttp3.Credentials.basic(proxyAuth.first, proxyAuth.second)).build()
+        }
+    }.build()
     data class Stats(val queries: Long = 0, val failures: Long = 0, val avgMs: Long = 0, val lastError: String? = null)
 
     private var sock: DatagramSocket? = null

@@ -1572,3 +1572,34 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_setUpstreamState(JNI
     upstream_active = active;
     upstream_block_udp = block_udp;
 }
+
+/* ******************************************************* */
+
+// Packetwall: upstream type (true = HTTP CONNECT), set before the capture starts
+JNIEXPORT void JNICALL
+Java_io_github_cinnamon415_packetwall_engine_CaptureService_setUpstreamHttp(JNIEnv *env, jclass clazz, jboolean http) {
+    upstream_http = http;
+}
+
+// Packetwall: SOCKS5 UDP relay from a UDP ASSOCIATE held by the app ("" = none)
+JNIEXPORT void JNICALL
+Java_io_github_cinnamon415_packetwall_engine_CaptureService_setUdpRelay(JNIEnv *env, jclass clazz, jstring ip, jint port) {
+    const char *s = (*env)->GetStringUTFChars(env, ip, NULL);
+    zdtun_ip_t addr = {0};
+    int ver = (s && s[0]) ? zdtun_parse_ip(s, &addr) : -1;
+    if(s) (*env)->ReleaseStringUTFChars(env, ip, s);
+
+    if((ver == 4 || ver == 6) && (port > 0)) {
+        udp_relay_ip = addr;
+        udp_relay_ipver = (uint8_t) ver;
+        udp_relay_port = htons((uint16_t) port);
+    } else
+        udp_relay_port = 0;
+    udp_relay_dirty = true;
+}
+
+// Packetwall: proxy all traffic (true) or only connections allowed by "via upstream" rules
+JNIEXPORT void JNICALL
+Java_io_github_cinnamon415_packetwall_engine_CaptureService_setUpstreamScope(JNIEnv *env, jclass clazz, jboolean all) {
+    upstream_all = all;
+}

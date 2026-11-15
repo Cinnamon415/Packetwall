@@ -38,5 +38,11 @@ int main(int c,char**v){
   chk(e,1051,"10.215.173.2","evil.com",17,53,1, 1,0,5);
   chk(e,1,"9.9.1.1",NULL,6,443,0, 1,1,10);            // ASN prefix blocks
   chk(e,1,"9.9.9.9",NULL,6,443,0, 1,0,11);            // CIDR (narrower) beats ASN
+  { zdtun_ip_t a={0}; zdtun_parse_ip("8.8.8.8",&a);
+    pw_query_t q={.uid=1,.ipver=4,.ip=&a,.host="x.via.example",.proto=6,.port=443};
+    pw_verdict_t v=pw_engine_eval(e,&q); int ok=v.matched && !v.block && v.route==PW_ROUTE_UPSTREAM;
+    printf("%s route upstream -> %d\n", ok?"ok  ":"FAIL", v.route); if(!ok) fails++;
+    q.host="direct.example"; v=pw_engine_eval(e,&q); ok=v.route==PW_ROUTE_DIRECT;
+    printf("%s route direct -> %d\n", ok?"ok  ":"FAIL", v.route); if(!ok) fails++; }
   printf("%s\n", fails?"FAILED":"ALL OK"); pw_engine_destroy(e); return fails;
 }

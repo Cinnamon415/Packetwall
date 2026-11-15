@@ -8,7 +8,8 @@
  *
  * Compiled rules file format (UTF-8, one entry per line, tab separated), written by RulesCompiler.kt:
  *
- *   R <ref> <set> <who> <uid> <block> <reject> <kind> <value> <subs> <proto> <port>
+ *   R <ref> <set> <who> <uid> <block> <reject> <kind> <value> <subs> <proto> <port> [<route>]
+ *       route (allow rules): 0 = default, 1 = direct, 2 = through the upstream proxy
  *       kind: A = all, C = country (value = ISO code), S = prefix of an AS (expanded by the app),
  *             I = IP or CIDR, D = domain pattern
  *   L <set> <ref> <block> <reject> <path>
@@ -36,6 +37,8 @@
 #define F_REJECT 0x02
 #define F_SUBS   0x04
 #define F_WILD   0x08   // pattern contains '*'
+#define F_ROUTE_DIRECT 0x10
+#define F_ROUTE_UP     0x20
 
 #define MAX_LABELS 64
 #define MAX_CANDIDATES 256
@@ -485,13 +488,13 @@ pw_engine_t* pw_engine_load(const char *path, char *err, int errlen) {
         if(!*s || (*s == '#'))
             continue;
 
-        char *fields[12];
+        char *fields[13];
         int nf = 0;
         char *save = NULL;
-        for(char *tok = strtok_r(s, "\t", &save); tok && (nf < 12); tok = strtok_r(NULL, "\t", &save))
+        for(char *tok = strtok_r(s, "\t", &save); tok && (nf < 13); tok = strtok_r(NULL, "\t", &save))
             fields[nf++] = tok;
 
-        if((fields[0][0] == 'R') && (nf == 12)) {
+        if((fields[0][0] == 'R') && ((nf == 12) || (nf == 13))) {
             rule_t r = {0};
             r.ref = atoi(fields[1]);
             r.set = (uint16_t) atoi(fields[2]);
@@ -502,6 +505,11 @@ pw_engine_t* pw_engine_load(const char *path, char *err, int errlen) {
             r.kind = (uint8_t) fields[7][0];
             r.proto = (uint8_t) atoi(fields[10]);
             r.port = (uint16_t) atoi(fields[11]);
+            if(nf == 13) {
+                int route = atoi(fields[12]);
+                if(route == PW_ROUTE_DIRECT) r.flags |= F_ROUTE_DIRECT;
+                else if(route == PW_ROUTE_UPSTREAM) r.flags |= F_ROUTE_UP;
+            }
 
             char *value = fields[8];
             if(strcmp(value, "-") == 0)
@@ -603,6 +611,8 @@ static pw_verdict_t verdict(const rule_t *r) {
         .matched = true,
         .block = (r->flags & F_BLOCK) != 0,
         .reject = (r->flags & F_REJECT) != 0,
+        .route = (r->flags & F_BLOCK) ? PW_ROUTE_DEFAULT :
+                 (r->flags & F_ROUTE_DIRECT) ? PW_ROUTE_DIRECT : (r->flags & F_ROUTE_UP) ? PW_ROUTE_UPSTREAM : PW_ROUTE_DEFAULT,
         .ref = r->ref,
     };
     return v;

@@ -342,6 +342,35 @@ class FirewallStore(
         return jsonPretty.encodeToString(ExportFile.serializer(), ExportFile(exported = System.currentTimeMillis(), state = part, lists = lists))
     }
 
+    /** Only the given rules (with their sets, no profiles). */
+    fun exportRules(ids: Set<Int>): String {
+        val st = _state.value
+        val rules = st.rules.filter { it.id in ids }
+        val setIds = rules.map { it.setId }.toSet()
+        val groupIds = rules.mapNotNull { (it.who as? Who.Group)?.id }.toSet()
+        val part = st.copy(sets = st.sets.filter { it.id in setIds }.map { if (it.kind == SetKind.BLOCKLIST) it.copy(kind = SetKind.USER, url = null) else it },
+            order = st.order.filter { it.id in setIds }, rules = rules, groups = st.groups.filter { it.id in groupIds },
+            profiles = emptyList(), activeProfile = null)
+        return jsonPretty.encodeToString(ExportFile.serializer(), ExportFile(exported = System.currentTimeMillis(), state = part))
+    }
+
+    /** A profile with its sets (in its order), their rules and inlined file lists. */
+    fun exportProfile(profileId: Int): String {
+        val st = _state.value
+        val p = st.profiles.first { it.id == profileId }
+        val ids = p.sets.map { it.id }.toSet()
+        val rules = st.rules.filter { it.setId in ids }
+        val groupIds = rules.mapNotNull { (it.who as? Who.Group)?.id }.toSet()
+        val part = st.copy(sets = st.sets.filter { it.id in ids }, order = p.sets, rules = rules,
+            groups = st.groups.filter { it.id in groupIds }, profiles = listOf(p), activeProfile = p.id)
+        val lists = part.sets.filter { it.kind == SetKind.BLOCKLIST && it.url == null }.associate { it.id to readList(it.id) }
+        return jsonPretty.encodeToString(ExportFile.serializer(), ExportFile(exported = System.currentTimeMillis(), state = part, lists = lists))
+    }
+
+    fun deleteRules(ids: Set<Int>) = update { st -> st.copy(rules = st.rules.filterNot { it.id in ids }) }
+
+    fun moveRules(ids: Set<Int>, setId: Int) = update { st -> st.copy(rules = st.rules.map { if (it.id in ids) it.copy(setId = setId) else it }) }
+
     /** Domains/IPs of a set, one per line (hosts-style lists cannot hold app rules or allows). */
     fun exportPlain(setId: Int, hosts: Boolean): String {
         val st = _state.value

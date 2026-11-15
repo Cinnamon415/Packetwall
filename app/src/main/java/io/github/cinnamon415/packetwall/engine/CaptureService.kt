@@ -71,18 +71,38 @@ class CaptureService : VpnService() {
     private fun startUpstreamMonitor() {
         val st = app.settings.current
         val ip = upstreamIp
-        if (ip == null) { setUpstreamState(true, false); return }
-        setUpstreamState(true, st.upUdp == 1)
+        if (ip == null) { setUpstreamState(true, false); setUdpRelay("", 0); return }
+        // UDP through the proxy only exists for SOCKS5 (UDP ASSOCIATE)
+        val udpRelay = st.upUdp == 2 && st.upType == 0
+        setUpstreamState(true, st.upUdp != 0)
         upstreamMonitor = Thread({
-            while (!Thread.currentThread().isInterrupted) {
-                val up = try {
-                    java.net.Socket().use { it.connect(java.net.InetSocketAddress(ip, st.upPort), 2000) }; true
-                } catch (e: Exception) { false }
-                if (upstreamUp.value != up) Log.i(TAG, "upstream ${if (up) "up" else "down"}")
-                upstreamUp.value = up
-                val active = up || st.upOnDown == 0
-                setUpstreamState(active, active && st.upUdp == 1)
-                try { Thread.sleep(10_000) } catch (e: InterruptedException) { break }
+            var assoc: UdpAssociation? = null
+            try {
+                while (!Thread.currentThread().isInterrupted) {
+                    val up = try {
+                        java.net.Socket().use { it.connect(java.net.InetSocketAddress(ip, st.upPort), 2000) }; true
+                    } catch (e: Exception) { false }
+                    if (upstreamUp.value != up) Log.i(TAG, "upstream ${if (up) "up" else "down"}")
+                    upstreamUp.value = up
+                    if (udpRelay) {
+                        if (up && assoc?.alive != true) {
+                            assoc?.close()
+                            assoc = UdpAssociation(ip, st.upPort, st.upUser, st.upPass).takeIf { it.open() }
+                            setUdpRelay(assoc?.relayIp ?: "", assoc?.relayPort ?: 0)
+                        } else if (!up && assoc != null) { assoc.close(); assoc = null; setUdpRelay("", 0) }
+                    }
+                    udpRelayUp.value = assoc?.alive == true
+                    val active = up || st.upOnDown == 0
+                    // UDP is blocked when asked to, or when the relay is wanted but not available (kill switch)
+                    val blockUdp = active && (st.upUdp == 1 || (udpRelay && assoc?.alive != true && st.upOnDown == 0))
+                    setUpstreamState(active, blockUdp)
+                    Thread.sleep(if (udpRelay && assoc?.alive != true) 3_000 else 10_000)
+                }
+            } catch (e: InterruptedException) {
+            } finally {
+                assoc?.close()
+                setUdpRelay("", 0)
+                udpRelayUp.value = false
             }
         }, "UpstreamMonitor").also { it.start() }
     }
@@ -128,13 +148,17 @@ class CaptureService : VpnService() {
         val st = app.settings.current
         upstreamIp = if (st.upstream) resolveUpstream(st.upHost) else null
         if (st.upstream && upstreamIp == null) reportError(getString(R.string.upstream_bad_host, st.upHost))
-        val upProxy = upstreamIp?.takeIf { st.upUser.isEmpty() }?.let {
-            java.net.Proxy(java.net.Proxy.Type.SOCKS, java.net.InetSocketAddress(it, st.upPort))
+        // DoH through the upstream: HTTP proxies (with or without login), SOCKS5 without login
+        val upProxy = upstreamIp?.takeIf { st.upType == 1 || st.upUser.isEmpty() }?.let {
+            java.net.Proxy(if (st.upType == 1) java.net.Proxy.Type.HTTP else java.net.Proxy.Type.SOCKS, java.net.InetSocketAddress(it, st.upPort))
         }
+        val upAuth = if (st.upType == 1 && st.upUser.isNotEmpty()) st.upUser to st.upPass else null
+        setUpstreamHttp(st.upType == 1)
+        setUpstreamScope(st.upAll)
         proxy?.stop(); proxy = null
         if (st.dnsMode == 1) {
             DnsProxy.resetStats()
-            proxy = try { DnsProxy(st.dohUrl, upProxy).also { it.start() } } catch (e: Exception) { Log.e(TAG, "DoH proxy", e); null }
+            proxy = try { DnsProxy(st.dohUrl, upProxy, upAuth).also { it.start() } } catch (e: Exception) { Log.e(TAG, "DoH proxy", e); null }
         }
         proxy?.let { dnsServer = "127.0.0.1"; setDnsServerPort(it.port) } ?: setDnsServerPort(53)
         dohActive.value = proxy?.let { st.dohUrl }
@@ -427,6 +451,11 @@ class CaptureService : VpnService() {
         @JvmStatic external fun setPrivateDnsBlocked(block: Boolean)
         @JvmStatic external fun setDnsServerPort(port: Int)
         @JvmStatic external fun setUpstreamState(active: Boolean, blockUdp: Boolean)
+        @JvmStatic external fun setUpstreamHttp(http: Boolean)
+        @JvmStatic external fun setUpstreamScope(all: Boolean)
+        @JvmStatic external fun setUdpRelay(ip: String, port: Int)
+        /** The SOCKS5 UDP ASSOCIATE relay is established. */
+        val udpRelayUp = kotlinx.coroutines.flow.MutableStateFlow(false)
         /** null = no upstream configured, else whether the SOCKS5 server answers. */
         val upstreamUp = kotlinx.coroutines.flow.MutableStateFlow<Boolean?>(null)
         /** DoH URL while the built-in DNS-over-HTTPS proxy is in use. */

@@ -77,6 +77,7 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
     // Persistent log: closed connections are written to [db] when [keepDays] > 0
     @Volatile private var db: LogDb? = null
     @Volatile private var keepDays = 0
+    @Volatile var blockedOnly = false
     @Volatile private var stored: List<Conn> = emptyList()
     private val saved = HashSet<Int>()
 
@@ -108,7 +109,7 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
 
     fun reset() {
         // keep what the previous session did not write yet
-        val left = synchronized(lock) { byId.values.filter { it.incr_id !in saved }.map { toConn(it) } }
+        val left = synchronized(lock) { byId.values.filter { it.incr_id !in saved }.map { toConn(it) }.filter { !blockedOnly || it.blocked } }
         if (left.isNotEmpty()) scope.launch { persist(left); db?.let { if (keepDays > 0) stored = it.load(HISTORY_ROWS, apps) }; dirty = true }
         synchronized(lock) { byId.clear(); saved.clear() }
         _stats.value = Stats()
@@ -144,7 +145,7 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
         val snap = synchronized(lock) {
             byId.values.map { d ->
                 val c = toConn(d)
-                if (keepDays > 0 && !c.active && saved.add(d.incr_id)) toSave.add(c)
+                if (keepDays > 0 && !c.active && (!blockedOnly || c.blocked) && saved.add(d.incr_id)) toSave.add(c)
                 c
             }
         }

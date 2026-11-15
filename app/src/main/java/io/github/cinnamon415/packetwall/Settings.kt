@@ -26,7 +26,11 @@ class Settings(ctx: Context) {
         val upPass: String = "",
         /** Package of the proxy app, excluded from the VPN to avoid a loop. */
         val upApp: String = "",
-        /** 0 = UDP goes direct, 1 = UDP is blocked (apps fall back to TCP through the upstream). */
+        /** true = all traffic through the upstream, false = only allow rules with route "via upstream". */
+        val upAll: Boolean = true,
+        /** 0 = SOCKS5, 1 = HTTP CONNECT. */
+        val upType: Int = 0,
+        /** 0 = UDP goes direct, 1 = UDP is blocked (apps fall back to TCP), 2 = through SOCKS5 UDP ASSOCIATE. */
         val upUdp: Int = 1,
         /** 0 = kill switch (block when the upstream is down), 1 = go direct. */
         val upOnDown: Int = 0,
@@ -38,6 +42,16 @@ class Settings(ctx: Context) {
         val lastBackup: Long = 0,
         /** Connection log retention in days, 0 = current session only. */
         val logDays: Int = 0,
+        /** Persist only blocked connections (spec 6: "statistics and blocks only"). */
+        val logBlockedOnly: Boolean = false,
+        // Streaming to a PC (pcap-over-IP) and continuous recording to disk
+        val stream: Boolean = false,
+        val streamPort: Int = 57012,
+        val streamLan: Boolean = false,
+        val record: Boolean = false,
+        val recordMb: Int = 32,
+        val recordMinutes: Int = 60,
+        val recordKeep: Int = 5,
     )
 
     private val _values = MutableStateFlow(read())
@@ -57,12 +71,18 @@ class Settings(ctx: Context) {
         upPass = prefs.getString("up_pass", null) ?: "",
         upApp = prefs.getString("up_app", null) ?: "",
         upUdp = prefs.getInt("up_udp", 1),
+        upType = prefs.getInt("up_type", 0),
+        upAll = prefs.getBoolean("up_all", true),
         upOnDown = prefs.getInt("up_down", 0),
         listsAutoUpdate = prefs.getBoolean("lists_auto", true),
         listsWifiOnly = prefs.getBoolean("lists_wifi", true),
         backupUri = prefs.getString("backup_uri", null) ?: "",
         lastBackup = prefs.getLong("last_backup", 0),
         logDays = prefs.getInt("log_days", 0),
+        logBlockedOnly = prefs.getBoolean("log_blocked_only", false),
+        stream = prefs.getBoolean("stream", false), streamPort = prefs.getInt("stream_port", 57012),
+        streamLan = prefs.getBoolean("stream_lan", false), record = prefs.getBoolean("record", false),
+        recordMb = prefs.getInt("record_mb", 32), recordMinutes = prefs.getInt("record_min", 60), recordKeep = prefs.getInt("record_keep", 5),
     )
 
     fun update(fn: (Values) -> Values) {
@@ -75,10 +95,12 @@ class Settings(ctx: Context) {
             .putString("doh_url", v.dohUrl)
             .putBoolean("up", v.upstream).putString("up_host", v.upHost).putInt("up_port", v.upPort)
             .putString("up_user", v.upUser).putString("up_pass", v.upPass).putString("up_app", v.upApp)
-            .putInt("up_udp", v.upUdp).putInt("up_down", v.upOnDown)
+            .putInt("up_udp", v.upUdp).putInt("up_down", v.upOnDown).putInt("up_type", v.upType).putBoolean("up_all", v.upAll)
             .putBoolean("lists_auto", v.listsAutoUpdate).putBoolean("lists_wifi", v.listsWifiOnly)
             .putString("backup_uri", v.backupUri).putLong("last_backup", v.lastBackup)
-            .putInt("log_days", v.logDays)
+            .putInt("log_days", v.logDays).putBoolean("log_blocked_only", v.logBlockedOnly)
+            .putBoolean("stream", v.stream).putInt("stream_port", v.streamPort).putBoolean("stream_lan", v.streamLan)
+            .putBoolean("record", v.record).putInt("record_mb", v.recordMb).putInt("record_min", v.recordMinutes).putInt("record_keep", v.recordKeep)
             .apply()
         _values.value = v
     }
