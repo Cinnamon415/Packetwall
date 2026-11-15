@@ -5,3 +5,6 @@
 -dontwarn org.conscrypt.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.openjsse.**
+
+# WorkManager uses Room; R8 full mode strips the generated database constructor
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
