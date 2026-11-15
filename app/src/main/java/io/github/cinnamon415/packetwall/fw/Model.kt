@@ -14,7 +14,7 @@ import kotlinx.serialization.Serializable
 enum class Action { BLOCK, ALLOW }
 
 @Serializable
-enum class TargetKind { ALL, DOMAIN, IP, COUNTRY }
+enum class TargetKind { ALL, DOMAIN, IP, COUNTRY, ASN }
 
 @Serializable
 enum class Proto(val ipproto: Int) { ANY(0), TCP(6), UDP(17) }

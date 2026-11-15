@@ -36,5 +36,7 @@ int main(int c,char**v){
   chk(e,1051,"10.215.173.2","a.b.allowed.com",17,53,1, 0,0,0); // dns: app allows -> no dns block
   chk(e,1051,"10.215.173.2","x.tbank.ru",17,53,1, 1,1,1);       // dns global block
   chk(e,1051,"10.215.173.2","evil.com",17,53,1, 1,0,5);
+  chk(e,1,"9.9.1.1",NULL,6,443,0, 1,1,10);            // ASN prefix blocks
+  chk(e,1,"9.9.9.9",NULL,6,443,0, 1,0,11);            // CIDR (narrower) beats ASN
   printf("%s\n", fails?"FAILED":"ALL OK"); pw_engine_destroy(e); return fails;
 }

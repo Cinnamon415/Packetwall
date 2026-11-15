@@ -22,14 +22,19 @@ class PacketwallApp : Application() {
     val logDb by lazy { io.github.cinnamon415.packetwall.engine.LogDb(this) }
     lateinit var geo: io.github.cinnamon415.packetwall.analysis.GeoIp
         private set
+    lateinit var trackers: io.github.cinnamon415.packetwall.analysis.Trackers
+        private set
 
     override fun onCreate() {
         super.onCreate()
         settings = Settings(this)
         geo = io.github.cinnamon415.packetwall.analysis.GeoIp(filesDir)
+        trackers = io.github.cinnamon415.packetwall.analysis.Trackers(filesDir)
+        io.github.cinnamon415.packetwall.analysis.ConnFilter.trackerOf = { trackers.trackingOf(it)?.name }
         apps = AppsResolver(this)
         connections = ConnectionsRegister(apps)
-        firewall = FirewallStore(filesDir, apps, getString(R.string.set_default), getString(R.string.profile_default))
+        firewall = FirewallStore(filesDir, apps, getString(R.string.set_default), getString(R.string.profile_default), geo::asnPrefixes)
+        geo.onChanged = { firewall.scheduleCompile() }
         firewall.scheduleCompile(0)
         watchStatus()
         // (re)schedule periodic jobs whenever their settings change

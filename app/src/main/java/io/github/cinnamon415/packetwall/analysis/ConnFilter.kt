@@ -9,7 +9,7 @@ import io.github.cinnamon415.packetwall.engine.Conn
  *   host ~ tracker || port == 853
  *   !(proto == DNS) && bytes > 10000
  *
- * Fields: app, pkg, uid, host, ip, port, proto, bytes, sent, rcvd, blocked, allowed, active.
+ * Fields: app, pkg, uid, host, ip, port, proto, bytes, sent, rcvd, tracker; flags blocked, allowed, active, tracker.
  * Operators: == != ~ (contains) !~ < <= > >=, && || ! and parentheses; "and"/"or"/"not" work too.
  * Text comparisons ignore case. Input without any operator is a plain text search.
  */
@@ -40,9 +40,13 @@ object ConnFilter {
         }
     }
 
-    val fields = listOf("app", "pkg", "uid", "host", "ip", "port", "proto", "bytes", "sent", "rcvd", "blocked", "allowed", "active")
+    /** Tracker name of a host (set by the app when the tracker database is available). */
+    @Volatile var trackerOf: (String?) -> String? = { null }
+
+    val fields = listOf("app", "pkg", "uid", "host", "ip", "port", "proto", "bytes", "sent", "rcvd", "tracker", "blocked", "allowed", "active")
     private val flags = mapOf<String, (Conn) -> Boolean>(
         "blocked" to { it.blocked }, "allowed" to { !it.blocked }, "active" to { it.active },
+        "tracker" to { trackerOf(it.host) != null },
     )
 
     private fun fieldValue(c: Conn, f: String): Any? = when (f) {
@@ -56,6 +60,7 @@ object ConnFilter {
         "bytes" -> c.bytes
         "sent" -> c.sentBytes
         "rcvd" -> c.rcvdBytes
+        "tracker" -> trackerOf(c.host) ?: ""
         else -> null
     }
 

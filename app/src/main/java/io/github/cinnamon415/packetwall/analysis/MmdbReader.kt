@@ -74,8 +74,48 @@ class MmdbReader(file: File) {
             i++
         }
         if (node <= nodeCount) return null           // == nodeCount: not found
-        val off = (node - nodeCount) - 16 + dataStart
-        return Decoder(buf, dataStart).decode(off).first
+        return Decoder(buf, dataStart).decode(dataOffset(node)).first
+    }
+
+    /** Offset of the data record a search-tree value points to. */
+    private fun dataOffset(value: Int) = (value - nodeCount) - 16 + dataStart
+
+    fun decodeAt(off: Int): Any? = Decoder(buf, dataStart).decode(off).first
+
+    /**
+     * Every network whose record satisfies [want], as "a.b.c.d/len" or "x::/len". [want] receives the
+     * data offset (records are shared, so callers can cache by it). IPv4 aliases inside IPv6 trees
+     * (::ffff:0:0/96, 2002::/16) are skipped.
+     */
+    fun networks(want: (Int) -> Boolean): List<String> {
+        val out = ArrayList<String>()
+        val bits = ByteArray(16)
+        val v4db = ipVersion == 4
+        fun emit(depth: Int) {
+            val b = bits.copyOf()
+            if (v4db) out.add("${InetAddress.getByAddress(b.copyOf(4)).hostAddress}/$depth")
+            else if (depth >= 96 && (0 until 12).all { b[it] == 0.toByte() })
+                out.add("${InetAddress.getByAddress(b.copyOfRange(12, 16)).hostAddress}/${depth - 96}")
+            else out.add("${InetAddress.getByAddress(b).hostAddress}/$depth")
+        }
+        fun setBit(i: Int, v: Int) {
+            val m = 1 shl (7 - i % 8)
+            bits[i / 8] = (if (v == 1) bits[i / 8].toInt() or m else bits[i / 8].toInt() and m.inv()).toByte()
+        }
+        fun walk(node: Int, depth: Int) {
+            if (!v4db && node == ipv4Start && depth != 96 && depth > 0) return     // IPv4 alias
+            for (bit in 0..1) {
+                setBit(depth, bit)
+                val next = record(node, bit)
+                when {
+                    next < nodeCount -> walk(next, depth + 1)
+                    next > nodeCount -> if (want(dataOffset(next))) emit(depth + 1)
+                }
+            }
+            setBit(depth, 0)
+        }
+        walk(0, 0)
+        return out
     }
 
     private class Decoder(val b: ByteBuffer, val base: Int) {

@@ -9,7 +9,8 @@
  * Compiled rules file format (UTF-8, one entry per line, tab separated), written by RulesCompiler.kt:
  *
  *   R <ref> <set> <who> <uid> <block> <reject> <kind> <value> <subs> <proto> <port>
- *       kind: A = all, C = country (value = ISO code), I = IP or CIDR, D = domain pattern
+ *       kind: A = all, C = country (value = ISO code), S = prefix of an AS (expanded by the app),
+ *             I = IP or CIDR, D = domain pattern
  *   L <set> <ref> <block> <reject> <path>
  *       a normalized list file: one entry per line, "#" comments. Entry prefixes:
  *       "!" = allow (else the list default), "=" = exact host (else + subdomains).
@@ -29,6 +30,7 @@
 #define KIND_COUNTRY 'C'
 #define KIND_IP      'I'
 #define KIND_DOMAIN  'D'
+#define KIND_ASN     'S'   // a network prefix of an AS: matched like IP, ranked between country and CIDR
 
 #define F_BLOCK  0x01
 #define F_REJECT 0x02
@@ -353,6 +355,11 @@ static int add_rule(pw_engine_t *e, rule_t *r, const char *value) {
                 return 1; // skip
             r->score = final_score(300 + (r->prefix * 100) / ((r->ipver == 4) ? 32 : 128), r->proto, r->port);
             break;
+        case KIND_ASN:
+            if(parse_cidr(value, &r->ip, &r->ipver, &r->prefix) < 0)
+                return 1;
+            r->score = final_score(200, r->proto, r->port);
+            break;
         case KIND_DOMAIN: {
             if(!value[0])
                 return 1;
@@ -572,6 +579,7 @@ static bool target_ok(const pw_engine_t *e, const rule_t *r, const pw_query_t *q
         case KIND_COUNTRY:
             return q->country && q->country[0] && (strcasecmp(e->pool + r->str, q->country) == 0);
         case KIND_IP:
+        case KIND_ASN:
             return q->ip && ip_in_cidr(r, q->ipver, q->ip);
         case KIND_DOMAIN:
             return q->host && q->host[0] &&

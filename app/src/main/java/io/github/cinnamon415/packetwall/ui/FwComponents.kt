@@ -76,6 +76,7 @@ import io.github.cinnamon415.packetwall.ui.theme.LocalExtraColors
 fun ruleTitle(r: Rule): String = when (r.target.kind) {
     TargetKind.ALL -> stringResource(R.string.target_all)
     TargetKind.COUNTRY -> stringResource(R.string.target_country_fmt, r.target.value.uppercase())
+    TargetKind.ASN -> "AS" + (ListParser.asnNumber(r.target.value) ?: r.target.value)
     else -> r.target.value
 }
 
@@ -186,6 +187,7 @@ fun validTarget(t: Target): Boolean = when (t.kind) {
     TargetKind.DOMAIN -> ListParser.isDomain(t.value.trim().lowercase())
     TargetKind.IP -> ListParser.isIp(t.value.trim().lowercase())
     TargetKind.COUNTRY -> t.value.trim().length == 2 && t.value.trim().all { it.isLetter() }
+    TargetKind.ASN -> ListParser.isAsn(t.value)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -219,7 +221,7 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 val kinds = listOf(TargetKind.ALL to R.string.target_all, TargetKind.DOMAIN to R.string.target_domain,
-                    TargetKind.IP to R.string.target_ip, TargetKind.COUNTRY to R.string.target_country)
+                    TargetKind.IP to R.string.target_ip, TargetKind.ASN to R.string.kind_asn, TargetKind.COUNTRY to R.string.target_country)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     kinds.forEach { (k, s) -> FilterChip(kind == k, { kind = k }, { Text(stringResource(s)) }) }
                 }
@@ -227,10 +229,11 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
                     OutlinedTextField(value, { value = it }, Modifier.fillMaxWidth(), singleLine = true,
                         isError = value.isNotBlank() && !validTarget(target),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
-                        placeholder = { Text(when (kind) { TargetKind.DOMAIN -> "ads.example.com"; TargetKind.IP -> "203.0.113.0/24"; else -> "US" },
+                        placeholder = { Text(when (kind) { TargetKind.DOMAIN -> "ads.example.com"; TargetKind.IP -> "203.0.113.0/24"; TargetKind.ASN -> "AS13335"; else -> "US" },
                             fontFamily = FontFamily.Monospace) },
                         supportingText = if (kind == TargetKind.DOMAIN) {{ Text(stringResource(R.string.domain_mask_help)) }}
-                            else if (kind == TargetKind.COUNTRY) {{ Text(stringResource(R.string.country_help)) }} else null)
+                            else if (kind == TargetKind.COUNTRY) {{ Text(stringResource(R.string.country_help)) }}
+                            else if (kind == TargetKind.ASN) {{ Text(stringResource(R.string.asn_help)) }} else null)
                 }
                 if (kind == TargetKind.DOMAIN)
                     CheckRow(subs, stringResource(R.string.prop_subdomains)) { subs = it }
@@ -307,7 +310,16 @@ fun QuickRuleSheet(c: Conn, app: PacketwallApp, st: FwState, onDismiss: () -> Un
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var action by rememberSaveable { mutableStateOf(if (c.blocked) Action.ALLOW else Action.BLOCK) }
     var forApp by rememberSaveable { mutableStateOf(c.uid >= 0) }
-    var setId by rememberSaveable { mutableStateOf(FwState.DEFAULT_SET) }
+    // The rule (or blocklist) that decided this connection. An exception must live in the same set or a
+    // higher one (spec 2.5): we pre-select it and warn when a lower set is chosen.
+    val decidingRule = if (c.fwRule > 0) st.rule(c.fwRule) else null
+    val decidingSet: Int? = when { c.fwRule > 0 -> decidingRule?.setId; c.fwRule < 0 -> -c.fwRule; else -> null }
+    val pos = { id: Int -> st.order.indexOfFirst { it.id == id } }
+    val suggested = decidingSet?.let { ds ->
+        if (st.set(ds)?.kind == SetKind.USER) ds
+        else st.order.take(maxOf(0, pos(ds))).lastOrNull { st.set(it.id)?.kind == SetKind.USER }?.id
+    } ?: FwState.DEFAULT_SET
+    var setId by rememberSaveable { mutableStateOf(if (c.blocked) suggested else FwState.DEFAULT_SET) }
 
     val host = c.host?.takeIf { it.isNotEmpty() && ListParser.isDomain(it.lowercase()) }?.lowercase()
     val options = buildList {
@@ -367,6 +379,14 @@ fun QuickRuleSheet(c: Conn, app: PacketwallApp, st: FwState, onDismiss: () -> Un
                 }
             }
             SetDropdown(st, setId) { setId = it }
+            if (action == Action.ALLOW && decidingSet != null && c.blocked) {
+                val warn = when {
+                    pos(setId) > pos(decidingSet) -> stringResource(R.string.exception_lower_set, st.set(decidingSet)?.name ?: "")
+                    !forApp && decidingRule != null && decidingRule.who != Who.Global -> stringResource(R.string.exception_global_vs_app)
+                    else -> null
+                }
+                if (warn != null) Text(warn, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
             Spacer(Modifier.height(4.dp))
             Button(modifier = Modifier.fillMaxWidth(), onClick = {
                 val who = if (forApp) Who.App(c.app.packageName) else Who.Global

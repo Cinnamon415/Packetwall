@@ -14,7 +14,14 @@ object ListParser {
         val skipped: Int,
         val samples: List<String>,
         val comments: Int,
+        /** "$important" entries: they must beat the list's own exceptions. */
+        val important: List<String> = emptyList(),
+        /** "$app=pkg1|pkg2" entries: (packages, entry). */
+        val appRules: List<Pair<List<String>, String>> = emptyList(),
     )
+
+    /** An AdBlock network rule split into its parts. */
+    private class Adb(val entry: String, val apps: List<String>?, val important: Boolean)
 
     private val domainRe = Regex("^(\\*\\*?\\.)?([a-z0-9_*]([a-z0-9_*-]*[a-z0-9_*])?\\.)+[a-z0-9_*-]{2,}$")
     private val ipv4Re = Regex("^\\d{1,3}(\\.\\d{1,3}){3}(/\\d{1,2})?$")
@@ -28,10 +35,15 @@ object ListParser {
         "first-party", "1p", "popup", "network", "~third-party")
 
     fun isDomain(s: String) = domainRe.matches(s)
+    private val asnRe = Regex("^(as)?\\d{1,10}$", RegexOption.IGNORE_CASE)
+    fun isAsn(s: String) = asnRe.matches(s.trim())
+    fun asnNumber(s: String): Long? = s.trim().lowercase().removePrefix("as").toLongOrNull()
     fun isIp(s: String) = ipv4Re.matches(s) || (s.contains(':') && ipv6Re.matches(s))
 
     fun parse(lines: Sequence<String>): Result {
         val out = LinkedHashSet<String>()
+        val important = LinkedHashSet<String>()
+        val appRules = ArrayList<Pair<List<String>, String>>()
         var skipped = 0
         var comments = 0
         val samples = ArrayList<String>()
@@ -48,6 +60,17 @@ object ListParser {
                 comments++
                 continue
             }
+            val low = line.lowercase()
+            if (low.startsWith("||") || low.startsWith("@@") || low.startsWith("|")) {
+                val a = adblockParsed(low.substringBefore(" #").trim())
+                when {
+                    a == null -> skip(line)
+                    a.apps != null -> appRules.add(a.apps to a.entry)
+                    a.important -> important.add(a.entry)
+                    else -> out.add(a.entry)
+                }
+                continue
+            }
             val e = convert(line)
             when {
                 e == null -> skip(line)
@@ -55,7 +78,8 @@ object ListParser {
                 else -> out.add(e)
             }
         }
-        return Result(out.toList(), skipped, samples, comments)
+        out.removeAll(important)
+        return Result(out.toList(), skipped, samples, comments, important.toList(), appRules)
     }
 
     /** null = unsupported, "" = ignore silently, else a normalized entry. */
@@ -92,16 +116,30 @@ object ListParser {
         return if (isDomain(t)) t else null
     }
 
-    private fun adblock(l: String): String? {
+    private fun adblock(l: String): String? = adblockParsed(l)?.takeIf { it.apps == null }?.entry
+
+    private fun adblockParsed(l: String): Adb? {
         var s = l
         var allow = false
         if (s.startsWith("@@")) { allow = true; s = s.removePrefix("@@") }
 
         val opts = s.substringAfter('$', "")
         s = s.substringBefore('$')
+        var apps: List<String>? = null
+        var important = false
         if (opts.isNotEmpty()) {
-            val names = opts.split(',').map { it.substringBefore('=') }
-            if (names.any { it !in harmlessOptions }) return null   // $app=, $denyallow=, $client=…
+            for (o in opts.split(',')) {
+                val name = o.substringBefore('=')
+                when {
+                    name == "app" -> {
+                        val v = o.substringAfter('=', "").split('|').filter { it.isNotBlank() }
+                        if (v.isEmpty() || v.any { it.startsWith("~") }) return null   // negated app lists: no equivalent
+                        apps = v
+                    }
+                    name == "important" -> important = true
+                    name !in harmlessOptions -> return null   // $denyallow=, $client=, $dnstype=…
+                }
+            }
         }
 
         val sub: Boolean
@@ -125,7 +163,7 @@ object ListParser {
             isDomain(s) -> if (sub) s else "=$s"
             else -> return null
         }
-        return if (allow) "!$body" else body
+        return Adb(if (allow) "!$body" else body, apps, important)
     }
 
     /** Domain of the entry, without the flags (for search/preview). */

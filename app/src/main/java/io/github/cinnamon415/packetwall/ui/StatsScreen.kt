@@ -57,6 +57,11 @@ fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
             .map { (h, l) -> Triple(h, l.size, l.sumOf { it.bytes }) }.sortedByDescending { it.third }.take(8)
     }
     val byProto = remember(conns) { conns.groupingBy { it.protoLabel }.eachCount().entries.sortedByDescending { it.value }.take(8) }
+    val trackersByApp = remember(conns) {
+        conns.filter { app.trackers.trackingOf(it.host) != null }.groupBy { it.uid }
+            .map { (_, l) -> Triple(l.first().app, l.size, l.mapNotNull { app.trackers.trackingOf(it.host)?.name }.distinct()) }
+            .sortedByDescending { it.second }.take(8)
+    }
     val blockedByApp = remember(conns) {
         conns.filter { it.blocked && it.fwRule != 0 }.groupBy { it.uid }.map { (_, l) -> l.first().app to l.size }
             .sortedByDescending { it.second }.take(8)
@@ -118,6 +123,24 @@ fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
                             Text(p, modifier = Modifier.weight(1f))
                             Text("$n", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+            if (trackersByApp.isNotEmpty()) {
+                SectionHeader(stringResource(R.string.trackers_by_app), null, null)
+                RoundedGroup {
+                    trackersByApp.forEachIndexed { i, (a, n, names) ->
+                        if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            AppIcon(a, 28.dp)
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(names.take(4).joinToString(", "), style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                            Text("$n", color = MaterialTheme.colorScheme.tertiary)
                         }
                     }
                 }

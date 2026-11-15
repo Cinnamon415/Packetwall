@@ -77,6 +77,8 @@ import io.github.cinnamon415.packetwall.fw.Action
 import io.github.cinnamon415.packetwall.fw.Catalog
 import io.github.cinnamon415.packetwall.fw.FwState
 import io.github.cinnamon415.packetwall.fw.ListParser
+import io.github.cinnamon415.packetwall.fw.ForeignImport
+import io.github.cinnamon415.packetwall.fw.RethinkReader
 import io.github.cinnamon415.packetwall.fw.RuleSet
 import io.github.cinnamon415.packetwall.fw.SetKind
 import kotlinx.coroutines.Dispatchers
@@ -234,51 +236,100 @@ private fun BlocklistDetails(app: PacketwallApp, s: RuleSet, onDismiss: () -> Un
     }
 }
 
-/** File import: parse with a report of what could not be converted, then create a blocklist set. */
+/**
+ * File import with a format picker (auto-detected): the file is converted into Packetwall rules / list
+ * entries with a report of what could not be converted (spec 3), then lands in new sets.
+ */
 @Composable
 private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
-    var result by remember { mutableStateOf<ListParser.Result?>(null) }
+    val scope = rememberCoroutineScope()
+    var bytes by remember { mutableStateOf<ByteArray?>(null) }
+    var format by remember { mutableStateOf(ForeignImport.Format.AUTO) }
+    var detected by remember { mutableStateOf<ForeignImport.Format?>(null) }
+    var plan by remember { mutableStateOf<ForeignImport.Plan?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var name by remember { mutableStateOf(uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Import") }
     var action by remember { mutableStateOf(Action.BLOCK) }
+    var done by remember { mutableStateOf<String?>(null) }
+
     androidx.compose.runtime.LaunchedEffect(uri) {
         try {
-            result = withContext(Dispatchers.IO) {
-                ctx.contentResolver.openInputStream(uri)!!.bufferedReader().useLines { ListParser.parse(it) }
+            bytes = withContext(Dispatchers.IO) { ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes() } }
+            detected = ForeignImport.detect(bytes!!)
+        } catch (e: Exception) { error = e.message ?: e.javaClass.simpleName }
+    }
+    val effective = if (format == ForeignImport.Format.AUTO) detected else format
+    if (effective == ForeignImport.Format.PACKETWALL) { ImportJsonDialog(app, uri, onDismiss); return }
+    androidx.compose.runtime.LaunchedEffect(bytes, effective) {
+        val b = bytes ?: return@LaunchedEffect
+        val f = effective ?: return@LaunchedEffect
+        plan = null; error = null
+        try {
+            plan = withContext(Dispatchers.IO) {
+                val installed = app.apps.installed().filter { it.uid >= 0 }.map { ForeignImport.App(it.packageName, it.uid, it.isSystem) }
+                when (f) {
+                    ForeignImport.Format.PCAPDROID -> ForeignImport.pcapdroid(String(b, Charsets.UTF_8))
+                    ForeignImport.Format.NETGUARD -> ForeignImport.netguard(String(b, Charsets.UTF_8), installed)
+                    ForeignImport.Format.AFWALL -> ForeignImport.afwall(String(b, Charsets.UTF_8), installed)
+                    ForeignImport.Format.SINGBOX -> ForeignImport.singbox(b)
+                    ForeignImport.Format.RETHINK -> ForeignImport.rethink(RethinkReader.read(b.inputStream(), ctx.cacheDir), installed)
+                    else -> ForeignImport.list(String(b, Charsets.UTF_8).lineSequence())
+                }
             }
         } catch (e: Exception) { error = e.message ?: e.javaClass.simpleName }
     }
+
     AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.import_file)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val r = result
+                if (done != null) { Text(done!!); return@Column }
+                Text(stringResource(R.string.import_format), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ForeignImport.Format.entries.forEach { f ->
+                        androidx.compose.material3.FilterChip(format == f, { format = f }, {
+                            Text(if (f == ForeignImport.Format.AUTO) stringResource(R.string.import_auto, detected?.label ?: "…") else f.label)
+                        })
+                    }
+                }
+                val p = plan
                 when {
                     error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
-                    r == null -> CircularProgressIndicator()
+                    p == null -> CircularProgressIndicator()
                     else -> {
-                        Text(stringResource(R.string.import_report, r.entries.size, r.skipped))
-                        if (r.samples.isNotEmpty()) {
+                        Text(stringResource(R.string.import_plan, p.rules.size, p.entries.size + p.important.size, p.skipped))
+                        p.notes.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                        if (p.samples.isNotEmpty()) {
                             Text(stringResource(R.string.skipped_examples), style = MaterialTheme.typography.labelMedium)
-                            Text(r.samples.take(8).joinToString("\n"), style = MaterialTheme.typography.bodySmall,
+                            Text(p.samples.take(8).joinToString("\n"), style = MaterialTheme.typography.bodySmall,
                                 fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(stringResource(R.string.name)) })
-                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                            listOf(Action.BLOCK to R.string.action_block, Action.ALLOW to R.string.action_allow).forEachIndexed { i, (a, l) ->
-                                SegmentedButton(action == a, { action = a }, SegmentedButtonDefaults.itemShape(i, 2)) { Text(stringResource(l)) }
+                        if (p.entries.isNotEmpty() || p.important.isNotEmpty())
+                            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                                listOf(Action.BLOCK to R.string.action_block, Action.ALLOW to R.string.action_allow).forEachIndexed { i, (a, l) ->
+                                    SegmentedButton(action == a, { action = a }, SegmentedButtonDefaults.itemShape(i, 2)) { Text(stringResource(l)) }
+                                }
                             }
-                        }
+                        Text(stringResource(R.string.import_lowest), style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(enabled = (result?.entries?.isNotEmpty() == true) && name.isNotBlank(), onClick = {
-                app.firewall.importList(name.trim(), result!!, action); onDismiss()
-            }) { Text(stringResource(R.string.import_action)) }
+            if (done != null) TextButton(onDismiss) { Text(stringResource(R.string.ok)) }
+            else {
+                val okMsg = stringResource(R.string.import_done_sets)
+                TextButton(enabled = plan?.empty == false && name.isNotBlank(), onClick = {
+                    scope.launch {
+                        val ids = withContext(Dispatchers.IO) { app.firewall.applyImport(name.trim(), plan!!, action) }
+                        done = String.format(okMsg, ids.size)
+                    }
+                }) { Text(stringResource(R.string.import_action)) }
+            }
         },
-        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } })
+        dismissButton = { if (done == null) TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } })
 }
 
 @Composable

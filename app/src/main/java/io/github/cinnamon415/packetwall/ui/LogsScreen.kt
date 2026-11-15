@@ -117,7 +117,7 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
             items(shown, key = { it.id }) { c ->
                 when (tab) {
                     2 -> HttpRow(c, onLongClick = { quick = c }) { onOpenConn(c.id) }
-                    else -> ConnRow(c, compact, onLongClick = { quick = c }) { onOpenConn(c.id) }
+                    else -> ConnRow(c, compact, app.trackers.trackingOf(c.host)?.name, onLongClick = { quick = c }) { onOpenConn(c.id) }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
             }
@@ -133,7 +133,7 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ConnRow(c: Conn, compact: Boolean, onLongClick: () -> Unit, onClick: () -> Unit) {
+private fun ConnRow(c: Conn, compact: Boolean, tracker: String?, onLongClick: () -> Unit, onClick: () -> Unit) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val error = MaterialTheme.colorScheme.error
     val time = formatTime(c.firstSeen)
@@ -154,7 +154,7 @@ private fun ConnRow(c: Conn, compact: Boolean, onLongClick: () -> Unit, onClick:
                         color = when { c.blocked -> error; c.active -> LocalExtraColors.current.ok; else -> muted })
                 }
                 Row {
-                    Text("$proto · ${c.title}", style = MaterialTheme.typography.bodySmall, color = muted,
+                    Text("$proto · ${c.title}" + (tracker?.let { " · ⚑ $it" } ?: ""), style = MaterialTheme.typography.bodySmall, color = muted,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     Text(formatBytes(c.bytes), style = MaterialTheme.typography.bodySmall)
                 }
@@ -164,6 +164,8 @@ private fun ConnRow(c: Conn, compact: Boolean, onLongClick: () -> Unit, onClick:
                 Text(c.app.name, fontWeight = FontWeight.SemiBold, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(proto, style = MaterialTheme.typography.bodySmall, color = muted)
                 Text(c.title, style = MaterialTheme.typography.bodySmall, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (tracker != null) Text("⚑ $tracker", style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(stringResource(when { c.blocked -> R.string.st_blocked; c.active -> R.string.st_active; else -> R.string.st_closed }),

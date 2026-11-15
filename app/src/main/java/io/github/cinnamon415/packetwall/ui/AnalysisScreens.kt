@@ -368,10 +368,9 @@ private fun hexLines(b: ByteArray): String = buildString {
 fun HttpTab(app: PacketwallApp, c: Conn) {
     val rows = rememberConnPackets(app, c)
     val blocks = remember(rows) { rows?.let { payloadBlocks(it, 64 * 1024) } ?: emptyList() }
-    val hello = remember(rows) {
-        rows?.firstNotNullOfOrNull { r -> if (r.p.tx && r.s.proto == "TLS" && r.s.payloadLen > 0)
-            Dissector.clientHello(r.p.block, r.p.dataOff + r.s.payloadOff, r.s.payloadLen) else null }
-    }
+    // TLS details from the reassembled streams (a ClientHello often spans several segments)
+    val tlsClient = remember(blocks) { blocks.firstOrNull { it.tx }?.let { io.github.cinnamon415.packetwall.analysis.TlsInfo.client(it.bytes) } }
+    val tlsServer = remember(blocks) { blocks.firstOrNull { !it.tx }?.let { io.github.cinnamon415.packetwall.analysis.TlsInfo.server(it.bytes) } }
     val req = blocks.firstOrNull { it.tx && Regex("^[A-Z]+ \\S+ HTTP/1").containsMatchIn(String(it.bytes, 0, minOf(it.bytes.size, 64), Charsets.ISO_8859_1)) }
     val resp = blocks.firstOrNull { !it.tx && String(it.bytes, 0, minOf(it.bytes.size, 8), Charsets.ISO_8859_1).startsWith("HTTP/") }
     Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -380,12 +379,9 @@ fun HttpTab(app: PacketwallApp, c: Conn) {
                 req?.let { HttpMessage(stringResource(R.string.http_request), it.bytes, LocalExtraColors.current.up) }
                 resp?.let { HttpMessage(stringResource(R.string.http_response), it.bytes, LocalExtraColors.current.down) }
             }
-            hello != null -> {
+            tlsClient != null -> {
                 Text(stringResource(R.string.http_encrypted), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                RoundedGroup {
-                    KvRow("SNI", hello.first ?: "—")
-                    KvRow("ALPN", hello.second.joinToString(", ").ifEmpty { "—" })
-                }
+                TlsDetails(tlsClient, tlsServer)
             }
             c.l7proto.contains("QUIC", true) -> Text(stringResource(R.string.http_quic), color = MaterialTheme.colorScheme.onSurfaceVariant)
             rows == null -> Text(stringResource(R.string.loading))
@@ -420,3 +416,38 @@ fun KvRow(k: String, v: String) {
     }
 }
 
+
+@Composable
+private fun TlsDetails(c: io.github.cinnamon415.packetwall.analysis.TlsInfo.Client, s: io.github.cinnamon415.packetwall.analysis.TlsInfo.Server?) {
+    val tls = io.github.cinnamon415.packetwall.analysis.TlsInfo
+    Text(stringResource(R.string.tls_client), style = MaterialTheme.typography.labelLarge, color = LocalExtraColors.current.up)
+    RoundedGroup {
+        KvRow("SNI", c.sni ?: "—")
+        KvRow("ALPN", c.alpn.joinToString(", ").ifEmpty { "—" })
+        KvRow(stringResource(R.string.tls_offered), (c.supportedVersions.ifEmpty { listOf(c.version) }).joinToString(", ") { tls.versionName(it) })
+        KvRow(stringResource(R.string.tls_ciphers), "${c.ciphers.size}")
+        KvRow("JA4", c.ja4())
+        KvRow("JA3", c.ja3)
+    }
+    if (s != null) {
+        Text(stringResource(R.string.tls_server), style = MaterialTheme.typography.labelLarge, color = LocalExtraColors.current.down)
+        RoundedGroup {
+            KvRow(stringResource(R.string.tls_version), tls.versionName(s.version))
+            KvRow(stringResource(R.string.tls_cipher), tls.cipherName(s.cipher))
+            KvRow("ALPN", s.alpn ?: "—")
+            val cert = s.cert
+            when {
+                cert != null -> {
+                    KvRow(stringResource(R.string.tls_subject), cert.subjectX500Principal.name)
+                    KvRow(stringResource(R.string.tls_issuer), cert.issuerX500Principal.name)
+                    KvRow(stringResource(R.string.tls_valid), "${java.text.DateFormat.getDateInstance().format(cert.notBefore)} — " +
+                            java.text.DateFormat.getDateInstance().format(cert.notAfter))
+                    val sans = try { cert.subjectAlternativeNames?.mapNotNull { it.getOrNull(1)?.toString() } } catch (e: Exception) { null }
+                    if (!sans.isNullOrEmpty()) KvRow("SAN", sans.take(6).joinToString(", ") + if (sans.size > 6) " +${sans.size - 6}" else "")
+                }
+                s.certEncrypted -> KvRow(stringResource(R.string.tls_cert), stringResource(R.string.tls_cert_encrypted))
+                else -> KvRow(stringResource(R.string.tls_cert), "—")
+            }
+        }
+    }
+}

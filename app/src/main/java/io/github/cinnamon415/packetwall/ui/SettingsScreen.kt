@@ -64,6 +64,8 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
             ListSubheader("GeoIP")
             GeoSettings(app)
+            ListSubheader(stringResource(R.string.trackers))
+            TrackersSettings(app)
             ListSubheader(stringResource(R.string.settings_schedules))
             SchedulesSettings(app, s)
             ListSubheader(stringResource(R.string.settings_storage))
@@ -327,7 +329,8 @@ private fun GeoSettings(app: PacketwallApp) {
             Text(stringResource(R.string.geo_title))
             Text(when {
                 info.busy -> stringResource(R.string.loading)
-                info.loaded -> stringResource(R.string.geo_loaded, info.build, String.format(java.util.Locale.US, "%.1f", info.sizeMb))
+                info.loaded -> stringResource(R.string.geo_loaded, info.country.build, String.format(java.util.Locale.US, "%.1f", info.country.sizeMb)) +
+                    (if (info.asn.loaded) "\n" + stringResource(R.string.geo_asn_loaded, info.asn.build, String.format(java.util.Locale.US, "%.1f", info.asn.sizeMb)) else "")
                 else -> stringResource(R.string.geo_missing)
             } + (info.error?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodySmall,
                 color = if (info.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -338,6 +341,32 @@ private fun GeoSettings(app: PacketwallApp) {
                 if (info.loaded) androidx.compose.material3.TextButton({ app.geo.delete() }) { Text(stringResource(R.string.delete)) }
             }
             Text("IP Geolocation by DB-IP (db-ip.com), CC BY 4.0", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        }
+    }
+}
+
+@Composable
+private fun TrackersSettings(app: PacketwallApp) {
+    val info by app.trackers.info.collectAsState()
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    RoundedGroup {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(stringResource(R.string.trackers_db))
+            Text(when {
+                info.busy -> stringResource(R.string.loading)
+                info.loaded -> stringResource(R.string.trackers_loaded, info.domains,
+                    java.text.DateFormat.getDateInstance(java.text.DateFormat.SHORT).format(java.util.Date(info.updated)))
+                else -> stringResource(R.string.trackers_missing)
+            } + (info.error?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodySmall,
+                color = if (info.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+                androidx.compose.material3.OutlinedButton(enabled = !info.busy, onClick = {
+                    scope.launch(kotlinx.coroutines.Dispatchers.IO) { app.trackers.download() }
+                }) { Text(stringResource(if (info.loaded) R.string.update_now else R.string.download)) }
+                if (info.loaded) androidx.compose.material3.TextButton({ app.trackers.delete() }) { Text(stringResource(R.string.delete)) }
+            }
+            Text("Tracker data: AdGuard companiesdb, CC BY-SA 4.0", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
     }

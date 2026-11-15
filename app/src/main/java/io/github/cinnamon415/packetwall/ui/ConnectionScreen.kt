@@ -47,15 +47,24 @@ import io.github.cinnamon415.packetwall.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConnectionScreen(app: PacketwallApp, id: Int, onBack: () -> Unit, onOpenApp: (String) -> Unit, onOpenPacket: (Long) -> Unit) {
+fun ConnectionScreen(app: PacketwallApp, id: Int, initialTab: Int, onNeighbor: (Int, Int) -> Unit, onBack: () -> Unit,
+                     onOpenApp: (String) -> Unit, onOpenPacket: (Long) -> Unit) {
     val conns by app.connections.conns.collectAsState()
-    val c = conns.firstOrNull { it.id == id }
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    val idx = conns.indexOfFirst { it.id == id }
+    val c = conns.getOrNull(idx)
+    var tab by rememberSaveable { mutableIntStateOf(initialTab) }
     val fw by app.firewall.state.collectAsState()
     var quick by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     ScreenScaffold(title = c?.title ?: "#$id", subtitle = c?.let { "#${it.id} · ${it.app.name} · ${it.protoLabel}" },
         monoTitle = true, onBack = onBack, actions = {
+            // neighbours in the log order (newest first): ‹ newer, › older
+            IconButton(onClick = { conns.getOrNull(idx - 1)?.let { onNeighbor(it.id, tab) } }, enabled = idx > 0) {
+                Text("‹", style = MaterialTheme.typography.headlineSmall)
+            }
+            IconButton(onClick = { conns.getOrNull(idx + 1)?.let { onNeighbor(it.id, tab) } }, enabled = idx >= 0 && idx < conns.lastIndex) {
+                Text("›", style = MaterialTheme.typography.headlineSmall)
+            }
             if (c != null) {
                 val scope = rememberCoroutineScope()
                 val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
@@ -96,6 +105,8 @@ fun ConnectionScreen(app: PacketwallApp, id: Int, onBack: () -> Unit, onOpenApp:
             R.string.kv_source to "${c.srcIp}:${c.srcPort}",
             R.string.kv_destination to "${c.dstIp}:${c.dstPort}" + if (c.country.isNotEmpty()) " · ${c.country}" else "",
             R.string.kv_host to (c.host ?: "—"),
+            app.trackers.of(c.host)?.let { t -> R.string.kv_tracker to "${t.name} · ${stringResource(categoryLabel(t.category))}" },
+            R.string.kv_asn to (remember(c.dstIp) { app.geo.asn(c.dstIp) }?.let { (n, org) -> "AS$n $org" } ?: "—"),
             R.string.kv_route to stringResource(if (c.proxied) R.string.route_upstream else R.string.route_direct),
             R.string.kv_traffic to "↑ ${formatBytes(c.sentBytes)} · ↓ ${formatBytes(c.rcvdBytes)}",
             R.string.kv_packets to "${c.sentPkts} ↑ · ${c.rcvdPkts} ↓",
@@ -120,4 +131,12 @@ fun ConnectionScreen(app: PacketwallApp, id: Int, onBack: () -> Unit, onOpenApp:
             Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
         }
     }
+}
+
+fun categoryLabel(c: io.github.cinnamon415.packetwall.analysis.Trackers.Category) = when (c) {
+    io.github.cinnamon415.packetwall.analysis.Trackers.Category.ADVERTISING -> R.string.cat_ads
+    io.github.cinnamon415.packetwall.analysis.Trackers.Category.ANALYTICS -> R.string.cat_analytics
+    io.github.cinnamon415.packetwall.analysis.Trackers.Category.TELEMETRY -> R.string.cat_telemetry
+    io.github.cinnamon415.packetwall.analysis.Trackers.Category.SOCIAL -> R.string.cat_social
+    io.github.cinnamon415.packetwall.analysis.Trackers.Category.OTHER -> R.string.cat_other
 }

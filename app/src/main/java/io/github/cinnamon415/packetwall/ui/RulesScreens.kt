@@ -1,6 +1,8 @@
 package io.github.cinnamon415.packetwall.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,6 +85,9 @@ fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -
     var setFilter by rememberSaveable { mutableStateOf<Int?>(null) }
     var menu by remember { mutableStateOf(false) }
     var newGroup by remember { mutableStateOf(false) }
+    var sort by rememberSaveable { mutableStateOf(0) } // 0 rules, 1 name, 2 traffic
+    val conns by app.connections.conns.collectAsState()
+    val traffic = remember(conns) { conns.groupBy { it.app.packageName }.mapValues { (_, l) -> l.sumOf { it.bytes } } }
 
     val counts = remember(st, setFilter) {
         st.rules.filter { setFilter == null || it.setId == setFilter }
@@ -97,7 +102,11 @@ fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -
         (showSystem || !a.isSystem || counts.containsKey(a.packageName)) &&
             (!onlyWithRules || counts.containsKey(a.packageName)) &&
             (needle.isEmpty() || a.name.lowercase().contains(needle) || a.packageName.contains(needle))
-    }.sortedWith(compareByDescending<AppInfo> { counts[it.packageName] ?: 0 > 0 }.thenBy { it.name.lowercase() })
+    }.sortedWith(when (sort) {
+        1 -> compareBy { it.name.lowercase() }
+        2 -> compareByDescending<AppInfo> { traffic[it.packageName] ?: 0L }.thenBy { it.name.lowercase() }
+        else -> compareByDescending<AppInfo> { counts[it.packageName] ?: 0 }.thenBy { it.name.lowercase() }
+    })
 
     ScreenScaffold(title = stringResource(R.string.nav_apps), subtitle = all?.let { "${list.size}" }, onMenu = openDrawer, actions = {
         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
@@ -106,6 +115,11 @@ fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -
                 trailingIcon = { Checkbox(showSystem, null) })
             DropdownMenuItem({ Text(stringResource(R.string.only_with_rules)) }, { onlyWithRules = !onlyWithRules },
                 trailingIcon = { Checkbox(onlyWithRules, null) })
+            HorizontalDivider()
+            listOf(R.string.sort_rules, R.string.sort_name, R.string.sort_traffic).forEachIndexed { i, s ->
+                DropdownMenuItem({ Text(stringResource(s)) }, { sort = i; menu = false }, trailingIcon = { if (sort == i) Text("✓") })
+            }
+            HorizontalDivider()
             DropdownMenuItem({ Text(stringResource(R.string.group_new)) }, { menu = false; newGroup = true })
         }
     }) {
@@ -145,7 +159,8 @@ fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(a.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(a.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        Text(listOfNotNull(a.packageName, traffic[a.packageName]?.takeIf { it > 0 }?.let { formatBytes(it) }).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     counts[a.packageName]?.let { Badge(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer) { Text("$it") } }
@@ -278,6 +293,7 @@ fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
     var q by rememberSaveable { mutableStateOf("") }
     var setFilter by rememberSaveable { mutableStateOf<Int?>(null) }
     var kind by rememberSaveable { mutableStateOf<TargetKind?>(null) }
+    var portsOnly by rememberSaveable { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Rule?>(null) }
     var sortNew by rememberSaveable { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
@@ -285,7 +301,8 @@ fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
     val needle = q.trim().lowercase()
     val rules = st.rules.filter { r ->
         r.who == Who.Global && (setFilter == null || r.setId == setFilter) &&
-            (kind == null || r.target.kind == kind) && (needle.isEmpty() || r.target.value.contains(needle))
+            (kind == null || r.target.kind == kind) && (!portsOnly || r.port != 0 || r.proto != io.github.cinnamon415.packetwall.fw.Proto.ANY) &&
+            (needle.isEmpty() || r.target.value.contains(needle))
     }.let { l -> if (sortNew) l.sortedByDescending { it.created } else l.sortedWith(compareBy({ it.target.kind }, { it.target.value })) }
 
     ScreenScaffold(title = stringResource(R.string.nav_global), subtitle = "${rules.size}", onMenu = openDrawer, actions = {
@@ -302,11 +319,12 @@ fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                 SearchField(q) { q = it }
                 Spacer(Modifier.height(6.dp))
                 SetChips(st, setFilter, { setFilter = it })
-                Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(TargetKind.DOMAIN to R.string.kind_hosts, TargetKind.IP to R.string.kind_ip,
-                        TargetKind.COUNTRY to R.string.kind_countries, TargetKind.ALL to R.string.target_all).forEach { (k, s) ->
+                        TargetKind.ASN to R.string.kind_asn, TargetKind.COUNTRY to R.string.kind_countries, TargetKind.ALL to R.string.target_all).forEach { (k, s) ->
                         FilterChip(kind == k, { kind = if (kind == k) null else k }, { Text(stringResource(s)) })
                     }
+                    FilterChip(portsOnly, { portsOnly = !portsOnly }, { Text(stringResource(R.string.kind_ports)) })
                 }
                 LazyColumn(contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 88.dp)) {
                     if (rules.isEmpty()) item { EmptyHint(stringResource(R.string.no_rules_global)) }

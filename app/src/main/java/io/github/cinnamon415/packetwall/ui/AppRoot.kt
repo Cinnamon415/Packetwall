@@ -56,7 +56,7 @@ sealed interface Dest {
     data object Sets : Dest
     data object Settings : Dest
     data object About : Dest
-    data class Connection(val id: Int) : Dest
+    data class Connection(val id: Int, val tab: Int = 0) : Dest
     data class AppRules(val pkg: String) : Dest
     data class Packet(val connId: Int, val seq: Long) : Dest
     data class GroupRules(val id: Int) : Dest
@@ -69,6 +69,7 @@ class Navigator {
     val current get() = stack.last()
     fun root(d: Dest) { stack.clear(); if (d != Dest.Home) stack.add(Dest.Home); stack.add(d) }
     fun push(d: Dest) { stack.add(d) }
+    fun replace(d: Dest) { stack[stack.lastIndex] = d }
     fun pop(): Boolean = if (stack.size > 1) { stack.removeAt(stack.lastIndex); true } else false
 }
 
@@ -112,7 +113,8 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                 Dest.Home -> HomeScreen(app, state, onToggleProtection, openDrawer, onOpenLogs = { nav.root(Dest.Logs) },
                     onOpenStats = { nav.root(Dest.Stats) }, onOpenConn = { nav.push(Dest.Connection(it)) })
                 Dest.Logs -> LogsScreen(app, state, openDrawer, onOpenConn = { nav.push(Dest.Connection(it)) })
-                is Dest.Connection -> ConnectionScreen(app, d.id, onBack = { nav.pop() },
+                is Dest.Connection -> ConnectionScreen(app, d.id, d.tab, onNeighbor = { id, tab -> nav.replace(Dest.Connection(id, tab)) },
+                    onBack = { nav.pop() },
                     onOpenApp = { nav.push(Dest.AppRules(it)) }, onOpenPacket = { nav.push(Dest.Packet(d.id, it)) })
                 is Dest.Packet -> PacketScreen(app, d.connId, d.seq, onBack = { nav.pop() })
                 Dest.Stats -> StatsScreen(app, openDrawer)
@@ -191,7 +193,7 @@ fun AboutScreen(openDrawer: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 Text("GPL-3.0-or-later. Native engine adapted from PCAPdroid (Emanuele Faranda), " +
                         "zdtun and nDPI (LGPL-3.0), zstd, libpcap, OkHttp (Apache-2.0). " +
-                        "IP Geolocation by DB-IP (db-ip.com), CC BY 4.0.",
+                        "IP Geolocation by DB-IP (db-ip.com), CC BY 4.0. Tracker data: AdGuard companiesdb, CC BY-SA 4.0.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

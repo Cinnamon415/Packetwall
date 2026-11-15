@@ -31,6 +31,8 @@ class FirewallStore(
     private val apps: AppsResolver,
     defaultSetName: String,
     defaultProfileName: String,
+    /** Expands AS numbers into their prefixes (GeoIp); empty map without the ASN database. */
+    private val asnPrefixes: (Set<Long>) -> Map<Long, List<String>> = { emptyMap() },
 ) {
     private val file = File(dir, "firewall.json")
     private val listsDir = File(dir, "lists").apply { mkdirs() }
@@ -233,6 +235,35 @@ class FirewallStore(
         return id
     }
 
+    /**
+     * Applies a converted foreign import: app/global rules go to a new user set, list entries to a new
+     * blocklist set, $important entries to a blocklist set right above it. All at the lowest priority
+     * (spec 3); ids are assigned here. Returns the ids of the created sets.
+     */
+    fun applyImport(name: String, plan: ForeignImport.Plan, listAction: Action): List<Int> {
+        val created = ArrayList<Int>()
+        if (plan.important.isNotEmpty()) {
+            val id = importList("$name · important", ListParser.Result(plan.important, 0, emptyList(), 0), listAction)
+            created.add(id)
+        }
+        if (plan.entries.isNotEmpty()) {
+            val id = importList(name, ListParser.Result(plan.entries, plan.skipped, emptyList(), 0), listAction)
+            created.add(id)
+        }
+        if (plan.rules.isNotEmpty()) {
+            update { st ->
+                var next = st.nextId
+                val setId = next++
+                val rules = plan.rules.map { it.copy(id = next++, setId = setId, created = System.currentTimeMillis()) }
+                created.add(setId)
+                val setName = if (plan.entries.isNotEmpty()) "$name · apps" else name
+                st.copy(sets = st.sets + RuleSet(setId, setName), order = st.order + SetState(setId, true),
+                    rules = st.rules + rules, nextId = next)
+            }
+        }
+        return created
+    }
+
     private fun writeList(id: Int, entries: List<String>) {
         val tmp = File(listsDir, "$id.txt.tmp")
         tmp.bufferedWriter().use { w -> entries.forEach { w.write(it); w.write("\n") } }
@@ -392,7 +423,7 @@ class FirewallStore(
     fun compileNow() {
         try {
             val st = _state.value
-            RulesCompiler.compile(st, apps::uidOf, ::listFile, compiled)
+            RulesCompiler.compile(st, apps::uidOf, ::listFile, compiled, asnPrefixes)
             _loaded.value = CaptureService.loadRules(compiled.absolutePath)
         } catch (e: Throwable) {
             Log.e(TAG, "compile failed", e)
