@@ -210,8 +210,11 @@ static bool check_dns_req_allowed(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_conte
         }
     }
 
-    if(block_private_dns) {
-        log_d("blocking packet directed to the DNS server");
+    // Packetwall: only DNS-over-TLS (853, what Android's Private DNS uses) is dropped to force plain DNS.
+    // Other traffic to DNS servers (e.g. HTTPS to 1.1.1.1, an app's own DoH) is left to the rules:
+    // without rules traffic is not touched (spec 2.4).
+    if(block_private_dns && (ntohs(tuple->dst_port) == 853)) {
+        log_d("blocking DoT packet directed to the DNS server");
         return(false);
     }
 
