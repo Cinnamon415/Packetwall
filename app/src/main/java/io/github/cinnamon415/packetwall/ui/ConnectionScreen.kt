@@ -107,7 +107,8 @@ fun ConnectionScreen(app: PacketwallApp, id: Int, initialTab: Int, onNeighbor: (
             R.string.kv_host to (c.host ?: "—"),
             app.trackers.of(c.host)?.let { t -> R.string.kv_tracker to "${t.name} · ${stringResource(categoryLabel(t.category))}" },
             R.string.kv_asn to (remember(c.dstIp) { app.geo.asn(c.dstIp) }?.let { (n, org) -> "AS$n $org" } ?: "—"),
-            R.string.kv_route to stringResource(if (c.proxied) R.string.route_upstream else R.string.route_direct),
+            // the route only matters when an upstream proxy is configured
+            if (app.settings.current.upstream || c.proxied) R.string.kv_route to stringResource(if (c.proxied) R.string.route_upstream else R.string.route_direct) else null,
             R.string.kv_traffic to "↑ ${formatBytes(c.sentBytes)} · ↓ ${formatBytes(c.rcvdBytes)}",
             R.string.kv_packets to "${c.sentPkts} ↑ · ${c.rcvdPkts} ↓",
             R.string.kv_first_seen to formatTime(c.firstSeen),
