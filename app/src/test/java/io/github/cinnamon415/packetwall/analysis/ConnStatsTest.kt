@@ -32,7 +32,7 @@ class ConnStatsTest {
     private val trackers = mapOf("track.example" to "Tracker Inc", "ads.example" to "Ads Co")
 
     @Test fun aggregatesByAppHostProtocolAndBlocks() {
-        val s = ConnStats.summarize(conns, { trackers[it] })
+        val s = ConnStats.summarize(conns, { trackers[it.host] })
         assertEquals(listOf("com.a" to 10010L, "com.b" to 310L), s.byApp.map { it.app.packageName to it.total })
         assertEquals(1005L, s.byApp.first().sent)
         // DNS connections are not hosts with traffic of their own

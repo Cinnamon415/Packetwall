@@ -116,6 +116,8 @@ class PacketwallApp : Application() {
         ConnFilter.trackerOf = { trackers.trackingOf(it)?.name }
         apps = AppsResolver(this)
         connections = ConnectionsRegister(apps)
+        // connections get their tracker once, when they are published (not on every screen update)
+        connections.trackerOf = { trackers.trackingOf(it)?.name }
         firewall = FirewallStore(
             dir = filesDir,
             uidOf = apps::uidOf,

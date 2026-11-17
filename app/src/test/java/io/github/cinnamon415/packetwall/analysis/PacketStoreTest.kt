@@ -1,5 +1,7 @@
 package io.github.cinnamon415.packetwall.analysis
 
+import io.github.cinnamon415.packetwall.engine.AppInfo
+import io.github.cinnamon415.packetwall.engine.Conn
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -48,7 +50,13 @@ class PacketStoreTest {
         assertEquals(10123, p.uid)
         assertTrue(p.tx)
         assertTrue(p.dropped)
-        assertEquals("6|0ad7ad01|40000|5db8d822|443", p.key)
+        // the same key from the packet (either direction) and from the connection's addresses
+        val conn = Conn(
+            1, 10123, AppInfo(10123, "p", "P", false), 4, 6, "10.215.173.1", 40000, "93.184.216.34", 443, "TLS", null, null,
+            0, 0, 0, 0, 0, 0, 0, 3, false, 0
+        )
+        assertEquals(PacketStore.keyOf(conn), p.key)
+        assertEquals(1, s.packetsOf(conn.copy(firstSeen = 0, lastSeen = 0)).size)
         val sum = Dissector.summary(p.block, p.dataOff, p.capLen)
         assertEquals("TCP", sum.proto)
         assertEquals("SYN", sum.info)
@@ -57,14 +65,14 @@ class PacketStoreTest {
 
     @Test fun splitChunksAndEviction() {
         val s = PacketStore()
-        s.reset(300)
+        s.reset(600) // each packet also counts ~112 bytes of bookkeeping
         val block = epb(syn(), true, listOf("u-1"))
         val two = block + block
         s.feed(two.copyOfRange(0, 50))
         s.feed(two.copyOfRange(50, two.size)) // block split across chunks
         assertEquals(2, s.all().size)
         repeat(5) { s.feed(block) }
-        assertTrue(s.all().sumOf { it.block.size } <= 300)
+        assertTrue(s.all().sumOf { it.block.size + 112 } <= 600)
         val out = ByteArrayOutputStream()
         s.writePcapng(out)
         assertTrue(out.size() > 0)

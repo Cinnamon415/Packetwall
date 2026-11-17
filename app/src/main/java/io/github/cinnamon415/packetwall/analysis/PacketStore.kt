@@ -30,7 +30,7 @@ class PacketStore {
         /** The raw EPB; the packet (raw IP) is at [DATA_OFF] for [capLen] bytes. */
         val block: ByteArray,
         val capLen: Int,
-        val key: String
+        val key: FlowKey
     ) {
         val dataOff get() = DATA_OFF
     }
@@ -60,7 +60,7 @@ class PacketStore {
 
     private val lock = Any()
     private val packets = ArrayDeque<Pkt>()
-    private val byKey = HashMap<String, ArrayDeque<Pkt>>()
+    private val byKey = HashMap<FlowKey, ArrayDeque<Pkt>>()
     private var bytes = 0L
     private var nextSeq = 0L
     private var preamble = ByteArray(0)
@@ -161,10 +161,10 @@ class PacketStore {
         val p = Pkt(nextSeq++, ts, uid, tx, dropped, origLen, block, capLen, key)
         packets.addLast(p)
         byKey.getOrPut(key) { ArrayDeque() }.addLast(p)
-        bytes += block.size
+        bytes += block.size + PKT_OVERHEAD
         while (bytes > capacity && packets.isNotEmpty()) {
             val old = packets.removeFirst()
-            bytes -= old.block.size
+            bytes -= old.block.size + PKT_OVERHEAD
             evicted++
             byKey[old.key]?.let { q ->
                 q.removeFirstOrNull()
@@ -204,33 +204,35 @@ class PacketStore {
         const val DATA_OFF = 28
         private const val LINKTYPE_RAW: Short = 101
 
-        private fun hex(b: ByteArray, off: Int, len: Int): String {
-            val sb = StringBuilder(len * 2)
-            for (i in off until off + len) sb.append(String.format("%02x", b[i]))
-            return sb.toString()
-        }
+        /**
+         * Memory per packet besides its block (the Pkt object, its key, deque slots), counted against
+         * the buffer size so that "16 MB" means about 16 MB.
+         */
+        private const val PKT_OVERHEAD = 112
 
-        /** "proto|clientIp|clientPort|serverIp|serverPort", ports 0 for ICMP. */
-        fun keyOf(b: ByteArray, off: Int, len: Int, tx: Boolean): String? {
+        /** A connection key from the packet bytes: no strings or formatting per packet. */
+        fun keyOf(b: ByteArray, off: Int, len: Int, tx: Boolean): FlowKey? {
             if (len < 20) return null
             val ver = (b[off].toInt() shr 4) and 0xf
             val proto: Int
-            val src: String
-            val dst: String
+            val srcOff: Int
+            val dstOff: Int
+            val alen: Int
             val l4: Int
             when (ver) {
                 4 -> {
-                    val ihl = (b[off].toInt() and 0xf) * 4
                     proto = b[off + 9].toInt() and 0xff
-                    src = hex(b, off + 12, 4)
-                    dst = hex(b, off + 16, 4)
-                    l4 = off + ihl
+                    srcOff = off + 12
+                    dstOff = off + 16
+                    alen = 4
+                    l4 = off + (b[off].toInt() and 0xf) * 4
                 }
                 6 -> {
                     if (len < 40) return null
                     proto = b[off + 6].toInt() and 0xff
-                    src = hex(b, off + 8, 16)
-                    dst = hex(b, off + 24, 16)
+                    srcOff = off + 8
+                    dstOff = off + 24
+                    alen = 16
                     l4 = off + 40
                 }
                 else -> return null
@@ -241,18 +243,49 @@ class PacketStore {
                 sp = ((b[l4].toInt() and 0xff) shl 8) or (b[l4 + 1].toInt() and 0xff)
                 dp = ((b[l4 + 2].toInt() and 0xff) shl 8) or (b[l4 + 3].toInt() and 0xff)
             }
-            val p = if (proto == 58) 1 else proto
-            return if (tx) "$p|$src|$sp|$dst|$dp" else "$p|$dst|$dp|$src|$sp"
+            return if (tx) FlowKey.of(proto, b, srcOff, sp, b, dstOff, dp, alen) else FlowKey.of(proto, b, dstOff, dp, b, srcOff, sp, alen)
         }
 
-        fun keyOf(c: Conn): String? = try {
+        fun keyOf(c: Conn): FlowKey? = try {
             val s = InetAddress.getByName(c.srcIp).address
             val d = InetAddress.getByName(c.dstIp).address
             val icmp = c.ipproto == 1 || c.ipproto == 58
-            val p = if (c.ipproto == 58) 1 else c.ipproto
-            "$p|${hex(s, 0, s.size)}|${if (icmp) 0 else c.srcPort}|${hex(d, 0, d.size)}|${if (icmp) 0 else c.dstPort}"
+            if (s.size !=
+                d.size
+            ) {
+                null
+            } else {
+                FlowKey.of(c.ipproto, s, 0, if (icmp) 0 else c.srcPort, d, 0, if (icmp) 0 else c.dstPort, s.size)
+            }
         } catch (e: Exception) {
             null
+        }
+    }
+}
+
+/**
+ * Identity of a connection: protocol, client address and port, server address and port, as two
+ * independent 64-bit hashes (a false match needs a 128-bit collision, and packetsOf() also checks the
+ * time window). ICMPv6 counts as ICMP so both map to the same key.
+ */
+data class FlowKey(val a: Long, val b: Long) {
+    companion object {
+        fun of(proto: Int, cb: ByteArray, cOff: Int, cPort: Int, sb: ByteArray, sOff: Int, sPort: Int, alen: Int): FlowKey {
+            var h1 = -0x340d631b7bdddcdbL // FNV-1a 64 offset basis
+            var h2 = 0x9E3779B97F4A7C15uL.toLong()
+            fun mix(v: Int) {
+                h1 = (h1 xor (v.toLong() and 0xff)) * 0x100000001b3L
+                h2 = java.lang.Long.rotateLeft(h2 xor (v.toLong() and 0xff), 5) * -0x61c8864680b583ebL
+            }
+            mix(if (proto == 58) 1 else proto)
+            mix(alen)
+            for (i in 0 until alen) mix(cb[cOff + i].toInt())
+            mix(cPort shr 8)
+            mix(cPort)
+            for (i in 0 until alen) mix(sb[sOff + i].toInt())
+            mix(sPort shr 8)
+            mix(sPort)
+            return FlowKey(h1, h2)
         }
     }
 }

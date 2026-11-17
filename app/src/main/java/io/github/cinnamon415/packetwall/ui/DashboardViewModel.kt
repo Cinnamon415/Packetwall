@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.map
 /** Aggregates for the home and statistics screens, recomputed off the main thread on every connections update. */
 class DashboardViewModel(app: PacketwallApp) : ScreenViewModel() {
     val summary: StateFlow<ConnStats.Summary> = app.connections.conns
-        .map { list -> ConnStats.summarize(list, { host -> app.trackers.trackingOf(host)?.name }) }
+        .map { list -> ConnStats.summarize(list) }
         .flowOn(Dispatchers.Default)
         .whileShown(ConnStats.Summary())
 }

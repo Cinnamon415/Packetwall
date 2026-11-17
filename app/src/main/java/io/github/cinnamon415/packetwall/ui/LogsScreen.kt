@@ -166,7 +166,7 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
                     when (tab) {
                         LogTab.DNS -> DnsRow(app, c, onLongClick = { quick = c }) { onOpenConn(c.id) }
                         LogTab.HTTP -> HttpRow(c, onLongClick = { quick = c }) { onOpenConn(c.id) }
-                        else -> ConnRow(c, compact, app.trackers.trackingOf(c.host)?.name, onLongClick = { quick = c }) { onOpenConn(c.id) }
+                        else -> ConnRow(c, compact, c.tracker, onLongClick = { quick = c }) { onOpenConn(c.id) }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                 }
@@ -629,7 +629,7 @@ fun writeCsv(w: Writer, list: List<Conn>, app: PacketwallApp) {
                 } else {
                     null
                 },
-                if (c.proxied) "upstream" else "direct", app.trackers.trackingOf(c.host)?.name
+                if (c.proxied) "upstream" else "direct", c.tracker
             )
                 .joinToString(",") { q(it) }
         )

@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /** Immutable snapshot of a connection for the UI. */
 data class Conn(
@@ -39,7 +40,9 @@ data class Conn(
     val fwRule: Int,
     /** Sent through the upstream proxy. */
     val proxied: Boolean = false,
-    val country: String = ""
+    val country: String = "",
+    /** Tracking company of the host, looked up once (null = none or unknown). */
+    val tracker: String? = null
 ) {
     val active get() = status < ConnectionDescriptor.CONN_STATUS_CLOSED
     val l4 get() = when (ipproto) {
@@ -64,14 +67,27 @@ data class Stats(
 )
 
 /**
- * Holds the connections reported by the native engine. Updates arrive on the capture thread;
- * snapshots are published to the UI at most every [PUBLISH_MS].
+ * Holds the connections reported by the native engine. The capture thread only records what
+ * changed (under a short lock); every [PUBLISH_MS] the changed connections are converted, closed
+ * ones are written to the log, and the list for the UI is rebuilt only while someone watches it.
  */
 class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: Int = 20_000) {
     private val lock = Any()
+
+    // capture thread side (under lock)
     private val byId = LinkedHashMap<Int, ConnectionDescriptor>()
+    private var changed = HashSet<Int>()
+    private var evicted = HashSet<Int>()
+    private var cleared = false
+
+    // publisher side (scope's single consumer)
+    private val view = LinkedHashMap<Int, Conn>()
+    private var viewDirty = true
 
     @Volatile private var dirty = false
+
+    /** Names the tracking company of a host; set by the app once the tracker database is known. */
+    @Volatile var trackerOf: (String?) -> String? = { null }
 
     private val _conns = MutableStateFlow<List<Conn>>(emptyList())
     val conns: StateFlow<List<Conn>> = _conns
@@ -82,8 +98,11 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
     data class Sample(val t: Long, val sent: Long, val rcvd: Long)
     private val _history = MutableStateFlow<List<Sample>>(emptyList())
     val history: StateFlow<List<Sample>> = _history
+    private val samples = ArrayDeque<Sample>()
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // one publisher at a time: the periodic tick, a new subscriber and reset() never overlap
+    private val publisher = Dispatchers.Default.limitedParallelism(1)
+    private val scope = CoroutineScope(SupervisorJob() + publisher)
 
     // Persistent log: closed connections are written to [db] when [keepDays] > 0
     @Volatile private var db: LogDb? = null
@@ -94,6 +113,7 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
 
     @Volatile private var stored: List<Conn> = emptyList()
     private val saved = HashSet<Int>()
+    private var lastPurge = 0L
 
     /** Enables/disables the persistent log; purges old rows and reloads the history. */
     fun configureLog(logDb: LogDb, days: Int) = scope.launch {
@@ -101,12 +121,16 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
         keepDays = days
         if (days > 0) {
             logDb.purge(System.currentTimeMillis() - days * 86_400_000L)
-            stored = logDb.load(HISTORY_ROWS, apps)
+            lastPurge = System.currentTimeMillis()
+            stored = loadStored(logDb)
         } else {
             stored = emptyList()
         }
+        viewDirty = true
         dirty = true
     }
+
+    private fun loadStored(d: LogDb) = d.load(HISTORY_ROWS, apps).map { it.copy(tracker = trackerOf(it.host)) }
 
     private fun persist(list: List<Conn>) {
         val d = db ?: return
@@ -125,48 +149,71 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
                 if (dirty) publish()
             }
         }
+        // someone started watching: build the list now instead of waiting for the next change
+        scope.launch {
+            _conns.subscriptionCount.collect { n -> if (n > 0 && viewDirty) publish() }
+        }
     }
 
+    /** Starts a new session. Blocks until done (call off the main thread, before the capture starts). */
     fun reset() {
-        // keep what the previous session did not write yet
-        val left =
-            synchronized(lock) { byId.values.filter { it.incr_id !in saved }.map { toConn(it) }.filter { !blockedOnly || it.blocked } }
-        if (left.isNotEmpty()) {
-            scope.launch {
-                persist(left)
-                db?.let {
-                    if (keepDays >
-                        0
-                    ) {
-                        stored = it.load(HISTORY_ROWS, apps)
-                    }
-                }
-                dirty = true
+        runBlocking(publisher) {
+            publish() // brings the view up to date and writes what is closed
+            // keep what the previous session did not write yet (still open at the stop)
+            val left = view.values.filter { it.id !in saved && (!blockedOnly || it.blocked) }
+            persist(left)
+            synchronized(lock) {
+                byId.clear()
+                changed.clear()
+                evicted.clear()
             }
-        }
-        synchronized(lock) {
-            byId.clear()
+            view.clear()
             saved.clear()
+            db?.let { if (keepDays > 0 && left.isNotEmpty()) stored = loadStored(it) }
+            viewDirty = true
+            dirty = true
         }
         _stats.value = Stats()
+        synchronized(samples) { samples.clear() }
         _history.value = emptyList()
-        dirty = true
     }
 
     fun onUpdate(newConns: Array<ConnectionDescriptor?>?, updates: Array<ConnectionUpdate?>?) {
         synchronized(lock) {
-            newConns?.forEach { c -> if (c != null) byId[c.incr_id] = c }
-            updates?.forEach { u -> if (u != null) byId[u.incr_id]?.processUpdate(u) }
+            newConns?.forEach { c ->
+                if (c != null) {
+                    byId[c.incr_id] = c
+                    changed.add(c.incr_id)
+                }
+            }
+            updates?.forEach { u ->
+                if (u != null) {
+                    byId[u.incr_id]?.let {
+                        it.processUpdate(u)
+                        changed.add(u.incr_id)
+                    }
+                }
+            }
             while (byId.size > maxConns) {
                 val first = byId.keys.iterator().next()
                 byId.remove(first)
+                changed.remove(first)
+                evicted.add(first)
             }
         }
         dirty = true
     }
 
     fun onStats(s: CaptureStats) {
-        _history.value = (_history.value + Sample(System.currentTimeMillis(), s.bytes_sent, s.bytes_rcvd)).takeLast(HISTORY)
+        // speed history: one sample a second (stats arrive about every 300 ms), 10 minutes
+        val now = System.currentTimeMillis()
+        synchronized(samples) {
+            if (samples.isEmpty() || now - samples.last().t >= 1000) {
+                samples.addLast(Sample(now, s.bytes_sent, s.bytes_rcvd))
+                while (samples.size > HISTORY) samples.removeFirst()
+                _history.value = samples.toList()
+            }
+        }
         _stats.value = Stats(
             s.bytes_sent,
             s.bytes_rcvd,
@@ -181,21 +228,53 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
     private fun toConn(c: ConnectionDescriptor) = Conn(
         c.incr_id, c.uid, apps.get(c.uid), c.ipver, c.ipproto, c.src_ip, c.src_port,
         c.dst_ip, c.dst_port, c.l7proto ?: "", c.info, c.url, c.sent_bytes, c.rcvd_bytes,
-        c.sent_pkts, c.rcvd_pkts, c.blocked_pkts, c.first_seen, c.last_seen, c.status, c.is_blocked, c.fw_rule, c.proxied, c.country ?: ""
+        c.sent_pkts, c.rcvd_pkts, c.blocked_pkts, c.first_seen, c.last_seen, c.status, c.is_blocked, c.fw_rule, c.proxied,
+        c.country ?: "", trackerOf(c.info)
     )
 
+    /** Publisher thread only. */
     private fun publish() {
         dirty = false
+        // take the changes under the lock: O(changed), not O(all connections)
+        val updated: List<Conn>
+        val gone: Set<Int>
+        synchronized(lock) {
+            updated = changed.mapNotNull { id -> byId[id]?.let(::toConn) }
+            gone = evicted
+            changed = HashSet()
+            evicted = HashSet()
+        }
+        if (updated.isNotEmpty() || gone.isNotEmpty()) viewDirty = true
         val toSave = ArrayList<Conn>()
-        val snap = synchronized(lock) {
-            byId.values.map { d ->
-                val c = toConn(d)
-                if (keepDays > 0 && !c.active && (!blockedOnly || c.blocked) && saved.add(d.incr_id)) toSave.add(c)
-                c
-            }
+        for (c in updated) {
+            // keep the first-seen order: a known id is replaced in place
+            view[c.id] = c
+            if (keepDays > 0 && !c.active && (!blockedOnly || c.blocked) && saved.add(c.id)) toSave.add(c)
+        }
+        for (id in gone) {
+            view.remove(id)
+            saved.remove(id)
         }
         persist(toSave)
-        _conns.value = if (keepDays > 0) snap.asReversed() + stored else snap.asReversed()
+        purgeDaily()
+        if (viewDirty && _conns.subscriptionCount.value > 0) {
+            viewDirty = false
+            val snap = view.values.toList().asReversed()
+            _conns.value = if (keepDays > 0) snap + stored else snap
+        }
+    }
+
+    /** A VPN that runs for weeks still drops log rows older than the retention. */
+    private fun purgeDaily() {
+        val d = db ?: return
+        val now = System.currentTimeMillis()
+        if (keepDays <= 0 || now - lastPurge < 86_400_000L) return
+        lastPurge = now
+        try {
+            d.purge(now - keepDays * 86_400_000L)
+        } catch (e: Exception) {
+            Log.w("ConnectionsRegister", "log purge", e)
+        }
     }
 
     companion object {

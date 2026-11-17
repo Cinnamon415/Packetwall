@@ -25,10 +25,10 @@ object ConnStats {
         val blockedCount: Int = 0
     )
 
-    /** [conns] is newest first; [tracker] names the tracking company of a host, if any. */
-    fun summarize(conns: List<Conn>, tracker: (String?) -> String?, top: Int = 8): Summary {
+    /** [conns] is newest first; [tracker] names the tracking company of a connection, if any. */
+    fun summarize(conns: List<Conn>, tracker: (Conn) -> String? = { it.tracker }, top: Int = 8): Summary {
         val ruleBlocked = conns.filter { it.blocked && it.fwRule != 0 }
-        val tracked = conns.mapNotNull { c -> tracker(c.host)?.let { c to it } }
+        val tracked = conns.mapNotNull { c -> tracker(c)?.let { c to it } }
         return Summary(
             byApp = conns.groupBy { it.uid }
                 .map { (_, l) -> AppTraffic(l.first().app, l.sumOf { it.sentBytes }, l.sumOf { it.rcvdBytes }) }

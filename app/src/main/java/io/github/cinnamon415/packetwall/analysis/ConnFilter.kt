@@ -77,7 +77,7 @@ object ConnFilter {
         "blocked" to { it.blocked },
         "allowed" to { !it.blocked },
         "active" to { it.active },
-        "tracker" to { trackerOf(it.host) != null }
+        "tracker" to { (it.tracker ?: trackerOf(it.host)) != null }
     )
 
     private fun fieldValue(c: Conn, f: String): Any? = when (f) {
@@ -91,7 +91,7 @@ object ConnFilter {
         "bytes" -> c.bytes
         "sent" -> c.sentBytes
         "rcvd" -> c.rcvdBytes
-        "tracker" -> trackerOf(c.host) ?: ""
+        "tracker" -> c.tracker ?: trackerOf(c.host) ?: ""
         else -> null
     }
 
