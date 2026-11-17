@@ -790,6 +790,15 @@ private fun ImportJsonDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        // subscriptions are downloaded right after the import (and daily): show where from
+                        val urls = f.state.sets.mapNotNull { it.url }.distinct()
+                        if (urls.isNotEmpty()) {
+                            Text(
+                                stringResource(R.string.import_will_download) + "\n" + urls.joinToString("\n"),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                         Row(Modifier.fillMaxWidth().clickable { replace = false }, verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(!replace, { replace = false })
                             Text(stringResource(R.string.import_merge))

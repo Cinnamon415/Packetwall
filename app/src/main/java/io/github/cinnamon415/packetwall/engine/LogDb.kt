@@ -20,6 +20,11 @@ class LogDb(ctx: Context) : SQLiteOpenHelper(ctx, "log.db", null, 1) {
 
     override fun onUpgrade(db: SQLiteDatabase, o: Int, n: Int) {}
 
+    // deleted rows (purge, "clear the saved log") are overwritten, not left in free pages
+    override fun onConfigure(db: SQLiteDatabase) {
+        db.rawQuery("PRAGMA secure_delete = ON", null).use { it.moveToFirst() }
+    }
+
     fun insert(list: List<Conn>) {
         if (list.isEmpty()) return
         val db = writableDatabase

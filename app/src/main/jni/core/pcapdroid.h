@@ -289,8 +289,8 @@ typedef struct pcapdroid {
         zdtun_ip_t proxy_ip;
         u_int32_t proxy_port;
         int proxy_ipver;
-        char proxy_user[32];
-        char proxy_pass[32];
+        char proxy_user[256];   // Packetwall: 255 bytes, the SOCKS5 limit (was 31)
+        char proxy_pass[256];
     } socks5;
 
     struct {

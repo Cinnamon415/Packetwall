@@ -576,21 +576,10 @@ static void getLibprogPath(pcapdroid_t *pd, const char *prog_name, char *buf, in
 
 /* ******************************************************* */
 
+// Packetwall: login and password from separate getters, so neither is cut at a ':' or at 31 bytes
 static void getSocks5ProxyAuth(pcapdroid_t *pd) {
-    char buf[64];
-    buf[0] = '\0';
-
-    getStringPref(pd, "getSocks5ProxyAuth", buf, sizeof(buf));
-    char *sep = strchr(buf, ':');
-
-    if(!sep)
-        return;
-
-    *sep = '\0';
-    strncpy(pd->socks5.proxy_user, buf, sizeof(pd->socks5.proxy_user) - 1);
-    pd->socks5.proxy_user[sizeof(pd->socks5.proxy_user) - 1] = '\0';
-    strncpy(pd->socks5.proxy_pass, sep + 1, sizeof(pd->socks5.proxy_pass) - 1);
-    pd->socks5.proxy_pass[sizeof(pd->socks5.proxy_pass) - 1] = '\0';
+    getStringPref(pd, "getSocks5ProxyUser", pd->socks5.proxy_user, sizeof(pd->socks5.proxy_user));
+    getStringPref(pd, "getSocks5ProxyPass", pd->socks5.proxy_pass, sizeof(pd->socks5.proxy_pass));
 
     //log_d("SOCKS5: user=%s pass=%s", pd->socks5.proxy_user, pd->socks5.proxy_pass);
 }
@@ -1261,7 +1250,8 @@ char* getStringPref(pcapdroid_t *pd, const char *key, char *buf, int bufsize) {
             return NULL;
 
         const char *value = (*env)->GetStringUTFChars(env, obj, 0);
-        log_d("getStringPref(%s) = %s", key, value);
+        // Packetwall: never log secrets (the upstream password)
+        log_d("getStringPref(%s) = %s", key, strstr(key, "Pass") ? "***" : value);
 
         strncpy(buf, value, bufsize);
         buf[bufsize - 1] = '\0';

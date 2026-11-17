@@ -121,7 +121,9 @@ class NativeBridge(private val vpn: VpnService, private val app: PacketwallApp, 
 
     fun getSocks5ProxyPort(): Int = settings.upPort
 
-    fun getSocks5ProxyAuth(): String = settings.let { if (it.upUser.isNotEmpty()) "${it.upUser}:${it.upPass}" else "" }
+    fun getSocks5ProxyUser(): String = settings.upUser
+
+    fun getSocks5ProxyPass(): String = settings.upPass
 
     fun malwareDetectionEnabled(): Int = 0
 

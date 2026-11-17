@@ -379,4 +379,5 @@
     <string name="confirm_geo_delete">Delete the GeoIP databases? Country and AS rules (%1$d) stop matching until they are downloaded again.</string>
     <string name="confirm_trackers_delete">Delete the tracker database? Connections are no longer marked as trackers.</string>
     <string name="problem_too_large">The file is too large</string>
+    <string name="import_will_download">Lists that will be downloaded from:</string>
 </resources>

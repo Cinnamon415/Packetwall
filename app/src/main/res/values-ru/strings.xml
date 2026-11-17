@@ -377,4 +377,5 @@
     <string name="confirm_geo_delete">Удалить базы GeoIP? Правила по странам и AS (%1$d) перестанут срабатывать, пока базы не скачаются снова.</string>
     <string name="confirm_trackers_delete">Удалить базу трекеров? Соединения больше не будут помечаться как трекеры.</string>
     <string name="problem_too_large">Слишком большой файл</string>
+    <string name="import_will_download">Списки будут скачиваться с адресов:</string>
 </resources>
