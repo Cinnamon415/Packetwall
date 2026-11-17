@@ -5,7 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /** App settings (SharedPreferences), exposed as flows for the UI. */
-class Settings(ctx: Context) {
+class Settings(ctx: Context, private val box: SecretBox = SecretBox.keystore()) {
     private val prefs = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     data class Values(
@@ -70,7 +70,7 @@ class Settings(ctx: Context) {
         upHost = prefs.getString("up_host", null) ?: "127.0.0.1",
         upPort = prefs.getInt("up_port", 1080),
         upUser = prefs.getString("up_user", null) ?: "",
-        upPass = prefs.getString("up_pass", null) ?: "",
+        upPass = readPassword(),
         upApp = prefs.getString("up_app", null) ?: "",
         upUdp = prefs.getInt("up_udp", 1),
         upType = prefs.getInt("up_type", 0),
@@ -92,21 +92,36 @@ class Settings(ctx: Context) {
         recordMinutes = prefs.getInt("record_min", 60), recordKeep = prefs.getInt("record_keep", 5)
     )
 
+    /**
+     * The proxy password is stored encrypted ([SecretBox]). A plaintext value (older versions, or
+     * written by the debug test configuration) is encrypted and removed on the first read.
+     */
+    private fun readPassword(): String {
+        prefs.getString(KEY_PASS_PLAIN, null)?.let { plain ->
+            prefs.edit().putString(KEY_PASS, box.seal(plain)).remove(KEY_PASS_PLAIN).apply()
+            return plain
+        }
+        return prefs.getString(KEY_PASS, null)?.let { box.open(it) } ?: ""
+    }
+
     /** Re-reads the preferences (after they were written outside this class, e.g. by tests). */
     fun reload() {
         _values.value = read()
     }
 
     fun update(fn: (Values) -> Values) {
-        val v = fn(_values.value)
-        prefs.edit()
+        val old = _values.value
+        val v = fn(old)
+        val edit = prefs.edit()
+        if (v.upPass != old.upPass) edit.putString(KEY_PASS, box.seal(v.upPass))
+        edit
             .putBoolean("capture_packets", v.capturePackets)
             .putInt("buffer_mb", v.bufferMb)
             .putInt("snaplen", v.snaplen)
             .putInt("dns_mode", v.dnsMode)
             .putString("doh_url", v.dohUrl)
             .putBoolean("up", v.upstream).putString("up_host", v.upHost).putInt("up_port", v.upPort)
-            .putString("up_user", v.upUser).putString("up_pass", v.upPass).putString("up_app", v.upApp)
+            .putString("up_user", v.upUser).putString("up_app", v.upApp)
             .putInt("up_udp", v.upUdp).putInt("up_down", v.upOnDown).putInt("up_type", v.upType).putBoolean("up_all", v.upAll)
             .putBoolean("lists_auto", v.listsAutoUpdate).putBoolean("lists_wifi", v.listsWifiOnly)
             .putString("backup_uri", v.backupUri).putLong("last_backup", v.lastBackup)
@@ -121,6 +136,8 @@ class Settings(ctx: Context) {
     }
 
     companion object {
+        private const val KEY_PASS = "up_pass_enc"
+        private const val KEY_PASS_PLAIN = "up_pass"
         val BUFFER_SIZES = listOf(4, 8, 16, 32, 64, 128)
         val SNAPLENS = listOf(0, 1514, 512, 128)
         val LOG_DAYS = listOf(0, 1, 7, 30)

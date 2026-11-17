@@ -624,7 +624,7 @@ private fun TrackersSettings(app: PacketwallApp) {
                 if (info.loaded) TextButton({ app.trackers.delete() }) { Text(stringResource(R.string.delete)) }
             }
             Text(
-                "Tracker data: AdGuard companiesdb, CC BY-SA 4.0",
+                stringResource(R.string.trackers_attribution),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp)

@@ -103,7 +103,6 @@
     <string name="kind_hosts">Хосты</string>
     <string name="kind_ip">IP · CIDR</string>
     <string name="kv_rule">Правило</string>
-    <string name="list_error">Ошибка: %1$s</string>
     <string name="list_stats">записей: %1$d · пропущено строк: %2$d · %3$s</string>
     <string name="loading">Загрузка…</string>
     <string name="name">Название</string>
@@ -345,4 +344,6 @@
     <string name="unit_min">мин</string>
     <string name="unit_s">с</string>
     <string name="err_vpn_consent">Нет разрешения на VPN: откройте Packetwall и включите защиту</string>
+    <string name="trackers_attribution">Данные о трекерах: AdGuard companiesdb, CC BY-SA 4.0</string>
+    <string name="import_default_name">Импорт</string>
 </resources>

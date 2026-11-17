@@ -317,7 +317,8 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
     var detected by remember { mutableStateOf<ForeignImport.Format?>(null) }
     var plan by remember { mutableStateOf<ForeignImport.Plan?>(null) }
     var error by remember { mutableStateOf<Problem?>(null) }
-    var name by remember { mutableStateOf(uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Import") }
+    val defaultName = stringResource(R.string.import_default_name)
+    var name by remember { mutableStateOf(uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: defaultName) }
     var action by remember { mutableStateOf(Action.BLOCK) }
     var done by remember { mutableStateOf<String?>(null) }
 

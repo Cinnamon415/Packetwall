@@ -23,6 +23,7 @@ Release signing reads `../Packetwall-keys/keystore.properties` (outside the repo
 
 GPL-3.0-or-later. The native capture engine is adapted from [PCAPdroid](https://github.com/emanuele-f/PCAPdroid)
 by Emanuele Faranda (GPL-3.0), and uses zdtun and nDPI (LGPL-3.0), zstd and libpcap.
+The changes made to PCAPdroid's native code and to zdtun are listed in [docs/NATIVE_CHANGES.md](docs/NATIVE_CHANGES.md).
 
 
 ## Status (2026-11-16)

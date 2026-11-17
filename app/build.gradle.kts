@@ -21,8 +21,9 @@ android {
         applicationId = "io.github.cinnamon415.packetwall"
         minSdk = 29
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.5.0"
+        // versionCode = major * 10000 + minor * 100 + patch; must grow with every release
+        versionCode = 600
+        versionName = "0.6.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
