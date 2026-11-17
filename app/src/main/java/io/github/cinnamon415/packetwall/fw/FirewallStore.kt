@@ -184,12 +184,15 @@ class FirewallStore(
         s2.copy(profiles = s2.profiles + Profile(nid, name.trim(), s2.order), activeProfile = nid)
     }
 
-    fun activateProfile(id: Int) = update { st ->
-        val p = st.profiles.firstOrNull { it.id == id } ?: return@update st
+    fun activateProfile(id: Int) = update { st -> withProfile(st, id) }
+
+    /** [st] with profile [id] active: its set order and switches, sets it does not know appended disabled. */
+    private fun withProfile(st: FwState, id: Int): FwState {
+        val p = st.profiles.firstOrNull { it.id == id } ?: return st
         val ids = st.sets.map { it.id }.toSet()
         val order = p.sets.filter { it.id in ids } +
             st.order.filter { s -> p.sets.none { it.id == s.id } }.map { it.copy(enabled = false) }
-        st.copy(order = order, activeProfile = id)
+        return st.copy(order = order, activeProfile = id)
     }
 
     fun renameProfile(id: Int, name: String) = update { st ->
@@ -200,8 +203,10 @@ class FirewallStore(
         if (st.profiles.size <= 1) {
             st
         } else {
-            val left = st.profiles.filterNot { it.id == id }
-            st.copy(profiles = left, activeProfile = if (st.activeProfile == id) left.first().id else st.activeProfile)
+            val left = st.copy(profiles = st.profiles.filterNot { it.id == id })
+            // the live order belongs to the deleted profile: switch to the next one's own order,
+            // or the next edit would overwrite that profile with the deleted one's switches
+            if (st.activeProfile == id) withProfile(left, left.profiles.first().id) else left
         }
     }
 
@@ -245,6 +250,7 @@ class FirewallStore(
                 order = s2.order + SetState(nid, true)
             )
         }
+        listFile(id).delete() // never pick up a file left behind by an earlier set with this id
         if (url != null) scope.launch { download(id) }
         return id
     }
@@ -376,6 +382,8 @@ class FirewallStore(
                 sets = listOf(s),
                 order = st.order.filter { it.id == onlySet },
                 rules = st.rules.filter { it.setId == onlySet },
+                // only the groups its rules use
+                groups = st.groups.filter { g -> st.rules.any { it.setId == onlySet && (it.who as? Who.Group)?.id == g.id } },
                 profiles = emptyList(),
                 activeProfile = null
             )
@@ -463,9 +471,13 @@ class FirewallStore(
         var summary = ImportSummary(0, 0, 0, 0)
 
         if (replace) {
+            require(src.profiles.isNotEmpty()) { "only a full export can replace the configuration" }
+            backupForReplace()
             val st = src.copy(
+                // never lower: ids of the replaced configuration must not come back
                 nextId = maxOf(
                     src.nextId,
+                    _state.value.nextId,
                     (
                         src.sets.map { it.id } + src.rules.map { it.id } +
                             src.groups.map { it.id } + src.profiles.map { it.id }
@@ -498,8 +510,11 @@ class FirewallStore(
             src.groups.forEach { groupMap[it.id] = next++ }
             val sets = src.sets.map { it.copy(id = setMap.getValue(it.id)) }
             val groups = src.groups.map { it.copy(id = groupMap.getValue(it.id)) }
-            val rules = src.rules.filter { it.setId in setMap }.map { r ->
-                val who = (r.who as? Who.Group)?.let { g -> groupMap[g.id]?.let { Who.Group(it) } } ?: r.who
+            // a group rule whose group is not in the file is dropped: its id could name another local group
+            val rules = src.rules.filter {
+                it.setId in setMap && ((it.who as? Who.Group)?.id?.let { g -> g in groupMap } ?: true)
+            }.map { r ->
+                val who = (r.who as? Who.Group)?.let { g -> Who.Group(groupMap.getValue(g.id)) } ?: r.who
                 r.copy(id = next++, setId = setMap.getValue(r.setId), who = who)
             }
             val order = src.order.filter { it.id in setMap }.map { SetState(setMap.getValue(it.id), it.enabled) } +
@@ -523,6 +538,42 @@ class FirewallStore(
         _state.value.blocklists.filter { it.url != null && !listFile(it.id).exists() }.forEach { s -> scope.launch { download(s.id) } }
         scheduleCompile()
         return summary
+    }
+
+    // ---------------------------------------------------------------- replace backup
+
+    private val backupDir = File(dir, "before-replace")
+
+    /** The configuration before the last "replace" import, kept until the next one. */
+    val hasReplaceBackup: Boolean get() = File(backupDir, "firewall.json").exists()
+
+    /** Keeps the current state and list files (moved, not copied: lists can be large). */
+    private fun backupForReplace() {
+        backupDir.deleteRecursively()
+        backupDir.mkdirs()
+        File(backupDir, "firewall.json").writeText(json.encodeToString(FwState.serializer(), _state.value))
+        if (listsDir.exists() && !listsDir.renameTo(File(backupDir, "lists"))) {
+            listsDir.copyRecursively(File(backupDir, "lists"), overwrite = true)
+            listsDir.deleteRecursively()
+        }
+        listsDir.mkdirs()
+    }
+
+    /** Undoes the last "replace" import. Returns false when there is nothing to restore. */
+    fun restoreReplaceBackup(): Boolean {
+        val f = File(backupDir, "firewall.json")
+        if (!f.exists()) return false
+        val st = json.decodeFromString(FwState.serializer(), f.readText())
+        listsDir.deleteRecursively()
+        val saved = File(backupDir, "lists")
+        if (!saved.renameTo(listsDir)) {
+            saved.copyRecursively(listsDir, overwrite = true)
+        }
+        listsDir.mkdirs()
+        synchronized(lock) { _state.value = st }
+        backupDir.deleteRecursively()
+        scheduleCompile()
+        return true
     }
 
     // ---------------------------------------------------------------- compile

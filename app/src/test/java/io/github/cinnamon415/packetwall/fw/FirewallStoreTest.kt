@@ -157,4 +157,65 @@ class FirewallStoreTest {
         assertEquals(2, s.state.value.rules.size)
         assertTrue(lastCompiled, lastCompiled.contains("example.org"))
     }
+
+    @Test fun deletingTheActiveProfileSwitchesToTheOthersOwnOrder() = runTest {
+        val s = store()
+        val work = s.addSet("Work")
+        val main = s.state.value.activeProfile!!
+        s.addProfile("Strict") // active now
+        val strict = s.state.value.activeProfile!!
+        s.setEnabled(work, false) // only in Strict
+        s.deleteProfile(strict)
+        assertEquals(main, s.state.value.activeProfile)
+        assertTrue("Main's own switches are live again", s.state.value.isEnabled(work))
+        s.setEnabled(FwState.DEFAULT_SET, true) // an edit must not copy Strict's switches into Main
+        assertTrue(s.state.value.profiles.single().sets.first { it.id == work }.enabled)
+    }
+
+    @Test fun replaceKeepsABackupNeverLowersIdsAndIgnoresStaleListFiles() = runTest {
+        val src = store(tmp.newFolder("src"))
+        val exported = src.exportJson()
+        val dst = store(tmp.newFolder("dst"))
+        val list = dst.addBlocklist("Old list", null)
+        dst.importList("Mine", ListParser.Result(listOf("old.example"), 0, emptyList(), 0), Action.BLOCK)
+        val before = dst.state.value
+        dst.importJson(exported, replace = true)
+        assertTrue(dst.state.value.nextId >= before.nextId)
+        assertTrue(dst.hasReplaceBackup)
+        // a new list never reads a file of an earlier set with the same id
+        val fresh = dst.addBlocklist("Fresh", null)
+        assertEquals(emptyList<String>(), dst.readList(fresh))
+        assertTrue(dst.restoreReplaceBackup())
+        assertEquals(before.sets.map { it.id }, dst.state.value.sets.map { it.id })
+        assertTrue(dst.state.value.sets.any { it.id == list })
+    }
+
+    @Test fun replaceNeedsAFullExport() = runTest {
+        val src = store(tmp.newFolder("src"))
+        val one = src.exportJson(FwState.DEFAULT_SET)
+        val dst = store(tmp.newFolder("dst"))
+        assertTrue(runCatching { dst.importJson(one, replace = true) }.isFailure)
+    }
+
+    @Test fun singleSetExportCarriesOnlyItsGroups() = runTest {
+        val s = store()
+        val used = s.saveGroup(AppGroup(0, "Used", listOf("com.a")))
+        s.saveGroup(AppGroup(0, "Unused", listOf("com.b")))
+        s.addRule(rule(FwState.DEFAULT_SET, Who.Group(used), "g.example"))
+        val f = FirewallStore.json.decodeFromString(ExportFile.serializer(), s.exportJson(FwState.DEFAULT_SET))
+        assertEquals(listOf("Used"), f.state.groups.map { it.name })
+    }
+
+    @Test fun mergeDropsRulesOfGroupsMissingFromTheFile() = runTest {
+        val src = store(tmp.newFolder("src"))
+        val g = src.saveGroup(AppGroup(0, "G", listOf("com.a")))
+        src.addRule(rule(FwState.DEFAULT_SET, Who.Group(g), "g.example"))
+        val f = FirewallStore.json.decodeFromString(ExportFile.serializer(), src.exportJson())
+        val broken = FirewallStore.json.encodeToString(ExportFile.serializer(), f.copy(state = f.state.copy(groups = emptyList())))
+        val dst = store(tmp.newFolder("dst"))
+        val other = dst.saveGroup(AppGroup(0, "Local", listOf("com.b")))
+        dst.importJson(broken, replace = false)
+        assertTrue(dst.state.value.rules.none { (it.who as? Who.Group)?.id == other })
+        assertTrue(dst.state.value.rules.none { it.target.value == "g.example" })
+    }
 }

@@ -11,9 +11,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import io.github.cinnamon415.packetwall.R
 import java.io.OutputStream
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -36,12 +39,16 @@ fun rememberFileExport(mime: String, onDone: (ok: Boolean) -> Unit = {}): FileEx
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val done by rememberUpdatedState(onDone)
-    // the writer for the picker that is open right now (lost with the process, then nothing is written)
-    val pending = remember { PendingWrite() }
+    // The writer waits in a process-wide map under a saveable key while the picker is open, so a
+    // rotation or theme change (activity recreated) does not lose it. After process death it is
+    // gone: then the user is told the export failed instead of silently nothing.
+    val key = rememberSaveable { UUID.randomUUID().toString() }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(mime)) { uri ->
-        val write = pending.take()
-        if (uri != null && write != null) {
-            scope.launch {
+        val write = PendingWrites.take(key)
+        when {
+            uri == null -> {}
+            write == null -> Toast.makeText(ctx, R.string.export_failed, Toast.LENGTH_SHORT).show()
+            else -> scope.launch {
                 val ok = writeTo(ctx, uri, write)
                 Toast.makeText(ctx, if (ok) R.string.exported else R.string.export_failed, Toast.LENGTH_SHORT).show()
                 done(ok)
@@ -50,20 +57,20 @@ fun rememberFileExport(mime: String, onDone: (ok: Boolean) -> Unit = {}): FileEx
     }
     return remember(launcher) {
         FileExport { name, write ->
-            pending.set(write)
+            PendingWrites.put(key, write)
             launcher.launch(name)
         }
     }
 }
 
-private class PendingWrite {
-    private var write: ((OutputStream) -> Unit)? = null
+private object PendingWrites {
+    private val map = ConcurrentHashMap<String, (OutputStream) -> Unit>()
 
-    fun set(w: (OutputStream) -> Unit) {
-        write = w
+    fun put(key: String, w: (OutputStream) -> Unit) {
+        map[key] = w
     }
 
-    fun take() = write.also { write = null }
+    fun take(key: String) = map.remove(key)
 }
 
 /** Writes [uri] (truncating it) on the IO dispatcher. Returns false, with a log line, on failure. */

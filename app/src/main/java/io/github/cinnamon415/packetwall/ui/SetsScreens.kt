@@ -1,6 +1,7 @@
 package io.github.cinnamon415.packetwall.ui
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateDpAsState
@@ -78,6 +79,8 @@ import io.github.cinnamon415.packetwall.Problem
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.fw.Action
 import io.github.cinnamon415.packetwall.fw.Catalog
+import io.github.cinnamon415.packetwall.fw.ExportFile
+import io.github.cinnamon415.packetwall.fw.FirewallStore
 import io.github.cinnamon415.packetwall.fw.ForeignImport
 import io.github.cinnamon415.packetwall.fw.FwState
 import io.github.cinnamon415.packetwall.fw.RethinkReader
@@ -714,47 +717,114 @@ private fun SetDialog(app: PacketwallApp, s: RuleSet, st: FwState, onDismiss: ()
 private fun ImportJsonDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    var file by remember { mutableStateOf<Pair<String, ExportFile>?>(null) }
+    var problem by remember { mutableStateOf<Problem?>(null) }
     var replace by remember { mutableStateOf(false) }
+    var confirmReplace by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
+    var replaced by remember { mutableStateOf(false) }
     val fmt = stringResource(R.string.import_json_done)
+    val restoredMsg = stringResource(R.string.import_restored)
+
+    LaunchedEffect(uri) {
+        try {
+            file = withContext(Dispatchers.IO) {
+                val text = ctx.contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
+                text to FirewallStore.json.decodeFromString(ExportFile.serializer(), text)
+            }
+        } catch (e: Exception) {
+            problem = Problem.of(e)
+        }
+    }
+    val full = file?.second?.state?.profiles?.isNotEmpty() == true
+
+    fun run() {
+        val text = file?.first ?: return
+        busy = true
+        scope.launch {
+            try {
+                val sum = withContext(Dispatchers.IO) { app.firewall.importJson(text, replace) }
+                replaced = replace
+                result = String.format(fmt, sum.sets, sum.rules, sum.groups, sum.profiles)
+            } catch (e: Exception) {
+                problem = Problem.of(e)
+            }
+            busy = false
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.import_json)) },
         text = {
-            Column {
-                if (result != null) {
-                    Text(result!!)
-                } else {
-                    Row(Modifier.fillMaxWidth().clickable { replace = false }, verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(!replace, { replace = false })
-                        Text(stringResource(R.string.import_merge))
-                    }
-                    Row(Modifier.fillMaxWidth().clickable { replace = true }, verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(replace, { replace = true })
-                        Text(stringResource(R.string.import_replace))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val f = file?.second
+                when {
+                    problem != null -> Text(problemText(problem!!), color = MaterialTheme.colorScheme.error)
+                    result != null -> Text(result!!)
+                    f == null || busy -> CircularProgressIndicator()
+                    confirmReplace -> Text(stringResource(R.string.import_replace_confirm))
+                    else -> {
+                        Text(
+                            stringResource(
+                                R.string.import_file_has,
+                                f.state.sets.size,
+                                f.state.rules.size,
+                                f.state.groups.size,
+                                f.state.profiles.size
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(Modifier.fillMaxWidth().clickable { replace = false }, verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(!replace, { replace = false })
+                            Text(stringResource(R.string.import_merge))
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().clickable(enabled = full) { replace = true },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(replace, { replace = true }, enabled = full)
+                            Column {
+                                Text(
+                                    stringResource(R.string.import_replace),
+                                    color = if (full) Color.Unspecified else MaterialTheme.colorScheme.outline
+                                )
+                                if (!full) {
+                                    Text(
+                                        stringResource(R.string.import_replace_full_only),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
         },
         confirmButton = {
-            if (result != null) {
-                TextButton(onDismiss) { Text(stringResource(R.string.ok)) }
-            } else {
-                TextButton({
-                    scope.launch {
-                        result = try {
-                            val text = withContext(Dispatchers.IO) {
-                                ctx.contentResolver.openInputStream(uri)!!.bufferedReader().readText()
-                            }
-                            val s = app.firewall.importJson(text, replace)
-                            String.format(fmt, s.sets, s.rules, s.groups, s.profiles)
-                        } catch (e: Exception) {
-                            Problem.of(e).message(ctx)
+            when {
+                result != null && replaced -> Row {
+                    TextButton({
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) { app.firewall.restoreReplaceBackup() }
+                            if (ok) Toast.makeText(ctx, restoredMsg, Toast.LENGTH_SHORT).show()
+                            onDismiss()
                         }
-                    }
-                }) { Text(stringResource(R.string.import_action)) }
+                    }) { Text(stringResource(R.string.import_restore)) }
+                    TextButton(onDismiss) { Text(stringResource(R.string.ok)) }
+                }
+                result != null || problem != null -> TextButton(onDismiss) { Text(stringResource(R.string.ok)) }
+                confirmReplace -> TextButton({ run() }, enabled = !busy) {
+                    Text(stringResource(R.string.import_replace_action), color = MaterialTheme.colorScheme.error)
+                }
+                else -> TextButton({ if (replace) confirmReplace = true else run() }, enabled = file != null && !busy) {
+                    Text(stringResource(R.string.import_action))
+                }
             }
         },
-        dismissButton = { if (result == null) TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
+        dismissButton = { if (result == null && problem == null) TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }

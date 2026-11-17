@@ -360,4 +360,10 @@
     <string name="stream_new_token">Новый ключ</string>
     <string name="copy">Копировать</string>
     <string name="copied">Скопировано</string>
+    <string name="import_file_has">В файле: наборов %1$d, правил %2$d, групп %3$d, профилей %4$d</string>
+    <string name="import_replace_full_only">Только для полного экспорта (Наборы и профили → ⋮ → Экспорт всего)</string>
+    <string name="import_replace_confirm">Ваши наборы, правила, группы и профили заменятся содержимым файла. Текущая конфигурация сохранится: её можно вернуть сразу после импорта.</string>
+    <string name="import_replace_action">Заменить</string>
+    <string name="import_restore">Вернуть прежнюю</string>
+    <string name="import_restored">Прежняя конфигурация возвращена</string>
 </resources>

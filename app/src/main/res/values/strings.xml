@@ -362,4 +362,10 @@
     <string name="stream_new_token">New key</string>
     <string name="copy">Copy</string>
     <string name="copied">Copied</string>
+    <string name="import_file_has">In the file: sets %1$d, rules %2$d, groups %3$d, profiles %4$d</string>
+    <string name="import_replace_full_only">Only for a full export (Sets and profiles → ⋮ → Export all)</string>
+    <string name="import_replace_confirm">Your sets, rules, groups and profiles will be replaced by the ones in the file. The current configuration is kept: you can bring it back right after the import.</string>
+    <string name="import_replace_action">Replace</string>
+    <string name="import_restore">Bring back the previous</string>
+    <string name="import_restored">The previous configuration is back</string>
 </resources>
