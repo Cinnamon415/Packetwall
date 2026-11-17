@@ -186,36 +186,10 @@ object Dissector {
         return "$qt $q → ${answers.take(3).joinToString(", ").ifEmpty { "∅" }}"
     }
 
-    /** SNI and ALPN of a ClientHello, if present. */
+    /** SNI and ALPN of a ClientHello, if present (parsed by [TlsInfo]). */
     fun clientHello(b: ByteArray, off: Int, len: Int): Pair<String?, List<String>>? {
-        val r = R(b, off, off + len)
-        if (r.u8(off) != 0x16 || r.u8(off + 5) != 1) return null
-        var o = off + 9 + 2 + 32 // record hdr, hs hdr, version, random
-        o += 1 + r.u8(o) // session id
-        o += 2 + r.u16(o) // cipher suites
-        o += 1 + r.u8(o) // compression
-        val extEnd = o + 2 + r.u16(o)
-        o += 2
-        var sni: String? = null
-        val alpn = ArrayList<String>()
-        while (o + 4 <= minOf(extEnd, r.end)) {
-            val t = r.u16(o)
-            val l = r.u16(o + 2)
-            val v = o + 4
-            if (t == 0 && r.has(v + 5, r.u16(v + 3))) sni = String(b, v + 5, r.u16(v + 3), Charsets.ISO_8859_1)
-            if (t == 16) {
-                var a = v + 2
-                while (a < v + l &&
-                    r.has(a, 1)
-                ) {
-                    val al = r.u8(a)
-                    if (r.has(a + 1, al)) alpn.add(String(b, a + 1, al, Charsets.ISO_8859_1))
-                    a += 1 + al
-                }
-            }
-            o = v + l
-        }
-        return sni to alpn
+        if (len < 6 || b[off].toInt() != 0x16) return null
+        return TlsInfo.client(b.copyOfRange(off, minOf(off + len, b.size)))?.let { it.sni to it.alpn }
     }
 
     private fun tlsInfo(r: R, po: Int, pl: Int): String {

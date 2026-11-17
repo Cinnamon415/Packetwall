@@ -2,6 +2,7 @@ package io.github.cinnamon415.packetwall
 
 import android.app.Application
 import android.content.ComponentName
+import android.content.res.Configuration
 import android.service.quicksettings.TileService
 import io.github.cinnamon415.packetwall.analysis.ConnFilter
 import io.github.cinnamon415.packetwall.analysis.DiskRecorder
@@ -10,14 +11,16 @@ import io.github.cinnamon415.packetwall.analysis.PacketStore
 import io.github.cinnamon415.packetwall.analysis.PcapServer
 import io.github.cinnamon415.packetwall.analysis.Trackers
 import io.github.cinnamon415.packetwall.engine.AppsResolver
-import io.github.cinnamon415.packetwall.engine.CaptureService
 import io.github.cinnamon415.packetwall.engine.CaptureState
+import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import io.github.cinnamon415.packetwall.engine.ConnectionsRegister
 import io.github.cinnamon415.packetwall.engine.LogDb
+import io.github.cinnamon415.packetwall.engine.NativeBridge
 import io.github.cinnamon415.packetwall.fw.FirewallStore
 import io.github.cinnamon415.packetwall.system.ProtectionTile
 import io.github.cinnamon415.packetwall.system.ProtectionWidget
 import io.github.cinnamon415.packetwall.system.Schedules
+import io.github.cinnamon415.packetwall.ui.Units
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -63,8 +66,14 @@ class PacketwallApp : Application() {
     lateinit var trackers: Trackers
         private set
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        Units.load(this)
+    }
+
     override fun onCreate() {
         super.onCreate()
+        Units.load(this)
         settings = Settings(this)
         geo = GeoIp(filesDir)
         trackers = Trackers(filesDir)
@@ -74,7 +83,7 @@ class PacketwallApp : Application() {
         firewall = FirewallStore(
             dir = filesDir,
             uidOf = apps::uidOf,
-            loader = CaptureService::loadRules,
+            loader = NativeBridge::loadRules,
             defaultSetName = getString(R.string.set_default),
             defaultProfileName = getString(R.string.profile_default),
             asnPrefixes = geo::asnPrefixes
@@ -93,7 +102,7 @@ class PacketwallApp : Application() {
             }
         }
         CoroutineScope(Dispatchers.IO).launch {
-            combine(settings.values, CaptureService.state) { s, st ->
+            combine(settings.values, CaptureStatus.state) { s, st ->
                 Triple(
                     listOf(s.stream, s.streamLan, s.record, s.capturePackets),
                     listOf(s.streamPort, s.recordMb, s.recordMinutes, s.recordKeep),
@@ -108,7 +117,7 @@ class PacketwallApp : Application() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         scope.launch {
             combine(
-                CaptureService.state,
+                CaptureStatus.state,
                 firewall.state
             ) { st, fw -> (st is CaptureState.Running) to fw.activeProfile }
                 .distinctUntilChanged()

@@ -599,7 +599,7 @@ static void init_jni(JNIEnv *env) {
     // NOTE: these are bound to this specific env
 
     /* Classes */
-    cls.vpn_service = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/CaptureService");
+    cls.vpn_service = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/NativeBridge");
     cls.conn = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/model/ConnectionDescriptor");
     cls.conn_update = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/model/ConnectionUpdate");
     cls.stats = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/model/CaptureStats");
@@ -665,7 +665,7 @@ static void init_jni(JNIEnv *env) {
 static bool getCountryCode(pcapdroid_t *pd, const char *host, char out[3]);
 
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_runPacketLoop(JNIEnv *env, jclass type, jint tunfd,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_runPacketLoop(JNIEnv *env, jclass type, jint tunfd,
                                                               jobject vpn, jint sdk) {
 
 #ifdef PCAPDROID_TRACK_ALLOCS
@@ -770,7 +770,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_runPacketLoop(JNIEnv
 /* ******************************************************* */
 
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_stopPacketLoop(JNIEnv *env, jclass type) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_stopPacketLoop(JNIEnv *env, jclass type) {
     /* NOTE: the select on the packets loop uses a timeout to wake up periodically */
     log_i("stopPacketLoop called");
     running = false;
@@ -779,7 +779,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_stopPacketLoop(JNIEn
 /* ******************************************************* */
 
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_initPlatformInfo(JNIEnv *env, jclass clazz,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_initPlatformInfo(JNIEnv *env, jclass clazz,
                                                                    jstring appver, jstring device,
                                                                    jstring os) {
     const char *appver_s = (*env)->GetStringUTFChars(env, appver, 0);
@@ -796,7 +796,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_initPlatformInfo(JNI
 /* ******************************************************* */
 
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_askStatsDump(JNIEnv *env, jclass clazz) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_askStatsDump(JNIEnv *env, jclass clazz) {
     if(running)
         dump_capture_stats_now = true;
 }
@@ -804,14 +804,14 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_askStatsDump(JNIEnv 
 /* ******************************************************* */
 
 JNIEXPORT jint JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_getFdSetSize(JNIEnv *env, jclass clazz) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_getFdSetSize(JNIEnv *env, jclass clazz) {
     return FD_SETSIZE;
 }
 
 /* ******************************************************* */
 
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_setDnsServer(JNIEnv *env, jclass clazz,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setDnsServer(JNIEnv *env, jclass clazz,
                                                                jstring server) {
     struct in_addr addr = {0};
     const char *value = (*env)->GetStringUTFChars(env, server, 0);
@@ -825,7 +825,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_setDnsServer(JNIEnv 
 /* ******************************************************* */
 
 JNIEXPORT jbyteArray JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_getPcapHeader(JNIEnv *env, jclass clazz) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_getPcapHeader(JNIEnv *env, jclass clazz) {
     pcapdroid_t *pd = global_pd;
     if(!pd || !pd->pcap_dump.dumper) {
         log_e("NULL pd/dumper instance");
@@ -857,35 +857,35 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_getPcapHeader(JNIEnv
 /* ******************************************************* */
 
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_reloadBlacklists(JNIEnv *env, jclass clazz) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_reloadBlacklists(JNIEnv *env, jclass clazz) {
     reload_blacklists_now = true;
 }
 
 /* ******************************************************* */
 
 JNIEXPORT jint JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_getNumCheckedMalwareConnections(JNIEnv *env, jclass clazz) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_getNumCheckedMalwareConnections(JNIEnv *env, jclass clazz) {
     return bl_num_checked_connections;
 }
 
 /* ******************************************************* */
 
 JNIEXPORT jint JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_getNumCheckedFirewallConnections(JNIEnv *env, jclass clazz) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_getNumCheckedFirewallConnections(JNIEnv *env, jclass clazz) {
     return fw_num_checked_connections;
 }
 
 /* ******************************************************* */
 
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_setPrivateDnsBlocked(JNIEnv *env, jclass clazz, jboolean to_block) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setPrivateDnsBlocked(JNIEnv *env, jclass clazz, jboolean to_block) {
     block_private_dns = to_block;
 }
 
 /* ******************************************************* */
 
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_addPortMapping(JNIEnv *env, jclass clazz, jint ipproto,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_addPortMapping(JNIEnv *env, jclass clazz, jint ipproto,
                                                                  jint orig_port, jint redirect_port, jstring redirect_ip) {
     zdtun_ip_t ip;
 
@@ -907,7 +907,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_addPortMapping(JNIEn
 /* ******************************************************* */
 
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_setPortMappingExemptions(JNIEnv *env, jclass clazz,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setPortMappingExemptions(JNIEnv *env, jclass clazz,
                                                                            jintArray uids) {
     if(uids == NULL) {
         pd_set_port_map_exemptions(NULL, 0);
@@ -934,7 +934,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_setPortMappingExempt
 /* ******************************************************* */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_reloadBlocklist(JNIEnv *env, jclass clazz,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_reloadBlocklist(JNIEnv *env, jclass clazz,
         jobject ld) {
     pcapdroid_t *pd = global_pd;
     if(!pd) {
@@ -975,7 +975,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_reloadBlocklist(JNIE
 /* ******************************************************* */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_reloadFirewallWhitelist(JNIEnv *env, jclass clazz,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_reloadFirewallWhitelist(JNIEnv *env, jclass clazz,
          jobject whitelist) {
     pcapdroid_t *pd = global_pd;
     if(!pd) {
@@ -1023,7 +1023,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_reloadFirewallWhitel
 /* ******************************************************* */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_reloadMalwareWhitelist(JNIEnv *env, jclass clazz,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_reloadMalwareWhitelist(JNIEnv *env, jclass clazz,
         jobject whitelist) {
     pcapdroid_t *pd = global_pd;
     if(!pd) {
@@ -1064,7 +1064,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_reloadMalwareWhiteli
 /* ******************************************************* */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_reloadDecryptionList(JNIEnv *env,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_reloadDecryptionList(JNIEnv *env,
                                                                        jclass clazz, jobject listobj) {
     pcapdroid_t *pd = global_pd;
     if(!pd) {
@@ -1105,7 +1105,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_reloadDecryptionList
 /* ******************************************************* */
 
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_nativeSetFirewallEnabled(JNIEnv *env, jclass clazz, jboolean enabled) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_nativeSetFirewallEnabled(JNIEnv *env, jclass clazz, jboolean enabled) {
     pcapdroid_t *pd = global_pd;
     if(!pd) {
         log_e("NULL pd instance");
@@ -1118,7 +1118,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_nativeSetFirewallEna
 /* ******************************************************* */
 
 JNIEXPORT int JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_rootCmd(JNIEnv *env, jclass clazz, jstring prog,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_rootCmd(JNIEnv *env, jclass clazz, jstring prog,
                                                           jstring args) {
     const char *prog_s = (*env)->GetStringUTFChars(env, prog, 0);
     const char *args_s = (*env)->GetStringUTFChars(env, args, 0);
@@ -1133,7 +1133,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_rootCmd(JNIEnv *env,
 /* ******************************************************* */
 
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_setPayloadMode(JNIEnv *env, jclass clazz, jint mode) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setPayloadMode(JNIEnv *env, jclass clazz, jint mode) {
     pcapdroid_t *pd = global_pd;
     if(!pd) {
         log_e("NULL pd instance");
@@ -1146,7 +1146,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_setPayloadMode(JNIEn
 /* ******************************************************* */
 
 JNIEXPORT jint JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_initLogger(JNIEnv *env, jclass clazz,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_initLogger(JNIEnv *env, jclass clazz,
                                                              jstring path, jint level) {
     const char *path_s = (*env)->GetStringUTFChars(env, path, 0);
     int rv = pd_init_logger(path_s, level);
@@ -1157,7 +1157,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_initLogger(JNIEnv *e
 /* ******************************************************* */
 
 JNIEXPORT jint JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_writeLog(JNIEnv *env, jclass clazz,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_writeLog(JNIEnv *env, jclass clazz,
                                                       jint logger, jint lvl, jstring message) {
     const char *message_s = (*env)->GetStringUTFChars(env, message, 0);
     int rv = pd_log_write(logger, lvl, message_s);
@@ -1181,7 +1181,7 @@ static bool arraylist_add_string(JNIEnv *env, jmethodID arrayListAdd, jobject ar
 }
 
 JNIEXPORT jobject JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_getL7Protocols(JNIEnv *env, jclass clazz) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_getL7Protocols(JNIEnv *env, jclass clazz) {
     jclass arrayListClass = jniFindClass(env, "java/util/ArrayList");
     jmethodID arrayListNew = jniGetMethodID(env, arrayListClass, "<init>", "()V");
     jmethodID arrayListAdd = jniGetMethodID(env, arrayListClass, "add", "(Ljava/lang/Object;)Z");
@@ -1492,7 +1492,7 @@ static bool getCountryCode(pcapdroid_t *pd, const char *host, char out[3]) {
 /* ******************************************************* */
 
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_dumpMasterSecret(JNIEnv *env, jclass clazz,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_dumpMasterSecret(JNIEnv *env, jclass clazz,
                                                                    jbyteArray secret) {
     jsize sec_len = (*env)->GetArrayLength(env, secret);
     jbyte* sec_data = (*env)->GetByteArrayElements(env, secret, 0);
@@ -1506,7 +1506,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_dumpMasterSecret(JNI
 /* ******************************************************* */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_hasSeenDumpExtensions(JNIEnv *env,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_hasSeenDumpExtensions(JNIEnv *env,
                                                                         jclass clazz) {
     return has_seen_dump_extensions;
 }
@@ -1514,7 +1514,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_hasSeenDumpExtension
 /* ******************************************************* */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_extractKeylogFromPcapng(JNIEnv *env, jclass clazz,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_extractKeylogFromPcapng(JNIEnv *env, jclass clazz,
                     jstring pcapng_path, jstring out_path
 ) {
     const char *pcapng_s = (*env)->GetStringUTFChars(env, pcapng_path, 0);
@@ -1530,7 +1530,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_extractKeylogFromPca
 /* ******************************************************* */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_nativeIsKnownDnsServer(JNIEnv *env, jclass clazz,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_nativeIsKnownDnsServer(JNIEnv *env, jclass clazz,
                                                                          jstring ip) {
     const char *ip_s = (*env)->GetStringUTFChars(env, ip, 0);
 
@@ -1546,7 +1546,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_nativeIsKnownDnsServ
 
 // Packetwall: load a compiled rules file (see pw_rules.c). Can be called while stopped.
 JNIEXPORT jint JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_loadRules(JNIEnv *env, jclass clazz, jstring path) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_loadRules(JNIEnv *env, jclass clazz, jstring path) {
     const char *p = (*env)->GetStringUTFChars(env, path, NULL);
     if(!p)
         return -1;
@@ -1559,7 +1559,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_loadRules(JNIEnv *en
 
 // Packetwall: port of the upstream DNS server (53, or the local DoH proxy port)
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_setDnsServerPort(JNIEnv *env, jclass clazz, jint port) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setDnsServerPort(JNIEnv *env, jclass clazz, jint port) {
     dns_server_port = (uint16_t) port;
 }
 
@@ -1567,7 +1567,7 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_setDnsServerPort(JNI
 
 // Packetwall: upstream (SOCKS5) runtime state
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_setUpstreamState(JNIEnv *env, jclass clazz,
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setUpstreamState(JNIEnv *env, jclass clazz,
         jboolean active, jboolean block_udp) {
     upstream_active = active;
     upstream_block_udp = block_udp;
@@ -1577,13 +1577,13 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_setUpstreamState(JNI
 
 // Packetwall: upstream type (true = HTTP CONNECT), set before the capture starts
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_setUpstreamHttp(JNIEnv *env, jclass clazz, jboolean http) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setUpstreamHttp(JNIEnv *env, jclass clazz, jboolean http) {
     upstream_http = http;
 }
 
 // Packetwall: SOCKS5 UDP relay from a UDP ASSOCIATE held by the app ("" = none)
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_setUdpRelay(JNIEnv *env, jclass clazz, jstring ip, jint port) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setUdpRelay(JNIEnv *env, jclass clazz, jstring ip, jint port) {
     const char *s = (*env)->GetStringUTFChars(env, ip, NULL);
     zdtun_ip_t addr = {0};
     int ver = (s && s[0]) ? zdtun_parse_ip(s, &addr) : -1;
@@ -1600,6 +1600,6 @@ Java_io_github_cinnamon415_packetwall_engine_CaptureService_setUdpRelay(JNIEnv *
 
 // Packetwall: proxy all traffic (true) or only connections allowed by "via upstream" rules
 JNIEXPORT void JNICALL
-Java_io_github_cinnamon415_packetwall_engine_CaptureService_setUpstreamScope(JNIEnv *env, jclass clazz, jboolean all) {
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setUpstreamScope(JNIEnv *env, jclass clazz, jboolean all) {
     upstream_all = all;
 }

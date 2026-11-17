@@ -122,7 +122,7 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
                 leadingIcon = { Icon(painterResource(R.drawable.ic_filter), null) },
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
                 isError = !check.valid,
-                supportingText = check.message?.let { m -> { Text(m) } },
+                supportingText = check.error?.let { e -> { Text(parseErrorText(e)) } },
                 placeholder = { Text(stringResource(R.string.logs_filter_hint), fontFamily = FontFamily.Monospace) }
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -421,7 +421,7 @@ private fun StreamCard(app: PacketwallApp, s: Settings.Values) {
                     Text(stringResource(R.string.stream_title), style = MaterialTheme.typography.titleSmall)
                     Text(
                         when {
-                            st.error != null -> st.error!!
+                            st.error != null -> problemText(st.error!!)
                             st.running -> stringResource(R.string.stream_running, st.port, st.clients)
                             else -> stringResource(R.string.stream_off)
                         },

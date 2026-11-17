@@ -112,6 +112,19 @@ object TlsInfo {
         return out
     }
 
+    /** ALPN protocol names between [from] and [to]: each one is a length byte and the name. */
+    private fun alpnList(b: ByteArray, from: Int, to: Int): List<String> {
+        val out = ArrayList<String>()
+        var a = from
+        while (a < minOf(to, b.size)) {
+            val n = b[a].toInt() and 0xff
+            if (a + 1 + n > b.size) break
+            out.add(String(b, a + 1, n, Charsets.ISO_8859_1))
+            a += 1 + n
+        }
+        return out
+    }
+
     fun client(stream: ByteArray): Client? {
         val hello = messages(handshakeBytes(stream)).firstOrNull { it.first == 1 }?.second ?: return null
         val r = R(hello)
@@ -142,21 +155,7 @@ object TlsInfo {
                 0x000a -> (0 until r.u16(v) / 2).map { r.u16(v + 2 + it * 2) }.filterNot(::grease).let(groups::addAll)
                 0x000b -> (0 until r.u8(v)).map { r.u8(v + 1 + it) }.let(pf::addAll)
                 0x000d -> (0 until r.u16(v) / 2).map { r.u16(v + 2 + it * 2) }.let(sigs::addAll)
-                0x0010 -> {
-                    var a =
-                        v + 2
-                    while (a <
-                        v + l
-                    ) {
-                        val n = r.u8(a)
-                        if (a + 1 + n <=
-                            hello.size
-                        ) {
-                            alpn.add(String(hello, a + 1, n, Charsets.ISO_8859_1))
-                        }
-                        a += 1 + n
-                    }
-                }
+                0x0010 -> alpn.addAll(alpnList(hello, v + 2, v + l))
                 0x002b -> (0 until r.u8(v) / 2).map { r.u16(v + 1 + it * 2) }.filterNot(::grease).let(sv::addAll)
             }
             o = v + l

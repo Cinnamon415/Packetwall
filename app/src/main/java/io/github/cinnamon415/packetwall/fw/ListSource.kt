@@ -1,5 +1,6 @@
 package io.github.cinnamon415.packetwall.fw
 
+import io.github.cinnamon415.packetwall.HttpStatusException
 import java.io.BufferedReader
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -28,7 +29,7 @@ class HttpListSource : ListSource {
                 u = URL(u, location)
                 return@repeat
             }
-            if (code != 200) throw IOException("HTTP $code")
+            if (code != 200) throw HttpStatusException(code)
             return c.inputStream.bufferedReader()
         }
         throw IOException("too many redirects")

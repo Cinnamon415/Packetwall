@@ -1,6 +1,7 @@
 package io.github.cinnamon415.packetwall.fw
 
 import android.util.Log
+import io.github.cinnamon415.packetwall.Problem
 import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -352,7 +353,7 @@ class FirewallStore(
         } catch (e: Exception) {
             Log.w(TAG, "Download failed: $url", e)
             update { st ->
-                st.copy(sets = st.sets.map { if (it.id == id) it.copy(error = e.message ?: e.javaClass.simpleName) else it })
+                st.copy(sets = st.sets.map { if (it.id == id) it.copy(error = Problem.of(e).encode()) else it })
             }
         } finally {
             _updating.value = _updating.value - id

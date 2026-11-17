@@ -52,15 +52,15 @@ class LogsViewModel(conns: StateFlow<List<Conn>>, private val saved: SavedStateH
 
     fun toggleCompact() = saved.set(K_COMPACT, !compact.value)
 
-    /** Filter expression state: [valid] false shows the field as an error, [message] explains a parse error. */
-    data class FilterCheck(val valid: Boolean = true, val message: String? = null)
+    /** Filter expression state: [valid] false shows the field as an error, [error] explains a parse error. */
+    data class FilterCheck(val valid: Boolean = true, val error: ConnFilter.ParseError? = null)
 
     data class Shown(val list: List<Conn> = emptyList(), val total: Int = 0)
 
     private val compiled = snapshotFlow { filter }.map { runCatching { ConnFilter.compile(it) } }
 
     val filterCheck: StateFlow<FilterCheck> = compiled.map { r ->
-        FilterCheck(r.isSuccess, (r.exceptionOrNull() as? ConnFilter.ParseError)?.message)
+        FilterCheck(r.isSuccess, r.exceptionOrNull() as? ConnFilter.ParseError)
     }.whileShown(FilterCheck())
 
     val shown: StateFlow<Shown> = combine(conns, compiled, status, tab) { list, pred, st, t ->

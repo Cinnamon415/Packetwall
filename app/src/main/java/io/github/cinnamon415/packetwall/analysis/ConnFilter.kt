@@ -14,7 +14,10 @@ import io.github.cinnamon415.packetwall.engine.Conn
  * Text comparisons ignore case. Input without any operator is a plain text search.
  */
 object ConnFilter {
-    class ParseError(msg: String, val pos: Int) : Exception(msg)
+    /** [token]: the offending text, where the kind has one. Shown localized by the UI. */
+    class ParseError(val kind: Kind, val token: String, val pos: Int) : Exception("$kind '$token' at $pos") {
+        enum class Kind { UNEXPECTED, UNTERMINATED_STRING, UNEXPECTED_END, MISSING_PAREN, UNKNOWN_FIELD, EXPECTED_OPERATOR }
+    }
 
     private sealed interface Node {
         fun eval(c: Conn): Boolean
@@ -108,7 +111,7 @@ object ConnFilter {
         }
         val p = Parser(tokenize(t))
         val n = p.parseOr()
-        if (!p.done()) throw ParseError("unexpected '${p.peek()?.text}'", p.peek()?.pos ?: t.length)
+        if (!p.done()) throw ParseError(ParseError.Kind.UNEXPECTED, p.peek()?.text ?: "", p.peek()?.pos ?: t.length)
         return n::eval
     }
 
@@ -130,7 +133,7 @@ object ConnFilter {
                 ch.isWhitespace() -> i++
                 ch == '"' || ch == '\'' -> {
                     val end = s.indexOf(ch, i + 1)
-                    if (end < 0) throw ParseError("unterminated string", i)
+                    if (end < 0) throw ParseError(ParseError.Kind.UNTERMINATED_STRING, "", i)
                     out.add(Tok(s.substring(i + 1, end), i, true))
                     i = end + 1
                 }
@@ -152,7 +155,7 @@ object ConnFilter {
                 else -> {
                     val st = i
                     while (i < s.length && !s[i].isWhitespace() && s[i] !in "()!<>~=&|\"'") i++
-                    if (i == st) throw ParseError("unexpected '${s[i]}'", i)
+                    if (i == st) throw ParseError(ParseError.Kind.UNEXPECTED, s[i].toString(), i)
                     out.add(Tok(s.substring(st, i), st))
                 }
             }
@@ -164,7 +167,7 @@ object ConnFilter {
         var i = 0
         fun peek() = toks.getOrNull(i)
         fun done() = i >= toks.size
-        private fun next() = toks.getOrNull(i++) ?: throw ParseError("unexpected end", Int.MAX_VALUE)
+        private fun next() = toks.getOrNull(i++) ?: throw ParseError(ParseError.Kind.UNEXPECTED_END, "", Int.MAX_VALUE)
         private fun isKw(t: Tok?, vararg k: String) = t != null && !t.quoted && k.any { it.equals(t.text, ignoreCase = true) }
 
         fun parseOr(): Node {
@@ -197,18 +200,18 @@ object ConnFilter {
             val t = next()
             if (!t.quoted && t.text == "(") {
                 val n = parseOr()
-                if (!isKw(peek(), ")")) throw ParseError("missing ')'", peek()?.pos ?: Int.MAX_VALUE)
+                if (!isKw(peek(), ")")) throw ParseError(ParseError.Kind.MISSING_PAREN, "", peek()?.pos ?: Int.MAX_VALUE)
                 i++
                 return n
             }
             val name = t.text.lowercase()
             flags[name]?.let { if (!isKw(peek(), "==", "!=", "~", "!~", "<", "<=", ">", ">=")) return Flag(it) }
-            if (name !in fields) throw ParseError("unknown field '${t.text}'", t.pos)
+            if (name !in fields) throw ParseError(ParseError.Kind.UNKNOWN_FIELD, t.text, t.pos)
             val op = next()
             if (op.quoted ||
                 op.text !in setOf("==", "!=", "~", "!~", "<", "<=", ">", ">=")
             ) {
-                throw ParseError("expected an operator", op.pos)
+                throw ParseError(ParseError.Kind.EXPECTED_OPERATOR, op.text, op.pos)
             }
             val v = next()
             return Cmp(name, op.text, v.text)

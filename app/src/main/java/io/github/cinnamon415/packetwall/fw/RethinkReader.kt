@@ -20,7 +20,7 @@ object RethinkReader {
                 }
             }
         }
-        if (!found) throw ForeignImport.Unsupported("bravedns.db not found in the backup")
+        if (!found) throw ForeignImport.Unsupported(ForeignImport.Unsupported.Reason.RETHINK_NO_DB)
         try {
             SQLiteDatabase.openDatabase(db.path, null, SQLiteDatabase.OPEN_READONLY).use { d ->
                 fun hasTable(t: String) =

@@ -25,6 +25,16 @@ class TlsInfoTest {
         assertNull(s.cert)
     }
 
+    @Test fun dissectorReadsSniAndAlpnOfAClientHelloAtAnOffset() {
+        val hello = res("stream1-client.hex")
+        val packet = ByteArray(40) + hello // the payload starts after the IP/TCP headers
+        assertEquals("en.wikipedia.org" to listOf("h2", "http/1.1"), Dissector.clientHello(packet, 40, hello.size))
+        // only the first part of the record captured (snaplen), the SNI (at byte 1432) included
+        assertEquals("en.wikipedia.org", Dissector.clientHello(packet, 40, 1500)?.first)
+        assertNull(Dissector.clientHello(packet, 40, 3))
+        assertNull(Dissector.clientHello(res("stream1-server.hex"), 0, 200))
+    }
+
     @Test fun secondStream() {
         val c = TlsInfo.client(res("stream2-client.hex"))!!
         assertEquals("content-autofill.googleapis.com", c.sni)

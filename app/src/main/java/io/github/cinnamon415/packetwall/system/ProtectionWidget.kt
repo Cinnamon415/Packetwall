@@ -13,6 +13,7 @@ import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.engine.CaptureService
 import io.github.cinnamon415.packetwall.engine.CaptureState
+import io.github.cinnamon415.packetwall.engine.CaptureStatus
 
 /** Home screen widget: power button + active profile (tap the name to switch to the next profile). */
 class ProtectionWidget : AppWidgetProvider() {
@@ -21,7 +22,7 @@ class ProtectionWidget : AppWidgetProvider() {
     override fun onReceive(ctx: Context, intent: Intent) {
         when (intent.action) {
             ACTION_TOGGLE -> {
-                if (CaptureService.state.value is CaptureState.Running) {
+                if (CaptureStatus.state.value is CaptureState.Running) {
                     CaptureService.stop(ctx)
                 } else if (VpnService.prepare(ctx) != null) {
                     ctx.startActivity(
@@ -53,7 +54,7 @@ class ProtectionWidget : AppWidgetProvider() {
             val mgr = AppWidgetManager.getInstance(ctx)
             val ids = mgr.getAppWidgetIds(ComponentName(ctx, ProtectionWidget::class.java))
             if (ids.isEmpty()) return
-            val on = CaptureService.state.value is CaptureState.Running
+            val on = CaptureStatus.state.value is CaptureState.Running
             val profile = (ctx.applicationContext as PacketwallApp).firewall.state.value.profile?.name ?: ""
             fun pi(action: String, code: Int) = PendingIntent.getBroadcast(
                 ctx,

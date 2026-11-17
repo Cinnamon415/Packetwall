@@ -4,7 +4,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.util.Base64
 import android.util.Log
-import io.github.cinnamon415.packetwall.engine.CaptureService
+import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -40,7 +40,7 @@ class TestConfigActivity : Activity() {
                 app.firewall.importJson(String(Base64.decode(b64, Base64.DEFAULT)), replace = true)
                 app.firewall.compileNow()
             }
-            Log.i("TestConfig", "applied (protection running: ${CaptureService.state.value})")
+            Log.i("TestConfig", "applied (protection running: ${CaptureStatus.state.value})")
         } catch (e: Exception) {
             Log.e("TestConfig", "cannot apply", e)
         }

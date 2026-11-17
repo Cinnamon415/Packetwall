@@ -46,8 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
-import io.github.cinnamon415.packetwall.engine.CaptureService
 import io.github.cinnamon415.packetwall.engine.CaptureState
+import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import io.github.cinnamon415.packetwall.ui.theme.LocalExtraColors
 import java.net.URI
 import kotlinx.coroutines.delay
@@ -130,7 +130,7 @@ fun HomeScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        val strictDns by CaptureService.privateDnsStrict.collectAsState()
+                        val strictDns by CaptureStatus.privateDnsStrict.collectAsState()
                         if (on && strictDns) {
                             Text(
                                 stringResource(R.string.private_dns_strict),
@@ -139,7 +139,7 @@ fun HomeScreen(
                             )
                         }
                         val fwState by app.firewall.state.collectAsState()
-                        val doh by CaptureService.dohActive.collectAsState()
+                        val doh by CaptureStatus.dohActive.collectAsState()
                         Text(
                             listOfNotNull("VPN", fwState.profile?.name, doh?.let { "DoH " + (URI(it).host ?: "") })
                                 .joinToString(" · "),

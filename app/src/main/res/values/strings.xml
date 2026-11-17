@@ -306,4 +306,45 @@
     <string name="settings_network">Network</string>
     <string name="lan_bypass">Local network bypasses the VPN</string>
     <string name="lan_bypass_hint">10/8, 172.16/12, 192.168/16, link-local and multicast go directly: not filtered or logged. Keeps adb over Wi-Fi, casting and LAN devices working.</string>
+    <!-- errors (Problem) -->
+    <string name="problem_offline">No connection to the server</string>
+    <string name="problem_timeout">The server did not answer in time</string>
+    <string name="problem_tls">Secure connection failed</string>
+    <string name="problem_http">Server error (HTTP %1$d)</string>
+    <string name="problem_http_404">Not found on the server (HTTP 404)</string>
+    <string name="problem_bad_data">The data has an unexpected format</string>
+    <string name="problem_port">Port %1$d is already in use</string>
+    <string name="problem_file">Cannot read or write the file</string>
+    <string name="problem_srs_binary">Binary .srs rule-sets are not supported: convert with \"sing-box rule-set decompile\" and import the JSON</string>
+    <string name="problem_rethink_no_db">No bravedns.db in the RethinkDNS backup</string>
+    <string name="problem_other">Error: %1$s</string>
+    <!-- import notes -->
+    <string name="note_pcapdroid_whitelist">PCAPdroid whitelist mode is not supported: its apps were imported as allow rules</string>
+    <string name="note_partial_network">Rules for only Wi-Fi or only mobile data are not supported (left allowed): %1$d</string>
+    <string name="note_netguard_default_block">NetGuard blocks apps by default: every installed non-system app without an exception got a block rule</string>
+    <string name="note_netguard_ports">Port forwarding rules are not imported</string>
+    <string name="note_afwall_allowlist">AFWall+ allow-list mode: every installed non-system app that is not allowed got a block rule</string>
+    <string name="note_afwall_columns">LAN, VPN, roaming, tethering and Tor columns are not imported</string>
+    <string name="note_singbox_no_equivalent">Keywords, regular expressions and package names have no equivalent</string>
+    <string name="note_list_important">$important rules go to a separate set above the list</string>
+    <string name="note_list_app_rules">$app= rules became app rules in a separate set</string>
+    <string name="note_rethink_bypass">\"Bypass universal\" apps are not imported</string>
+    <string name="note_rethink_excluded">Apps excluded from the VPN are not imported</string>
+    <string name="note_rethink_isolated">Isolated apps are not imported</string>
+    <!-- filter expression errors -->
+    <string name="filter_unexpected">Unexpected \"%1$s\"</string>
+    <string name="filter_unterminated">The quoted text is not closed</string>
+    <string name="filter_unexpected_end">The expression ends too early</string>
+    <string name="filter_missing_paren">Missing \")\"</string>
+    <string name="filter_unknown_field">Unknown field \"%1$s\"</string>
+    <string name="filter_expected_operator">Expected an operator (==, !=, ~, &lt;, &gt;…) instead of \"%1$s\"</string>
+    <!-- units -->
+    <string name="unit_b">B</string>
+    <string name="unit_kb">KB</string>
+    <string name="unit_mb">MB</string>
+    <string name="unit_gb">GB</string>
+    <string name="unit_h">h</string>
+    <string name="unit_min">min</string>
+    <string name="unit_s">s</string>
+    <string name="err_vpn_consent">VPN permission missing: open Packetwall and turn protection on</string>
 </resources>

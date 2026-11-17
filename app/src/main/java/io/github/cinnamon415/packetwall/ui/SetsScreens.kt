@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import io.github.cinnamon415.packetwall.PacketwallApp
+import io.github.cinnamon415.packetwall.Problem
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.fw.Action
 import io.github.cinnamon415.packetwall.fw.Catalog
@@ -145,7 +146,7 @@ fun BlocklistsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                                     Text(s.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     val line = when {
                                         s.id in updating -> stringResource(R.string.updating)
-                                        s.error != null -> stringResource(R.string.list_error, s.error)
+                                        s.error != null -> problemText(Problem.decode(s.error))
                                         else -> listOfNotNull(
                                             stringResource(R.string.entries_count, s.entries),
                                             if (s.action == Action.ALLOW) stringResource(R.string.action_allow) else null,
@@ -315,7 +316,7 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
     var format by remember { mutableStateOf(ForeignImport.Format.AUTO) }
     var detected by remember { mutableStateOf<ForeignImport.Format?>(null) }
     var plan by remember { mutableStateOf<ForeignImport.Plan?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<Problem?>(null) }
     var name by remember { mutableStateOf(uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Import") }
     var action by remember { mutableStateOf(Action.BLOCK) }
     var done by remember { mutableStateOf<String?>(null) }
@@ -325,7 +326,7 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
             bytes = withContext(Dispatchers.IO) { ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes() } }
             detected = ForeignImport.detect(bytes!!)
         } catch (e: Exception) {
-            error = e.message ?: e.javaClass.simpleName
+            error = Problem.of(e)
         }
     }
     val effective = if (format == ForeignImport.Format.AUTO) detected else format
@@ -351,7 +352,7 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
                 }
             }
         } catch (e: Exception) {
-            error = e.message ?: e.javaClass.simpleName
+            error = Problem.of(e)
         }
     }
 
@@ -375,11 +376,11 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
                 }
                 val p = plan
                 when {
-                    error != null -> Text(error!!, color = MaterialTheme.colorScheme.error)
+                    error != null -> Text(problemText(error!!), color = MaterialTheme.colorScheme.error)
                     p == null -> CircularProgressIndicator()
                     else -> {
                         Text(stringResource(R.string.import_plan, p.rules.size, p.entries.size + p.important.size, p.skipped))
-                        p.notes.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                        p.notes.forEach { Text("• ${noteText(it)}", style = MaterialTheme.typography.bodySmall) }
                         if (p.samples.isNotEmpty()) {
                             Text(stringResource(R.string.skipped_examples), style = MaterialTheme.typography.labelMedium)
                             Text(
@@ -747,7 +748,7 @@ private fun ImportJsonDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
                             val s = app.firewall.importJson(text, replace)
                             String.format(fmt, s.sets, s.rules, s.groups, s.profiles)
                         } catch (e: Exception) {
-                            e.message ?: e.javaClass.simpleName
+                            Problem.of(e).message(ctx)
                         }
                     }
                 }) { Text(stringResource(R.string.import_action)) }

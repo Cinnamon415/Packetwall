@@ -304,4 +304,45 @@
     <string name="settings_network">Сеть</string>
     <string name="lan_bypass">Локальная сеть мимо VPN</string>
     <string name="lan_bypass_hint">10/8, 172.16/12, 192.168/16, link-local и multicast идут напрямую: без фильтрации и логов. Не ломает adb по Wi-Fi, трансляцию на ТВ и устройства в LAN.</string>
+    <!-- errors (Problem) -->
+    <string name="problem_offline">Нет связи с сервером</string>
+    <string name="problem_timeout">Сервер не ответил вовремя</string>
+    <string name="problem_tls">Не удалось установить защищённое соединение</string>
+    <string name="problem_http">Ошибка сервера (HTTP %1$d)</string>
+    <string name="problem_http_404">На сервере не найдено (HTTP 404)</string>
+    <string name="problem_bad_data">Данные в неожиданном формате</string>
+    <string name="problem_port">Порт %1$d уже занят</string>
+    <string name="problem_file">Не удалось прочитать или записать файл</string>
+    <string name="problem_srs_binary">Двоичные наборы .srs не поддерживаются: преобразуйте командой \"sing-box rule-set decompile\" и импортируйте JSON</string>
+    <string name="problem_rethink_no_db">В резервной копии RethinkDNS нет bravedns.db</string>
+    <string name="problem_other">Ошибка: %1$s</string>
+    <!-- import notes -->
+    <string name="note_pcapdroid_whitelist">Режим белого списка PCAPdroid не поддерживается: его приложения импортированы как правила разрешения</string>
+    <string name="note_partial_network">Правила только для Wi-Fi или только для мобильной сети не поддерживаются (оставлены разрешёнными): %1$d</string>
+    <string name="note_netguard_default_block">NetGuard по умолчанию блокирует приложения: каждое установленное несистемное приложение без исключения получило правило блокировки</string>
+    <string name="note_netguard_ports">Правила проброса портов не импортируются</string>
+    <string name="note_afwall_allowlist">Режим разрешённого списка AFWall+: каждое установленное несистемное приложение, которое не разрешено, получило правило блокировки</string>
+    <string name="note_afwall_columns">Столбцы LAN, VPN, роуминг, модем и Tor не импортируются</string>
+    <string name="note_singbox_no_equivalent">Для ключевых слов, регулярных выражений и имён пакетов нет аналога</string>
+    <string name="note_list_important">Правила $important вынесены в отдельный набор над списком</string>
+    <string name="note_list_app_rules">Правила $app= стали правилами приложений в отдельном наборе</string>
+    <string name="note_rethink_bypass">Приложения «Bypass universal» не импортируются</string>
+    <string name="note_rethink_excluded">Приложения, исключённые из VPN, не импортируются</string>
+    <string name="note_rethink_isolated">Изолированные приложения не импортируются</string>
+    <!-- filter expression errors -->
+    <string name="filter_unexpected">Неожиданное «%1$s»</string>
+    <string name="filter_unterminated">Не закрыта кавычка</string>
+    <string name="filter_unexpected_end">Выражение обрывается</string>
+    <string name="filter_missing_paren">Не хватает «)»</string>
+    <string name="filter_unknown_field">Неизвестное поле «%1$s»</string>
+    <string name="filter_expected_operator">Ожидался оператор (==, !=, ~, &lt;, &gt;…) вместо «%1$s»</string>
+    <!-- units -->
+    <string name="unit_b">Б</string>
+    <string name="unit_kb">КБ</string>
+    <string name="unit_mb">МБ</string>
+    <string name="unit_gb">ГБ</string>
+    <string name="unit_h">ч</string>
+    <string name="unit_min">мин</string>
+    <string name="unit_s">с</string>
+    <string name="err_vpn_consent">Нет разрешения на VPN: откройте Packetwall и включите защиту</string>
 </resources>

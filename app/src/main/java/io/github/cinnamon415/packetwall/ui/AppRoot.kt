@@ -41,8 +41,8 @@ import androidx.compose.ui.unit.dp
 import io.github.cinnamon415.packetwall.BuildConfig
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
-import io.github.cinnamon415.packetwall.engine.CaptureService
 import io.github.cinnamon415.packetwall.engine.CaptureState
+import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import io.github.cinnamon415.packetwall.fw.Who
 import kotlinx.coroutines.launch
 
@@ -55,7 +55,7 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
     val saveable = rememberSaveableStateHolder()
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    val state by CaptureService.state.collectAsState()
+    val state by CaptureStatus.state.collectAsState()
     val openDrawer: () -> Unit = { scope.launch { drawer.open() } }
 
     BackHandler(enabled = drawer.isOpen || nav.stack.size > 1) {

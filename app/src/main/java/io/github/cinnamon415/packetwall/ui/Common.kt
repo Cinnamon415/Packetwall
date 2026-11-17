@@ -73,16 +73,25 @@ fun AppIcon(app: AppInfo, size: Dp = 40.dp) {
     }
 }
 
-/** Units follow the current locale (RU or EN); kept non-composable so it works anywhere. */
-private object Units {
-    private val ru get() = Locale.getDefault().language == "ru"
-    val b get() = if (ru) "Б" else "B"
-    val kb get() = if (ru) "КБ" else "KB"
-    val mb get() = if (ru) "МБ" else "MB"
-    val gb get() = if (ru) "ГБ" else "GB"
-    val h get() = if (ru) "ч" else "h"
-    val m get() = if (ru) "мин" else "min"
-    val s get() = if (ru) "с" else "s"
+/** Unit names from the resources, so they follow the app's language. Loaded by [PacketwallApp]. */
+object Units {
+    var b = "B"
+    var kb = "KB"
+    var mb = "MB"
+    var gb = "GB"
+    var h = "h"
+    var m = "min"
+    var s = "s"
+
+    fun load(ctx: Context) {
+        b = ctx.getString(R.string.unit_b)
+        kb = ctx.getString(R.string.unit_kb)
+        mb = ctx.getString(R.string.unit_mb)
+        gb = ctx.getString(R.string.unit_gb)
+        h = ctx.getString(R.string.unit_h)
+        m = ctx.getString(R.string.unit_min)
+        s = ctx.getString(R.string.unit_s)
+    }
 }
 
 fun formatBytes(b: Long): String = when {
@@ -97,16 +106,10 @@ fun formatTime(ms: Long): String = timeFmt.format(Date(ms))
 
 fun formatDuration(ms: Long): String {
     val s = ms / 1000
-    return if (s >=
-        3600
-    ) {
-        "${s / 3600} ${Units.h} ${s % 3600 / 60} ${Units.m}"
-    } else if (s >=
-        60
-    ) {
-        "${s / 60} ${Units.m} ${s % 60} ${Units.s}"
-    } else {
-        "$s ${Units.s}"
+    return when {
+        s >= 3600 -> "${s / 3600} ${Units.h} ${s % 3600 / 60} ${Units.m}"
+        s >= 60 -> "${s / 60} ${Units.m} ${s % 60} ${Units.s}"
+        else -> "$s ${Units.s}"
     }
 }
 

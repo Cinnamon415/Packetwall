@@ -2,6 +2,8 @@ package io.github.cinnamon415.packetwall.analysis
 
 import android.util.Log
 import android.util.LruCache
+import io.github.cinnamon415.packetwall.HttpStatusException
+import io.github.cinnamon415.packetwall.Problem
 import java.io.File
 import java.net.InetAddress
 import java.text.SimpleDateFormat
@@ -30,7 +32,7 @@ class GeoIp(dir: File) {
     private val asnCache = LruCache<String, Pair<Long, String>>(4096)
 
     data class Db(val loaded: Boolean = false, val build: String = "", val sizeMb: Float = 0f)
-    data class Info(val country: Db = Db(), val asn: Db = Db(), val error: String? = null, val busy: Boolean = false) {
+    data class Info(val country: Db = Db(), val asn: Db = Db(), val error: Problem? = null, val busy: Boolean = false) {
         val loaded get() = country.loaded
     }
     private val _info = MutableStateFlow(Info())
@@ -144,10 +146,9 @@ class GeoIp(dir: File) {
     /** Downloads both databases for the current month (falls back to the previous month). Blocking. */
     fun download() {
         _info.value = _info.value.copy(busy = true, error = null)
-        var err: String? = null
+        var err: Problem? = null
         for ((kind, file) in listOf("country" to countryFile, "asn" to asnFile)) {
-            val e = fetch(kind, file)
-            if (e != null) err = (err?.let { "$it; " } ?: "") + "$kind: $e"
+            err = fetch(kind, file) ?: err
         }
         prefixDir.listFiles()?.forEach { it.delete() }
         open()
@@ -155,23 +156,25 @@ class GeoIp(dir: File) {
         onChanged?.invoke()
     }
 
-    private fun fetch(kind: String, file: File): String? {
+    /** Returns the problem of the last attempt, null when the database was downloaded. */
+    private fun fetch(kind: String, file: File): Problem? {
         val fmt = SimpleDateFormat("yyyy-MM", Locale.US)
         val cal = Calendar.getInstance()
-        var last: String? = null
+        var last: Problem? = null
         repeat(2) {
             val url = "https://download.db-ip.com/free/dbip-$kind-lite-${fmt.format(cal.time)}.mmdb.gz"
             try {
                 val tmp = File(geoDir, "${file.name}.tmp")
                 OkHttpClient().newCall(Request.Builder().url(url).header("User-Agent", "Packetwall").build()).execute().use { r ->
-                    if (r.code != 200) throw IllegalStateException("HTTP ${r.code}")
+                    if (r.code != 200) throw HttpStatusException(r.code)
                     GZIPInputStream(r.body!!.byteStream()).use { input -> tmp.outputStream().use { input.copyTo(it) } }
                 }
                 MmdbReader(tmp) // validate
                 tmp.renameTo(file)
                 return null
             } catch (e: Exception) {
-                last = e.message ?: e.javaClass.simpleName
+                Log.w(TAG, "GeoIP $kind download", e)
+                last = Problem.of(e)
                 cal.add(Calendar.MONTH, -1)
             }
         }

@@ -12,13 +12,14 @@ import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.engine.CaptureService
 import io.github.cinnamon415.packetwall.engine.CaptureState
+import io.github.cinnamon415.packetwall.engine.CaptureStatus
 
 /** Quick settings tile: protection on/off, the active profile as subtitle. */
 class ProtectionTile : TileService() {
     override fun onStartListening() = refresh()
 
     override fun onClick() {
-        val running = CaptureService.state.value is CaptureState.Running
+        val running = CaptureStatus.state.value is CaptureState.Running
         if (running) {
             CaptureService.stop(this)
         } else if (VpnService.prepare(this) != null) {
@@ -44,7 +45,7 @@ class ProtectionTile : TileService() {
         }
     }
 
-    private fun refresh(on: Boolean = CaptureService.state.value is CaptureState.Running) {
+    private fun refresh(on: Boolean = CaptureStatus.state.value is CaptureState.Running) {
         val tile = qsTile ?: return
         tile.state = if (on) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         tile.label = getString(R.string.app_name)

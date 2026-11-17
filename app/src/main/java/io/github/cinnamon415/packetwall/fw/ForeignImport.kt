@@ -43,12 +43,38 @@ object ForeignImport {
         val important: List<String> = emptyList(),
         val skipped: Int = 0,
         val samples: List<String> = emptyList(),
-        val notes: List<String> = emptyList()
+        val notes: List<Note> = emptyList()
     ) {
         val empty get() = rules.isEmpty() && entries.isEmpty() && important.isEmpty()
     }
 
-    class Unsupported(msg: String) : Exception(msg)
+    class Unsupported(val reason: Reason) : Exception(reason.name) {
+        enum class Reason {
+            /** Binary .srs rule-set: convert with "sing-box rule-set decompile" and import the JSON. */
+            SINGBOX_BINARY,
+
+            /** The RethinkDNS backup has no bravedns.db. */
+            RETHINK_NO_DB
+        }
+    }
+
+    /** Something the user should know about an import; [count] where the kind has one. Shown localized. */
+    data class Note(val kind: NoteKind, val count: Int = 0)
+
+    enum class NoteKind {
+        PCAPDROID_WHITELIST,
+        PARTIAL_NETWORK,
+        NETGUARD_DEFAULT_BLOCK,
+        NETGUARD_PORT_FORWARDING,
+        AFWALL_ALLOWLIST,
+        AFWALL_COLUMNS,
+        SINGBOX_NO_EQUIVALENT,
+        LIST_IMPORTANT,
+        LIST_APP_RULES,
+        RETHINK_BYPASS,
+        RETHINK_EXCLUDED,
+        RETHINK_ISOLATED
+    }
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -83,7 +109,7 @@ object ForeignImport {
     private class Report {
         var skipped = 0
         val samples = ArrayList<String>()
-        val notes = LinkedHashSet<String>()
+        val notes = LinkedHashSet<Note>()
         fun skip(what: String) {
             skipped++
             if (samples.size < 30) samples.add(what.take(200))
@@ -117,7 +143,7 @@ object ForeignImport {
             listJson("bl")?.let { rules += pcapdroidList(json.parseToJsonElement(it).jsonObject, Action.BLOCK, r) }
             listJson("firewall_whitelist")?.let {
                 rules += pcapdroidList(json.parseToJsonElement(it).jsonObject, Action.ALLOW, r)
-                r.notes.add("PCAPdroid whitelist mode is not supported: its apps were imported as allow rules")
+                r.notes.add(Note(NoteKind.PCAPDROID_WHITELIST))
             }
         } else {
             rules += pcapdroidList(root, Action.BLOCK, r)
@@ -196,13 +222,13 @@ object ForeignImport {
             }
         }
         if (partial.isNotEmpty()) {
-            r.notes.add("Blocked only on Wi-Fi or only on mobile data (not supported, left allowed): ${partial.size}")
+            r.notes.add(Note(NoteKind.PARTIAL_NETWORK, partial.size))
             partial.take(10).forEach { r.skip("network-only block: $it") }
         }
         if (defWifi &&
             defMobile
         ) {
-            r.notes.add("NetGuard blocks apps by default: every installed non-system app without an exception got a block rule")
+            r.notes.add(Note(NoteKind.NETGUARD_DEFAULT_BLOCK))
         }
         // per-address access rules
         val filters = doc.getElementsByTagName("rule")
@@ -228,7 +254,7 @@ object ForeignImport {
             }
             rules += rule(Who.App(pkg), t, action, proto, if (port in 1..65535) port else 0)
         }
-        if (doc.getElementsByTagName("port").length > 0) r.notes.add("Port forwarding rules are not imported")
+        if (doc.getElementsByTagName("port").length > 0) r.notes.add(Note(NoteKind.NETGUARD_PORT_FORWARDING))
         return Plan(Format.NETGUARD, rules, skipped = r.skipped, samples = r.samples, notes = r.notes.toList())
     }
 
@@ -291,7 +317,7 @@ object ForeignImport {
             }
         } else if (!both(anyApp)) {
             // allow-list mode: everything not listed for both networks is blocked
-            r.notes.add("AFWall+ allow-list mode: every installed non-system app that is not allowed got a block rule")
+            r.notes.add(Note(NoteKind.AFWALL_ALLOWLIST))
             for (a in installed) {
                 if (a.system) continue
                 val s = listed[a.pkg]
@@ -303,10 +329,10 @@ object ForeignImport {
             }
         }
         if (partial.isNotEmpty()) {
-            r.notes.add("Rules for only Wi-Fi or only mobile data are not supported (left allowed): ${partial.size}")
+            r.notes.add(Note(NoteKind.PARTIAL_NETWORK, partial.size))
             partial.take(10).forEach { r.skip("network-only: $it") }
         }
-        r.notes.add("LAN, VPN, roaming, tethering and Tor columns are not imported")
+        r.notes.add(Note(NoteKind.AFWALL_COLUMNS))
         return Plan(Format.AFWALL, rules, skipped = r.skipped, samples = r.samples, notes = r.notes.toList())
     }
 
@@ -314,7 +340,7 @@ object ForeignImport {
 
     fun singbox(bytes: ByteArray): Plan {
         if (bytes.size >= 3 && String(bytes, 0, 3, Charsets.ISO_8859_1) == "SRS") {
-            throw Unsupported("Binary .srs rule-sets are not supported: convert with 'sing-box rule-set decompile' and import the JSON")
+            throw Unsupported(Unsupported.Reason.SINGBOX_BINARY)
         }
         val r = Report()
         val root = json.parseToJsonElement(String(bytes, Charsets.UTF_8)).jsonObject
@@ -346,7 +372,7 @@ object ForeignImport {
             strings(o, "domain_regex").forEach { r.skip("domain_regex $it") }
             strings(o, "package_name").forEach { r.skip("package_name $it") }
         }
-        if (r.skipped > 0) r.notes.add("Keywords, regular expressions and package names have no equivalent")
+        if (r.skipped > 0) r.notes.add(Note(NoteKind.SINGBOX_NO_EQUIVALENT))
         return Plan(Format.SINGBOX, entries = entries.toList(), skipped = r.skipped, samples = r.samples, notes = r.notes.toList())
     }
 
@@ -364,9 +390,9 @@ object ForeignImport {
             }
             pkgs.map { rule(Who.App(it), t, if (allow) Action.ALLOW else Action.BLOCK) }
         }
-        val notes = ArrayList<String>()
-        if (res.important.isNotEmpty()) notes.add("\$important rules go to a separate set above the list")
-        if (rules.isNotEmpty()) notes.add("\$app= rules became app rules in a separate set")
+        val notes = ArrayList<Note>()
+        if (res.important.isNotEmpty()) notes.add(Note(NoteKind.LIST_IMPORTANT))
+        if (rules.isNotEmpty()) notes.add(Note(NoteKind.LIST_APP_RULES))
         return Plan(Format.LIST, rules, res.entries, res.important, res.skipped, res.samples, notes)
     }
 
@@ -439,12 +465,12 @@ object ForeignImport {
             when {
                 a.firewallStatus == 5 && a.connectionStatus == 0 -> rules += rule(w, Target(TargetKind.ALL), Action.BLOCK)
                 a.firewallStatus == 5 && (a.connectionStatus == 1 || a.connectionStatus == 2) -> partial++
-                a.firewallStatus == 2 -> r.notes.add("\"Bypass universal\" apps are not imported")
-                a.firewallStatus == 3 -> r.notes.add("Apps excluded from the VPN are not imported")
-                a.firewallStatus == 4 -> r.notes.add("Isolated apps are not imported")
+                a.firewallStatus == 2 -> r.notes.add(Note(NoteKind.RETHINK_BYPASS))
+                a.firewallStatus == 3 -> r.notes.add(Note(NoteKind.RETHINK_EXCLUDED))
+                a.firewallStatus == 4 -> r.notes.add(Note(NoteKind.RETHINK_ISOLATED))
             }
         }
-        if (partial > 0) r.notes.add("Rules for only Wi-Fi or only mobile data are not supported (left allowed): $partial")
+        if (partial > 0) r.notes.add(Note(NoteKind.PARTIAL_NETWORK, partial))
         return Plan(Format.RETHINK, rules, skipped = r.skipped, samples = r.samples, notes = r.notes.toList())
     }
 

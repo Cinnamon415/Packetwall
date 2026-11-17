@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  * In-memory ring of captured packets, fed with the pcapng stream of the native dumper
- * (CaptureService.dumpPcapData). Packets are indexed by connection so the connection screen can
+ * (NativeBridge.dumpPcapData). Packets are indexed by connection so the connection screen can
  * show them; the whole buffer (or one connection) can be exported as pcapng.
  *
  * Each [Pkt] keeps its raw Enhanced Packet Block, so export is a plain concatenation and keeps the

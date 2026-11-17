@@ -2,6 +2,9 @@ package io.github.cinnamon415.packetwall.analysis
 
 import android.util.Log
 import android.util.LruCache
+import io.github.cinnamon415.packetwall.BadDataException
+import io.github.cinnamon415.packetwall.HttpStatusException
+import io.github.cinnamon415.packetwall.Problem
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,7 +47,7 @@ class Trackers(dir: File) {
         val domains: Int = 0,
         val updated: Long = 0,
         val busy: Boolean = false,
-        val error: String? = null
+        val error: Problem? = null
     )
     private val _info = MutableStateFlow(Info())
     val info: StateFlow<Info> = _info
@@ -90,16 +93,16 @@ class Trackers(dir: File) {
         try {
             val text = OkHttpClient().newCall(Request.Builder().url(URL).header("User-Agent", "Packetwall").build())
                 .execute().use { r ->
-                    if (r.code != 200) throw IllegalStateException("HTTP ${r.code}")
+                    if (r.code != 200) throw HttpStatusException(r.code)
                     r.body!!.string()
                 }
-            require(parse(text).isNotEmpty()) { "empty database" }
+            if (parse(text).isEmpty()) throw BadDataException("empty tracker database")
             val tmp = File(file.path + ".tmp")
             tmp.writeText(text)
             tmp.renameTo(file)
             load()
         } catch (e: Exception) {
-            _info.value = _info.value.copy(busy = false, error = e.message ?: e.javaClass.simpleName)
+            _info.value = _info.value.copy(busy = false, error = Problem.of(e))
         }
     }
 

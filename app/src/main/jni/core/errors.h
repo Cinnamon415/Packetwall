@@ -2,7 +2,7 @@
 #define __PCAPDROID_ERRORS_H__
 
 // This file contains a set of error strings which may be returned from the native code.
-// These should be translated in CaptureService.reportError
+// These should be translated in NativeBridge.reportError
 
 #define PD_ERR_UNSUPPORTED_PCAP_FILE    "Unsupported PCAP/Pcapng file"
 #define PD_ERR_INVALID_PCAP_FILE        "Invalid PCAP/Pcapng file"

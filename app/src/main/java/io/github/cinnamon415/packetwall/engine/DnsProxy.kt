@@ -1,6 +1,9 @@
 package io.github.cinnamon415.packetwall.engine
 
 import android.util.Log
+import io.github.cinnamon415.packetwall.BadDataException
+import io.github.cinnamon415.packetwall.HttpStatusException
+import io.github.cinnamon415.packetwall.Problem
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -36,7 +39,7 @@ class DnsProxy(private val url: String, upstream: Proxy? = null, proxyAuth: Pair
             }
         }
     }.build()
-    data class Stats(val queries: Long = 0, val failures: Long = 0, val avgMs: Long = 0, val lastError: String? = null)
+    data class Stats(val queries: Long = 0, val failures: Long = 0, val avgMs: Long = 0, val lastError: Problem? = null)
 
     private var sock: DatagramSocket? = null
     private var thread: Thread? = null
@@ -102,10 +105,10 @@ class DnsProxy(private val url: String, upstream: Proxy? = null, proxyAuth: Pair
                 .post(q.toRequestBody(DNS_MESSAGE))
                 .build()
             val body = http.newCall(req).execute().use { r ->
-                if (r.code != 200) throw IllegalStateException("HTTP ${r.code}")
+                if (r.code != 200) throw HttpStatusException(r.code)
                 r.body?.bytes() ?: ByteArray(0)
             }
-            if (body.size < 12) throw IllegalStateException("short reply")
+            if (body.size < 12) throw BadDataException("short DNS reply")
             // keep the transaction id of the client (DoH servers may zero it)
             body[0] = q[0]
             body[1] = q[1]
@@ -119,7 +122,7 @@ class DnsProxy(private val url: String, upstream: Proxy? = null, proxyAuth: Pair
         } catch (e: Exception) {
             synchronized(this) {
                 val s = _stats.value
-                _stats.value = s.copy(queries = s.queries + 1, failures = s.failures + 1, lastError = e.message ?: e.javaClass.simpleName)
+                _stats.value = s.copy(queries = s.queries + 1, failures = s.failures + 1, lastError = Problem.of(e))
             }
             Log.w(TAG, "DoH query failed: ${e.message}")
             null

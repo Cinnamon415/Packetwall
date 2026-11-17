@@ -1,5 +1,6 @@
 package io.github.cinnamon415.packetwall.ui
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -48,10 +49,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import io.github.cinnamon415.packetwall.PacketwallApp
+import io.github.cinnamon415.packetwall.Problem
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.Settings
 import io.github.cinnamon415.packetwall.engine.AppInfo
-import io.github.cinnamon415.packetwall.engine.CaptureService
+import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import io.github.cinnamon415.packetwall.engine.DnsProxy
 import io.github.cinnamon415.packetwall.engine.UdpAssociation
 import io.github.cinnamon415.packetwall.system.Schedules
@@ -185,7 +187,7 @@ private fun <T> ChoiceRow(title: String, options: List<T>, value: T, label: @Com
 @Composable
 private fun DnsSettings(app: PacketwallApp, s: Settings.Values) {
     val stats by DnsProxy.stats.collectAsState()
-    val active by CaptureService.dohActive.collectAsState()
+    val active by CaptureStatus.dohActive.collectAsState()
     var custom by rememberSaveable {
         mutableStateOf(if (DnsProxy.PRESETS.any { it.url == s.dohUrl }) "" else s.dohUrl)
     }
@@ -240,7 +242,7 @@ private fun DnsSettings(app: PacketwallApp, s: Settings.Values) {
                 if (active != null) {
                     Text(
                         stringResource(R.string.doh_stats, stats.queries, stats.failures, stats.avgMs) +
-                            (stats.lastError?.let { " · $it" } ?: ""),
+                            (stats.lastError?.let { " · " + problemText(it) } ?: ""),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (stats.failures > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -252,7 +254,8 @@ private fun DnsSettings(app: PacketwallApp, s: Settings.Values) {
 
 @Composable
 private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
-    val up by CaptureService.upstreamUp.collectAsState()
+    val ctx = LocalContext.current
+    val up by CaptureStatus.upstreamUp.collectAsState()
     val scope = rememberCoroutineScope()
     var test by remember { mutableStateOf<String?>(null) }
     var pickApp by remember { mutableStateOf(false) }
@@ -265,7 +268,7 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
         ) {
             Column(Modifier.weight(1f)) {
                 Text(stringResource(R.string.upstream_socks))
-                val relay by CaptureService.udpRelayUp.collectAsState()
+                val relay by CaptureStatus.udpRelayUp.collectAsState()
                 Text(
                     when (up) {
                         true -> stringResource(R.string.upstream_up) + if (relay) " · UDP ✓" else ""
@@ -352,7 +355,7 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(onClick = {
                         test = "…"
-                        scope.launch { test = upstreamTest(s) }
+                        scope.launch { test = upstreamTest(s, ctx) }
                     }) { Text(stringResource(R.string.check)) }
                     test?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 10.dp)) }
                 }
@@ -373,7 +376,7 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
 }
 
 /** TCP connect time to the proxy, the external IP seen through it, and for SOCKS5 a DNS query over UDP ASSOCIATE. */
-private suspend fun upstreamTest(s: Settings.Values): String = withContext(Dispatchers.IO) {
+private suspend fun upstreamTest(s: Settings.Values, ctx: Context): String = withContext(Dispatchers.IO) {
     try {
         val addr = InetSocketAddress(InetAddress.getByName(s.upHost), s.upPort)
         val t0 = System.nanoTime()
@@ -395,13 +398,13 @@ private suspend fun upstreamTest(s: Settings.Values): String = withContext(Dispa
                     .callTimeout(8, TimeUnit.SECONDS).build()
                     .newCall(Request.Builder().url("https://api.ipify.org").build()).execute().use { it.body?.string()?.trim() }
             } catch (e: Exception) {
-                "? (${e.message})"
+                "? (${Problem.of(e).message(ctx)})"
             }
         }
         val udp = if (s.upType == 1) "UDP —" else udpTest(s)
         "TCP $ms ms" + (ip?.let { " · IP $it" } ?: "") + " · $udp"
     } catch (e: Exception) {
-        "✕ ${e.message ?: e.javaClass.simpleName}"
+        "✕ ${Problem.of(e).message(ctx)}"
     }
 }
 
@@ -574,7 +577,7 @@ private fun GeoSettings(app: PacketwallApp) {
                         if (info.asn.loaded) "$country\n$asn" else country
                     }
                     else -> stringResource(R.string.geo_missing)
-                } + (info.error?.let { " · $it" } ?: ""),
+                } + (info.error?.let { " · " + problemText(it) } ?: ""),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (info.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -610,7 +613,7 @@ private fun TrackersSettings(app: PacketwallApp) {
                         DateFormat.getDateInstance(DateFormat.SHORT).format(Date(info.updated))
                     )
                     else -> stringResource(R.string.trackers_missing)
-                } + (info.error?.let { " · $it" } ?: ""),
+                } + (info.error?.let { " · " + problemText(it) } ?: ""),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (info.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
             )

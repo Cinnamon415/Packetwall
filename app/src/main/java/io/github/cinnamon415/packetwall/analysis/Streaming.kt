@@ -1,6 +1,7 @@
 package io.github.cinnamon415.packetwall.analysis
 
 import android.util.Log
+import io.github.cinnamon415.packetwall.Problem
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
@@ -27,7 +28,7 @@ class PcapServer(private val store: PacketStore) {
         val port: Int = 0,
         val lan: Boolean = false,
         val clients: Int = 0,
-        val error: String? = null
+        val error: Problem? = null
     )
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state
@@ -92,7 +93,7 @@ class PcapServer(private val store: PacketStore) {
             }, "PcapServer").start()
         } catch (e: Exception) {
             Log.w("PcapServer", "cannot listen on $port", e)
-            _state.value = State(error = e.message ?: e.javaClass.simpleName)
+            _state.value = State(error = Problem.of(e, port))
         }
     }
 
