@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import io.github.cinnamon415.packetwall.engine.AppsResolver
+import io.github.cinnamon415.packetwall.engine.CaptureService
 import io.github.cinnamon415.packetwall.engine.ConnectionsRegister
 import io.github.cinnamon415.packetwall.fw.FirewallStore
 import io.github.cinnamon415.packetwall.analysis.PacketStore
@@ -47,7 +48,14 @@ class PacketwallApp : Application() {
         io.github.cinnamon415.packetwall.analysis.ConnFilter.trackerOf = { trackers.trackingOf(it)?.name }
         apps = AppsResolver(this)
         connections = ConnectionsRegister(apps)
-        firewall = FirewallStore(filesDir, apps, getString(R.string.set_default), getString(R.string.profile_default), geo::asnPrefixes)
+        firewall = FirewallStore(
+            dir = filesDir,
+            uidOf = apps::uidOf,
+            loader = CaptureService::loadRules,
+            defaultSetName = getString(R.string.set_default),
+            defaultProfileName = getString(R.string.profile_default),
+            asnPrefixes = geo::asnPrefixes,
+        )
         geo.onChanged = { firewall.scheduleCompile() }
         firewall.scheduleCompile(0)
         watchStatus()

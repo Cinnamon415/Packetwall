@@ -11,7 +11,9 @@ import java.net.Socket
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.io.IOException
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 
 /**
  * pcap-over-IP: a TCP server that sends a live pcapng stream to every client, e.g.
@@ -84,67 +86,124 @@ class PcapServer(private val store: PacketStore) {
 /**
  * Continuous recording to disk: pcapng files rotated by size and age, only the newest [keep] kept
  * ("ring buffer by size and time", spec 5).
+ *
+ * [onBlock] runs on the capture thread (under the packet store lock), so it only enqueues; a writer
+ * thread does the disk I/O. If the disk cannot keep up, blocks are dropped and counted instead of
+ * slowing down the device's traffic.
  */
 class DiskRecorder(private val store: PacketStore, private val dir: File) : PacketStore.Sink {
-    data class State(val running: Boolean = false, val file: String? = null, val bytes: Long = 0, val files: Int = 0)
+    data class State(
+        val running: Boolean = false,
+        val file: String? = null,
+        val bytes: Long = 0,
+        val files: Int = 0,
+        val dropped: Long = 0,
+    )
+
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state
 
+    private val queue = LinkedBlockingQueue<ByteArray>(QUEUE_BLOCKS)
+    @Volatile private var running = false
+    private var writer: Thread? = null
+
+    // writer thread only
     private var out: OutputStream? = null
-    private var current: File? = null
     private var written = 0L
     private var openedAt = 0L
     private var maxBytes = 0L
     private var maxAgeMs = 0L
     private var keep = 0
-    @Volatile private var dirty = false
-    private var flusher: Thread? = null
 
     @Synchronized
     fun start(maxMb: Int, maxMinutes: Int, keepFiles: Int) {
         stop()
         dir.mkdirs()
-        maxBytes = maxMb.toLong() shl 20; maxAgeMs = maxMinutes * 60_000L; keep = keepFiles
+        maxBytes = maxMb.toLong() shl 20
+        maxAgeMs = maxMinutes * 60_000L
+        keep = keepFiles
+        queue.clear()
+        running = true
         _state.value = State(running = true)
-        store.addSink(this)        // the first call delivers the header and opens a file
-        // flush once a second so the current file is readable while recording
-        flusher = Thread({
-            while (!Thread.currentThread().isInterrupted) {
-                try { Thread.sleep(1000) } catch (e: InterruptedException) { break }
-                synchronized(this) { if (dirty) { try { out?.flush() } catch (_: Exception) {}; dirty = false } }
-            }
-        }, "RecorderFlush").also { it.isDaemon = true; it.start() }
+        writer = Thread(::writeLoop, "DiskRecorder").also {
+            it.isDaemon = true
+            it.start()
+        }
+        store.addSink(this) // the first block is the file header
     }
 
     @Synchronized
     fun stop() {
-        flusher?.interrupt(); flusher = null
+        if (!running) return
+        running = false
         store.removeSink(this)
-        try { out?.close() } catch (_: Exception) {}
-        out = null; current = null
+        writer?.interrupt()
+        writer?.join(2_000)
+        writer = null
         _state.value = _state.value.copy(running = false)
     }
 
-    @Synchronized
     override fun onBlock(block: ByteArray) {
-        if (!_state.value.running) return
-        val header = block.size >= 4 && block[0] == 0x0A.toByte() && block[1] == 0x0D.toByte() && block[2] == 0x0D.toByte() && block[3] == 0x0A.toByte()
-        if (out == null || (!header && (written >= maxBytes || System.currentTimeMillis() - openedAt >= maxAgeMs))) rotate(if (header) null else store.header())
+        if (running && !queue.offer(block)) _state.value = _state.value.copy(dropped = _state.value.dropped + 1)
+    }
+
+    private fun writeLoop() {
         try {
-            out!!.write(block); written += block.size
-            dirty = true
-            _state.value = _state.value.copy(bytes = written)
-        } catch (e: Exception) { Log.w("DiskRecorder", "write", e); stop() }
+            while (running) {
+                // wake up at least once a second to flush, so the current file is readable
+                val block = queue.poll(1, TimeUnit.SECONDS)
+                if (block == null) {
+                    out?.flush()
+                    continue
+                }
+                write(block)
+                if (queue.isEmpty()) out?.flush()
+            }
+        } catch (_: InterruptedException) {
+        } catch (e: IOException) {
+            Log.w(TAG, "write failed, stopping", e)
+            running = false
+            _state.value = _state.value.copy(running = false)
+        } finally {
+            // drain what is left so a stopped recording is complete
+            try {
+                while (true) write(queue.poll() ?: break)
+                out?.close()
+            } catch (_: IOException) {
+            }
+            out = null
+        }
+    }
+
+    private fun write(block: ByteArray) {
+        val header = isSectionHeader(block)
+        val expired = written >= maxBytes || System.currentTimeMillis() - openedAt >= maxAgeMs
+        if (out == null || (!header && expired)) rotate(if (header) null else store.header())
+        out!!.write(block)
+        written += block.size
+        _state.value = _state.value.copy(bytes = written)
     }
 
     private fun rotate(header: ByteArray?) {
-        try { out?.close() } catch (_: Exception) {}
+        out?.close()
         val f = File(dir, "ring-${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())}.pcapng")
         out = f.outputStream().buffered(256 * 1024)
-        current = f; written = 0; openedAt = System.currentTimeMillis()
-        if (header != null) { out!!.write(header); written += header.size }
+        written = 0
+        openedAt = System.currentTimeMillis()
+        if (header != null) {
+            out!!.write(header)
+            written += header.size
+        }
         val all = dir.listFiles { x -> x.name.startsWith("ring-") }?.sortedByDescending { it.name } ?: emptyList()
         all.drop(keep).forEach { it.delete() }
         _state.value = _state.value.copy(file = f.name, files = minOf(all.size, keep))
+    }
+
+    private companion object {
+        const val TAG = "DiskRecorder"
+        const val QUEUE_BLOCKS = 8192
+
+        fun isSectionHeader(b: ByteArray) =
+            b.size >= 4 && b[0] == 0x0A.toByte() && b[1] == 0x0D.toByte() && b[2] == 0x0D.toByte() && b[3] == 0x0A.toByte()
     }
 }

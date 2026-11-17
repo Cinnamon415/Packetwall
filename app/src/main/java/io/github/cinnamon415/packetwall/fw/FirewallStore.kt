@@ -1,8 +1,7 @@
 package io.github.cinnamon415.packetwall.fw
 
 import android.util.Log
-import io.github.cinnamon415.packetwall.engine.AppsResolver
-import io.github.cinnamon415.packetwall.engine.CaptureService
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -10,14 +9,14 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Owns the firewall configuration: persistence, mutations, blocklist downloads and pushing the
@@ -28,17 +27,28 @@ import java.net.URL
  */
 class FirewallStore(
     private val dir: File,
-    private val apps: AppsResolver,
+    /** Package (or pseudo-package) to uid; null when not installed. */
+    private val uidOf: (String) -> Int?,
+    /** Loads a compiled rules file into the engine (the native engine in the app). */
+    private val loader: RulesLoader,
     defaultSetName: String,
     defaultProfileName: String,
     /** Expands AS numbers into their prefixes (GeoIp); empty map without the ASN database. */
     private val asnPrefixes: (Set<Long>) -> Map<Long, List<String>> = { emptyMap() },
+    /** Where subscription lists come from (HTTP in the app, fakes in tests). */
+    private val lists: ListSource = HttpListSource(),
+    /** Blocking I/O (downloads); injected so tests run it on their scheduler. */
+    private val io: CoroutineDispatcher = Dispatchers.IO,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + io),
 ) {
+    fun interface RulesLoader {
+        /** Returns the number of loaded rules, < 0 on error. */
+        fun load(path: String): Int
+    }
     private val file = File(dir, "firewall.json")
     private val listsDir = File(dir, "lists").apply { mkdirs() }
     private val compiled = File(dir, "rules.compiled")
     private val lock = Any()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val downloadMutex = Mutex()
     private var compileJob: Job? = null
 
@@ -67,17 +77,19 @@ class FirewallStore(
         tmp.renameTo(file)
     }
 
+    init {
+        // One writer, always the latest state: saves can never land out of order.
+        scope.launch { _state.drop(1).conflate().collect { save(it) } }
+    }
+
     /** Applies a change, persists it and schedules a recompile. */
     fun update(fn: (FwState) -> FwState) {
-        val st = synchronized(lock) {
+        synchronized(lock) {
             val old = _state.value
-            var n = fn(old)
+            val n = fn(old)
             if (n === old) return
-            n = syncProfiles(old, n)
-            _state.value = n
-            n
+            _state.value = syncProfiles(old, n)
         }
-        scope.launch { synchronized(lock) { save(st) } }
         scheduleCompile()
     }
 
@@ -291,7 +303,7 @@ class FirewallStore(
         val url = set.url ?: return
         _updating.value = _updating.value + id
         try {
-            val res = downloadMutex.withLock { withContext(Dispatchers.IO) { fetchAndParse(url) } }
+            val res = downloadMutex.withLock { withContext(io) { fetchAndParse(url) } }
             writeList(id, res.entries)
             update { st ->
                 st.copy(sets = st.sets.map {
@@ -309,24 +321,8 @@ class FirewallStore(
         }
     }
 
-    private fun fetchAndParse(url: String): ListParser.Result {
-        var u = URL(url)
-        repeat(5) {
-            val c = u.openConnection() as HttpURLConnection
-            c.connectTimeout = 15_000
-            c.readTimeout = 30_000
-            c.instanceFollowRedirects = false
-            c.setRequestProperty("User-Agent", "Packetwall")
-            val code = c.responseCode
-            if (code in 300..399) {
-                u = URL(u, c.getHeaderField("Location") ?: throw IllegalStateException("HTTP $code"))
-                c.disconnect()
-                return@repeat
-            }
-            if (code != 200) throw IllegalStateException("HTTP $code")
-            return c.inputStream.bufferedReader().useLines { ListParser.parse(it.take(MAX_LIST_LINES)) }
-        }
-        throw IllegalStateException("too many redirects")
+    private fun fetchAndParse(url: String): ListParser.Result = lists.open(url).use { r ->
+        ListParser.parse(r.lineSequence().take(MAX_LIST_LINES))
     }
 
     // ---------------------------------------------------------------- import / export
@@ -401,7 +397,6 @@ class FirewallStore(
                     order = listOf(SetState(FwState.DEFAULT_SET, true)) + it.order) else it }
             f.lists.forEach { (id, lines) -> writeList(id, lines) }
             synchronized(lock) { _state.value = st }
-            scope.launch { synchronized(lock) { save(st) } }
             scheduleCompile()
             st.blocklists.filter { it.url != null }.forEach { s -> scope.launch { download(s.id) } }
             return ImportSummary(st.sets.size, st.rules.size, st.groups.size, st.profiles.size)
@@ -452,8 +447,8 @@ class FirewallStore(
     fun compileNow() {
         try {
             val st = _state.value
-            RulesCompiler.compile(st, apps::uidOf, ::listFile, compiled, asnPrefixes)
-            _loaded.value = CaptureService.loadRules(compiled.absolutePath)
+            RulesCompiler.compile(st, uidOf, ::listFile, compiled, asnPrefixes)
+            _loaded.value = loader.load(compiled.absolutePath)
         } catch (e: Throwable) {
             Log.e(TAG, "compile failed", e)
             _loaded.value = -1

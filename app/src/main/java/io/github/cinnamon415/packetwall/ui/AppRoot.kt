@@ -31,9 +31,10 @@ import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import io.github.cinnamon415.packetwall.fw.Who
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -45,39 +46,13 @@ import io.github.cinnamon415.packetwall.engine.CaptureService
 import io.github.cinnamon415.packetwall.engine.CaptureState
 import kotlinx.coroutines.launch
 
-/** Navigation destinations. Top-level ones are reachable from the drawer. */
-sealed interface Dest {
-    data object Home : Dest
-    data object Logs : Dest
-    data object Stats : Dest
-    data object Apps : Dest
-    data object Global : Dest
-    data object Blocklists : Dest
-    data object Sets : Dest
-    data object Settings : Dest
-    data object About : Dest
-    data class Connection(val id: Int, val tab: Int = 0) : Dest
-    data class AppRules(val pkg: String) : Dest
-    data class Packet(val connId: Int, val seq: Long) : Dest
-    data class GroupRules(val id: Int) : Dest
-}
-
 private data class DrawerEntry(val dest: Dest, @StringRes val label: Int, @DrawableRes val icon: Int)
-
-class Navigator {
-    val stack = mutableStateListOf<Dest>(Dest.Home)
-    val current get() = stack.last()
-    fun root(d: Dest) { stack.clear(); if (d != Dest.Home) stack.add(Dest.Home); stack.add(d) }
-    fun push(d: Dest) { stack.add(d) }
-    fun replace(d: Dest) { stack[stack.lastIndex] = d }
-    fun pop(): Boolean = if (stack.size > 1) { stack.removeAt(stack.lastIndex); true } else false
-}
 
 @Composable
 fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
-    val nav = remember { Navigator() }
+    val nav = rememberNavigator()
     // keeps tab selections etc. of screens below the top of the stack
-    val saveable = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    val saveable = rememberSaveableStateHolder()
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val state by CaptureService.state.collectAsState()
@@ -120,8 +95,8 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                 Dest.Stats -> StatsScreen(app, openDrawer)
                 Dest.Apps -> AppsScreen(app, openDrawer, onOpenApp = { nav.push(Dest.AppRules(it)) },
                     onOpenGroup = { nav.push(Dest.GroupRules(it)) })
-                is Dest.AppRules -> WhoRulesScreen(app, io.github.cinnamon415.packetwall.fw.Who.App(d.pkg), onBack = { nav.pop() })
-                is Dest.GroupRules -> WhoRulesScreen(app, io.github.cinnamon415.packetwall.fw.Who.Group(d.id), onBack = { nav.pop() })
+                is Dest.AppRules -> WhoRulesScreen(app, Who.App(d.pkg), onBack = { nav.pop() })
+                is Dest.GroupRules -> WhoRulesScreen(app, Who.Group(d.id), onBack = { nav.pop() })
                 Dest.Global -> GlobalScreen(app, openDrawer)
                 Dest.Blocklists -> BlocklistsScreen(app, openDrawer)
                 Dest.Sets -> SetsScreen(app, openDrawer)
