@@ -33,12 +33,31 @@ const val TYPE_HTTP = 1
 /**
  * Checks every 10 s that the upstream proxy accepts connections (every 3 s while a wanted UDP
  * relay is missing), keeps the SOCKS5 UDP association open, and tells the engine what to do.
+ *
+ * The proxy is configured by host name; [ip] is its current address (null while it cannot be
+ * resolved). It is resolved again while unknown and after repeated failures, and the engine is
+ * told the new address. While it is unknown the engine runs with an unroutable proxy address, so
+ * with the kill switch nothing leaks.
  */
-class UpstreamMonitor(private val ip: String, private val s: Settings.Values) {
+class UpstreamMonitor(private val host: String, initialIp: String?, private val s: Settings.Values) {
     private var thread: Thread? = null
+
+    @Volatile var ip: String? = initialIp
+        private set
+
+    /** Optimistic until the first probe, which runs right away. */
+    @Volatile var up: Boolean = initialIp != null
+        private set
 
     /** UDP through the proxy only exists for SOCKS5 (UDP ASSOCIATE). */
     private val relayWanted = s.upUdp == UDP_PROXY && s.upType == TYPE_SOCKS5
+
+    /** Where DNS goes when it should use the upstream: through it while it is up, else blocked (kill switch) or direct. */
+    fun dnsRoute(): DnsRoute {
+        val addr = ip?.takeIf { up }?.let { InetSocketAddress(it, s.upPort) }
+            ?: return if (s.upOnDown == ON_DOWN_KILL) DnsRoute.Blocked else DnsRoute.Direct
+        return if (s.upType == TYPE_HTTP) DnsRoute.ViaHttp(addr, s.upUser, s.upPass) else DnsRoute.ViaSocks(addr, s.upUser, s.upPass)
+    }
 
     fun start() {
         NativeBridge.setUpstreamState(true, s.upUdp != UDP_DIRECT)
@@ -53,17 +72,32 @@ class UpstreamMonitor(private val ip: String, private val s: Settings.Values) {
 
     private fun loop() {
         var assoc: UdpAssociation? = null
+        var failures = 0
         try {
             while (!Thread.currentThread().isInterrupted) {
-                val up = reachable()
-                if (CaptureStatus.upstreamUp.value != up) Log.i(TAG, "upstream ${if (up) "up" else "down"}")
-                CaptureStatus.upstreamUp.value = up
-                if (relayWanted) {
-                    if (up && assoc?.alive != true) {
+                if (ip == null || failures >= RERESOLVE_AFTER) {
+                    failures = 0
+                    val now = resolve(host)
+                    if (now != null && now != ip) {
+                        Log.i(TAG, "upstream address changed")
+                        ip = now
+                        NativeBridge.setUpstreamAddress(now, s.upPort)
                         assoc?.close()
-                        assoc = UdpAssociation(ip, s.upPort, s.upUser, s.upPass).takeIf { it.open() }
+                        assoc = null
+                    }
+                }
+                val target = ip
+                val reachable = target != null && reachable(target)
+                if (!reachable) failures++ else failures = 0
+                if (up != reachable || CaptureStatus.upstreamUp.value == null) Log.i(TAG, "upstream ${if (reachable) "up" else "down"}")
+                up = reachable
+                CaptureStatus.upstreamUp.value = reachable
+                if (relayWanted && target != null) {
+                    if (reachable && assoc?.alive != true) {
+                        assoc?.close()
+                        assoc = UdpAssociation(target, s.upPort, s.upUser, s.upPass).takeIf { it.open() }
                         NativeBridge.setUdpRelay(assoc?.relayIp ?: "", assoc?.relayPort ?: 0)
-                    } else if (!up && assoc != null) {
+                    } else if (!reachable && assoc != null) {
                         assoc.close()
                         assoc = null
                         NativeBridge.setUdpRelay("", 0)
@@ -71,9 +105,9 @@ class UpstreamMonitor(private val ip: String, private val s: Settings.Values) {
                 }
                 val relayAlive = assoc?.alive == true
                 CaptureStatus.udpRelayUp.value = relayAlive
-                val d = upstreamDecision(up, relayWanted, relayAlive, s)
+                val d = upstreamDecision(reachable, relayWanted, relayAlive, s)
                 NativeBridge.setUpstreamState(d.active, d.blockUdp)
-                Thread.sleep(if (relayWanted && !relayAlive) 3_000 else 10_000)
+                Thread.sleep(if (!reachable || (relayWanted && !relayAlive)) 3_000 else 10_000)
             }
         } catch (_: InterruptedException) {
         } finally {
@@ -83,8 +117,8 @@ class UpstreamMonitor(private val ip: String, private val s: Settings.Values) {
         }
     }
 
-    private fun reachable() = try {
-        Socket().use { it.connect(InetSocketAddress(ip, s.upPort), 2000) }
+    private fun reachable(addr: String) = try {
+        Socket().use { it.connect(InetSocketAddress(addr, s.upPort), 2000) }
         true
     } catch (_: Exception) {
         false
@@ -92,6 +126,10 @@ class UpstreamMonitor(private val ip: String, private val s: Settings.Values) {
 
     companion object {
         private const val TAG = "UpstreamMonitor"
+        private const val RERESOLVE_AFTER = 3
+
+        /** The engine's proxy address while the real one is unknown: connecting to it always fails. */
+        const val UNROUTABLE = "0.0.0.0"
 
         /** Resolves the proxy host with a 4 s limit (a literal IP is returned as is); null on failure. */
         fun resolve(host: String): String? {

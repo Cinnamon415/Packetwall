@@ -204,7 +204,7 @@
     <string name="upstream_hint">Цепочка с sing-box, v2rayNG, FlClash… (режим «только прокси»)</string>
     <string name="upstream_up">Прокси доступен</string>
     <string name="upstream_down">Прокси недоступен</string>
-    <string name="upstream_bad_host">Не удалось найти адрес upstream %1$s</string>
+    <string name="upstream_bad_host">Не удалось найти адрес прокси %1$s: трафик для него блокируется, пока адрес не найдётся (аварийная блокировка), или идёт напрямую</string>
     <string name="host">Хост</string>
     <string name="username">Логин</string>
     <string name="password">Пароль</string>
@@ -217,7 +217,7 @@
     <string name="kill_switch">Kill switch</string>
     <string name="go_direct">Напрямую</string>
     <string name="check">Проверить</string>
-    <string name="upstream_notes">TCP идёт через прокси; правила, логи и пакеты применяются до него. UDP через прокси — только для SOCKS5. При DoH запросы DNS тоже идут через прокси (для SOCKS5 — если не задан логин).</string>
+    <string name="upstream_notes">TCP идёт через прокси; правила, журнал и пакеты применяются до него. UDP через прокси — только для SOCKS5. При «Весь трафик» DNS тоже идёт через прокси (DNS-over-HTTPS к серверу из раздела DNS), а с аварийной блокировкой он блокируется, пока прокси недоступен.</string>
     <string name="kv_route">Маршрут</string>
     <string name="route_upstream">через upstream</string>
     <string name="route_direct">напрямую</string>

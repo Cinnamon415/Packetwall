@@ -423,6 +423,11 @@ extern bool upstream_active;     // SOCKS5 upstream reachable (or kill switch on
 extern bool upstream_block_udp;  // block UDP while the upstream is active
 extern bool upstream_http;       // the upstream is an HTTP CONNECT proxy
 extern bool upstream_all;        // proxy everything (true) or only "via upstream" rules (false)
+extern pthread_mutex_t upstream_lock;
+extern volatile bool upstream_addr_dirty;
+extern zdtun_ip_t upstream_new_ip;
+extern uint16_t upstream_new_port;
+extern uint8_t upstream_new_ipver;
 extern volatile bool udp_relay_dirty;
 extern zdtun_ip_t udp_relay_ip;
 extern uint16_t udp_relay_port;

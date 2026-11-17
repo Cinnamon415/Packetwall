@@ -206,7 +206,7 @@
     <string name="upstream_hint">Chain with sing-box, v2rayNG, FlClash… (proxy-only mode)</string>
     <string name="upstream_up">Proxy reachable</string>
     <string name="upstream_down">Proxy unreachable</string>
-    <string name="upstream_bad_host">Cannot resolve the upstream host %1$s</string>
+    <string name="upstream_bad_host">Cannot resolve the proxy host %1$s: traffic that should go through it is blocked until it resolves (kill switch) or goes directly</string>
     <string name="host">Host</string>
     <string name="username">User</string>
     <string name="password">Password</string>
@@ -219,7 +219,7 @@
     <string name="kill_switch">Kill switch</string>
     <string name="go_direct">Go directly</string>
     <string name="check">Check</string>
-    <string name="upstream_notes">TCP goes through the proxy; rules, logs and packets are applied before it. UDP through the proxy needs SOCKS5. With DoH, DNS also goes through the proxy (SOCKS5 only without a login).</string>
+    <string name="upstream_notes">TCP goes through the proxy; rules, logs and packets are applied before it. UDP through the proxy needs SOCKS5. With “All traffic”, DNS goes through the proxy too (DNS-over-HTTPS to the server from the DNS section), and with the kill switch it is blocked while the proxy is down.</string>
     <string name="kv_route">Route</string>
     <string name="route_upstream">via upstream</string>
     <string name="route_direct">direct</string>

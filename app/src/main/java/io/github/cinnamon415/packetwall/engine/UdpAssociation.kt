@@ -1,7 +1,6 @@
 package io.github.cinnamon415.packetwall.engine
 
 import android.util.Log
-import java.io.DataInputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -26,43 +25,11 @@ class UdpAssociation(private val host: String, private val port: Int, private va
         s.connect(InetSocketAddress(host, port), 3000)
         s.soTimeout = 4000
         sock = s
-        val out = s.getOutputStream()
-        val inp = DataInputStream(s.getInputStream())
-        val auth = user.isNotEmpty()
-        out.write(byteArrayOf(5, 1, if (auth) 2 else 0))
-        out.flush()
-        val ver = inp.readUnsignedByte()
-        val method = inp.readUnsignedByte()
-        require(ver == 5) { "not a SOCKS5 server" }
-        when (method) {
-            0 -> {}
-            2 -> {
-                require(auth) { "the proxy wants a login" }
-                val u = user.toByteArray()
-                val p = pass.toByteArray()
-                out.write(byteArrayOf(1, u.size.toByte()) + u + byteArrayOf(p.size.toByte()) + p)
-                out.flush()
-                inp.readUnsignedByte()
-                require(inp.readUnsignedByte() == 0) { "authentication failed" }
-            }
-            else -> throw IllegalStateException("no acceptable auth method ($method)")
-        }
         // UDP ASSOCIATE, client address unknown: 0.0.0.0:0
-        out.write(byteArrayOf(5, 3, 0, 1, 0, 0, 0, 0, 0, 0))
-        out.flush()
-        require(inp.readUnsignedByte() == 5) { "bad reply" }
-        val rep = inp.readUnsignedByte()
-        require(rep == 0) { "UDP ASSOCIATE refused ($rep)" }
-        inp.readUnsignedByte()
-        val addr = when (inp.readUnsignedByte()) {
-            1 -> ByteArray(4).also { inp.readFully(it) }.let { InetAddress.getByAddress(it).hostAddress!! }
-            4 -> ByteArray(16).also { inp.readFully(it) }.let { InetAddress.getByAddress(it).hostAddress!! }
-            3 -> ByteArray(inp.readUnsignedByte()).also { inp.readFully(it) }.let { InetAddress.getByName(String(it)).hostAddress!! }
-            else -> throw IllegalStateException("bad address type")
-        }
-        relayPort = inp.readUnsignedShort()
+        val relay = Socks5.request(s, user, pass, Socks5.CMD_UDP_ASSOCIATE, null)
+        relayPort = relay.port
         // 0.0.0.0 / :: means "the proxy's own address"
-        relayIp = if (addr == "0.0.0.0" || addr == "::") InetAddress.getByName(host).hostAddress!! else addr
+        relayIp = if (relay.address.isAnyLocalAddress) InetAddress.getByName(host).hostAddress!! else relay.address.hostAddress!!
         s.soTimeout = 0
         alive = true
         Thread({

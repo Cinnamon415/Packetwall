@@ -20,8 +20,6 @@ import androidx.core.content.ContextCompat
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.Settings
-import java.net.InetSocketAddress
-import java.net.Proxy
 
 /**
  * The VPN service: starts and stops the native packet loop ([NativeBridge]) together with the
@@ -82,14 +80,16 @@ class CaptureService : VpnService() {
         if (st.upstream && b.upstreamIp == null) showError(getString(R.string.upstream_bad_host, st.upHost))
         NativeBridge.setUpstreamHttp(st.upType == TYPE_HTTP)
         NativeBridge.setUpstreamScope(st.upAll)
+        val monitor = if (st.upstream) UpstreamMonitor(st.upHost, b.upstreamIp, st) else null
+        upstream = monitor
 
-        startDoh(st, b)
+        startDoh(st, b, monitor)
         Log.i(TAG, "starting capture, DNS ${b.forwardDns}")
 
         val builder = Builder().setConfigureIntent(CaptureNotification.openApp(this))
         // Packetwall's own traffic (DoH, list downloads) and the upstream proxy app go straight to the network
-        val excluded = listOfNotNull(packageName, st.upApp.takeIf { b.upstreamIp != null && it.isNotEmpty() && it != packageName })
-        VpnSetup.configure(builder, getString(R.string.app_name), st.lanBypass, excluded, dohProxy = dohProxy != null)
+        val excluded = listOfNotNull(packageName, st.upApp.takeIf { st.upstream && it.isNotEmpty() && it != packageName })
+        VpnSetup.configure(builder, getString(R.string.app_name), st.lanBypass, excluded)
         val fd = try {
             builder.establish()
         } catch (e: Exception) {
@@ -106,9 +106,8 @@ class CaptureService : VpnService() {
         CaptureStatus.state.value = CaptureState.Running(System.currentTimeMillis())
 
         networks = cm?.let { NetworkTracker(it) { lp -> onLinkChanged(lp) }.also(NetworkTracker::start) }
-        val ip = b.upstreamIp
-        if (ip != null) {
-            upstream = UpstreamMonitor(ip, st).also(UpstreamMonitor::start)
+        if (monitor != null) {
+            monitor.start()
         } else {
             NativeBridge.setUpstreamState(true, false)
             NativeBridge.setUdpRelay("", 0)
@@ -124,18 +123,20 @@ class CaptureService : VpnService() {
         }, "PacketLoop").also { it.start() }
     }
 
-    /** The DoH proxy, when enabled; DoH goes through the upstream for HTTP proxies and SOCKS5 without login. */
-    private fun startDoh(st: Settings.Values, b: NativeBridge) {
+    /**
+     * The DoH proxy: when DoH is chosen, and always when all traffic goes through the upstream, so
+     * that DNS does not leak around it (plain DNS to the network's resolver would). Through the
+     * upstream it follows the proxy: blocked while it is down with the kill switch.
+     */
+    private fun startDoh(st: Settings.Values, b: NativeBridge, monitor: UpstreamMonitor?) {
         dohProxy?.stop()
         dohProxy = null
-        if (st.dnsMode == DNS_DOH) {
-            val viaProxy = b.upstreamIp?.takeIf { st.upType == TYPE_HTTP || st.upUser.isEmpty() }?.let {
-                Proxy(if (st.upType == TYPE_HTTP) Proxy.Type.HTTP else Proxy.Type.SOCKS, InetSocketAddress(it, st.upPort))
-            }
-            val auth = if (st.upType == TYPE_HTTP && st.upUser.isNotEmpty()) st.upUser to st.upPass else null
+        val viaUpstream = monitor != null && st.upAll
+        if (st.dnsMode == DNS_DOH || viaUpstream) {
+            val route: () -> DnsRoute = if (monitor != null && viaUpstream) monitor::dnsRoute else ({ DnsRoute.Direct })
             DnsProxy.resetStats()
             dohProxy = try {
-                DnsProxy(st.dohUrl, viaProxy, auth).also { it.start() }
+                DnsProxy(st.dohUrl, route).also { it.start() }
             } catch (e: Exception) {
                 Log.e(TAG, "DoH proxy", e)
                 null

@@ -22,6 +22,7 @@
 
 #include "pcapdroid.h"
 #include "pw_rules.h"
+#include <pthread.h>
 #include "common/utils.h"
 #include "port_map.h"
 
@@ -426,6 +427,14 @@ static bool wants_upstream(pcapdroid_t *pd, const pd_conn_t *data) {
     return upstream_all;
 }
 
+// Packetwall: the upstream is configured but its host has not been resolved yet (address 0.0.0.0)
+static bool upstream_unknown(const pcapdroid_t *pd) {
+    if(pd->socks5.proxy_ipver == 4)
+        return pd->socks5.proxy_ip.ip4 == 0;
+    static const uint8_t zero[16] = {0};
+    return memcmp(&pd->socks5.proxy_ip.ip6, zero, 16) == 0;
+}
+
 static bool should_proxify(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
     if(!wants_upstream(pd, data))
         return false;
@@ -612,18 +621,37 @@ int run_vpn(pcapdroid_t *pd) {
                 pd_conn_t *data = zdtun_conn_get_userdata(conn);
 
                 // To be run before pd_process_packet/process_payload
-                if(udp_relay_dirty) {
-                    udp_relay_dirty = false;
-                    zdtun_set_udp_relay(zdt, &udp_relay_ip, udp_relay_port, udp_relay_ipver);
-                    log_i("UDP relay %s", udp_relay_port ? "set" : "removed");
+                if(udp_relay_dirty || upstream_addr_dirty) {
+                    pthread_mutex_lock(&upstream_lock);
+                    if(udp_relay_dirty) {
+                        udp_relay_dirty = false;
+                        zdtun_set_udp_relay(zdt, &udp_relay_ip, udp_relay_port, udp_relay_ipver);
+                        log_i("UDP relay %s", udp_relay_port ? "set" : "removed");
+                    }
+                    if(upstream_addr_dirty && pd->socks5.enabled) {
+                        // Packetwall: the proxy host was (re)resolved; new connections use the new address
+                        upstream_addr_dirty = false;
+                        pd->socks5.proxy_ip = upstream_new_ip;
+                        pd->socks5.proxy_ipver = upstream_new_ipver;
+                        pd->socks5.proxy_port = upstream_new_port;
+                        zdtun_set_socks5_proxy(zdt, &pd->socks5.proxy_ip, pd->socks5.proxy_port, pd->socks5.proxy_ipver);
+                        log_i("upstream address changed");
+                    }
+                    pthread_mutex_unlock(&upstream_lock);
                 }
 
                 if(data->sent_pkts == 0) {
                     if(pd_check_port_map(conn, data->uid))
                         data->port_mapping_applied = true;
                     else if(should_proxify(pd, tuple, data)) {
-                        zdtun_conn_proxy(conn);
-                        data->proxied = true;
+                        if(upstream_unknown(pd)) {
+                            // Packetwall: the proxy host could not be resolved (kill switch): block
+                            data->blacklisted_internal = true;
+                            data->to_block = true;
+                        } else {
+                            zdtun_conn_proxy(conn);
+                            data->proxied = true;
+                        }
                     } else if(wants_upstream(pd, data) && zdtun_has_udp_relay(zdt) &&
                               (tuple->ipproto == IPPROTO_UDP) &&
                               !((tuple->ipver == 4) && (tuple->dst_ip.ip4 == pd->vpn.ipv4.internal_dns))) {

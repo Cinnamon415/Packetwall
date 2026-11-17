@@ -43,10 +43,17 @@ bool upstream_block_udp = false;
 bool upstream_http = false;
 bool upstream_all = true;
 // SOCKS5 UDP relay requested by the app, applied by the capture thread
+// Written by Java threads (setUdpRelay / setUpstreamAddress), applied by the capture thread.
+// upstream_lock makes each ip/port/version set visible as a whole (no torn reads).
+pthread_mutex_t upstream_lock = PTHREAD_MUTEX_INITIALIZER;
 volatile bool udp_relay_dirty = false;
 zdtun_ip_t udp_relay_ip;
 uint16_t udp_relay_port = 0;   // network order, 0 = none
 uint8_t udp_relay_ipver = 4;
+volatile bool upstream_addr_dirty = false;
+zdtun_ip_t upstream_new_ip;
+uint16_t upstream_new_port = 0; // network order
+uint8_t upstream_new_ipver = 4;
 bool has_seen_dump_extensions = false;
 
 bool dump_capture_stats_now = false;

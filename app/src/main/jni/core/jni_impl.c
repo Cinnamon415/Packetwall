@@ -1589,6 +1589,7 @@ Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setUdpRelay(JNIEnv *en
     int ver = (s && s[0]) ? zdtun_parse_ip(s, &addr) : -1;
     if(s) (*env)->ReleaseStringUTFChars(env, ip, s);
 
+    pthread_mutex_lock(&upstream_lock);
     if((ver == 4 || ver == 6) && (port > 0)) {
         udp_relay_ip = addr;
         udp_relay_ipver = (uint8_t) ver;
@@ -1596,6 +1597,26 @@ Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setUdpRelay(JNIEnv *en
     } else
         udp_relay_port = 0;
     udp_relay_dirty = true;
+    pthread_mutex_unlock(&upstream_lock);
+}
+
+/* ******************************************************* */
+
+// Packetwall: new address of the upstream proxy (its host was re-resolved while running)
+JNIEXPORT void JNICALL
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setUpstreamAddress(JNIEnv *env, jclass clazz, jstring ip, jint port) {
+    const char *s = (*env)->GetStringUTFChars(env, ip, NULL);
+    zdtun_ip_t addr = {0};
+    int ver = s ? zdtun_parse_ip(s, &addr) : -1;
+    if(s) (*env)->ReleaseStringUTFChars(env, ip, s);
+    if((ver != 4 && ver != 6) || (port <= 0) || (port > 65535))
+        return;
+    pthread_mutex_lock(&upstream_lock);
+    upstream_new_ip = addr;
+    upstream_new_ipver = (uint8_t) ver;
+    upstream_new_port = htons((uint16_t) port);
+    upstream_addr_dirty = true;
+    pthread_mutex_unlock(&upstream_lock);
 }
 
 // Packetwall: proxy all traffic (true) or only connections allowed by "via upstream" rules

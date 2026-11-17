@@ -114,9 +114,10 @@ class NativeBridge(private val vpn: VpnService, private val app: PacketwallApp, 
 
     fun getMaxDumpSize(): Int = 0
 
-    fun getSocks5Enabled(): Int = if (upstreamIp != null) 1 else 0
+    // configured but not resolved: an unroutable address, so the kill switch holds (UpstreamMonitor)
+    fun getSocks5Enabled(): Int = if (settings.upstream) 1 else 0
 
-    fun getSocks5ProxyAddress(): String = upstreamIp ?: ""
+    fun getSocks5ProxyAddress(): String = upstreamIp ?: UpstreamMonitor.UNROUTABLE
 
     fun getSocks5ProxyPort(): Int = settings.upPort
 
@@ -190,6 +191,9 @@ class NativeBridge(private val vpn: VpnService, private val app: PacketwallApp, 
 
         /** All traffic goes through the upstream (else only allow rules with route "upstream"). */
         @JvmStatic external fun setUpstreamScope(all: Boolean)
+
+        /** New address of the upstream proxy (re-resolved while running); new connections use it. */
+        @JvmStatic external fun setUpstreamAddress(ip: String, port: Int)
 
         /** SOCKS5 UDP relay address; empty = none. */
         @JvmStatic external fun setUdpRelay(ip: String, port: Int)

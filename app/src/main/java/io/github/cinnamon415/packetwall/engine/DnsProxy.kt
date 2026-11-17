@@ -7,6 +7,7 @@ import io.github.cinnamon415.packetwall.Problem
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
@@ -20,30 +21,61 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
+/** Where the DoH requests go; asked for every query, so it follows the upstream proxy going up or down. */
+sealed interface DnsRoute {
+    data object Direct : DnsRoute
+
+    /** Through the upstream, which is down with the kill switch on (or unknown): answer SERVFAIL. */
+    data object Blocked : DnsRoute
+
+    data class ViaHttp(val proxy: InetSocketAddress, val user: String, val pass: String) : DnsRoute
+
+    data class ViaSocks(val proxy: InetSocketAddress, val user: String, val pass: String) : DnsRoute
+}
+
 /**
  * Local DNS-over-HTTPS proxy. The native engine sends the VPN's DNS queries (after the firewall
  * had its say) to 127.0.0.1:[port]; every query is POSTed to the DoH server (RFC 8484).
  *
- * Packetwall itself is excluded from its VPN, so these HTTPS requests go straight to the network.
+ * Packetwall itself is excluded from its VPN, so these HTTPS requests go straight to the network,
+ * or through the upstream proxy when [route] says so (SOCKS5 with a login uses our own tunnel).
  */
-class DnsProxy(private val url: String, upstream: Proxy? = null, proxyAuth: Pair<String, String>? = null) {
-    private val http = baseClient.newBuilder().proxy(upstream).apply {
-        // HTTP CONNECT proxies with a login (Basic auth)
-        if (proxyAuth != null) {
-            proxyAuthenticator { _, resp ->
-                if (resp.request.header("Proxy-Authorization") != null) {
-                    null
-                } else {
-                    resp.request.newBuilder().header("Proxy-Authorization", Credentials.basic(proxyAuth.first, proxyAuth.second)).build()
+class DnsProxy(private val url: String, private val route: () -> DnsRoute = { DnsRoute.Direct }) {
+    @Volatile private var client: Pair<DnsRoute, OkHttpClient>? = null
+
+    private fun clientFor(r: DnsRoute): OkHttpClient {
+        client?.let { (cr, c) -> if (cr == r) return c }
+        val c = when (r) {
+            DnsRoute.Direct, DnsRoute.Blocked -> baseClient
+            is DnsRoute.ViaHttp -> baseClient.newBuilder().proxy(Proxy(Proxy.Type.HTTP, r.proxy)).apply {
+                if (r.user.isNotEmpty()) {
+                    proxyAuthenticator { _, resp ->
+                        if (resp.request.header("Proxy-Authorization") != null) {
+                            null
+                        } else {
+                            resp.request.newBuilder().header("Proxy-Authorization", Credentials.basic(r.user, r.pass)).build()
+                        }
+                    }
                 }
+            }.build()
+            is DnsRoute.ViaSocks -> if (r.user.isEmpty()) {
+                baseClient.newBuilder().proxy(Proxy(Proxy.Type.SOCKS, r.proxy)).build()
+            } else {
+                baseClient.newBuilder().proxy(Proxy.NO_PROXY).socketFactory(Socks5.TunnelSocketFactory(r.proxy, r.user, r.pass)).build()
             }
         }
-    }.build()
+        client = r to c
+        return c
+    }
+
     data class Stats(val queries: Long = 0, val failures: Long = 0, val avgMs: Long = 0, val lastError: Problem? = null)
 
     private var sock: DatagramSocket? = null
     private var thread: Thread? = null
-    private val pool = ThreadPoolExecutor(2, 8, 30, TimeUnit.SECONDS, LinkedBlockingQueue(256))
+
+    // core = max: a ThreadPoolExecutor only grows past its core size when the queue is full, and a
+    // query can block a thread for up to the call timeout. HTTP/2 multiplexes these on one connection.
+    private val pool = ThreadPoolExecutor(16, 16, 30, TimeUnit.SECONDS, LinkedBlockingQueue(256)).apply { allowCoreThreadTimeOut(true) }
 
     @Volatile private var running = false
     private var totalMs = 0L
@@ -98,15 +130,17 @@ class DnsProxy(private val url: String, upstream: Proxy? = null, proxyAuth: Pair
     private fun resolve(q: ByteArray): ByteArray? {
         if (q.size < 12) return null
         val t0 = System.nanoTime()
+        val r = route()
+        if (r == DnsRoute.Blocked) return null
         return try {
             // OkHttp: HTTP/2 (required by some servers, e.g. Quad9) and one multiplexed connection
             val req = Request.Builder().url(url)
                 .header("Accept", "application/dns-message")
                 .post(q.toRequestBody(DNS_MESSAGE))
                 .build()
-            val body = http.newCall(req).execute().use { r ->
-                if (r.code != 200) throw HttpStatusException(r.code)
-                r.body?.bytes() ?: ByteArray(0)
+            val body = clientFor(r).newCall(req).execute().use { resp ->
+                if (resp.code != 200) throw HttpStatusException(resp.code)
+                resp.body?.bytes() ?: ByteArray(0)
             }
             if (body.size < 12) throw BadDataException("short DNS reply")
             // keep the transaction id of the client (DoH servers may zero it)

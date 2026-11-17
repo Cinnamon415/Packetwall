@@ -251,6 +251,8 @@ def s_upstream_socks():
     log = proxy_log_since(n)
     check("SOCKS5: UDP via UDP ASSOCIATE", a[:2] == ["12", "34"] and not dns_spoofed(a) and any("UDP -> 9.9.9.9 53" in l for l in log), " ".join(a[:4]))
     check("SOCKS5: proxy saw TCP CONNECT", any("SOCKS CONNECT" in l for l in log))
+    # plain DNS mode, all traffic via upstream: DNS must not go to the network's resolver
+    check("SOCKS5: DNS went through the proxy (DoH)", any("1.1.1.1" in l and "443" in l for l in log), " | ".join(log[-6:]))
 
 
 def s_upstream_http():
@@ -271,6 +273,14 @@ def s_kill_switch():
     configure(settings={"up": True, "up_host": HOST, "up_port": 1, "up_type": 0, "up_udp": 1, "up_down": 1})
     time.sleep(2)
     check("fallback: proxy down -> direct", allowed("www.wikipedia.org"))
+    # the proxy host cannot be resolved: with the kill switch nothing may go out directly
+    configure(settings={"up": True, "up_host": "proxy.invalid", "up_port": 1081, "up_type": 0, "up_udp": 1, "up_down": 0})
+    time.sleep(2)
+    check("kill switch: unresolvable proxy -> TCP blocked", refused(http("example.org", "93.184.215.14")))
+    check("kill switch: unresolvable proxy -> DNS blocked", refused(http("www.wikipedia.org")))
+    configure(settings={"up": True, "up_host": "proxy.invalid", "up_port": 1081, "up_type": 0, "up_udp": 1, "up_down": 1})
+    time.sleep(2)
+    check("fallback: unresolvable proxy -> direct", allowed("www.wikipedia.org"))
 
 
 def s_route_rule():

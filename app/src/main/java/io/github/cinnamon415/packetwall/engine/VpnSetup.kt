@@ -24,9 +24,10 @@ object VpnSetup {
 
     /**
      * Configures [b]. [excludedApps] send their traffic directly (Packetwall itself, the upstream
-     * proxy app). With [dohProxy] every query must reach the IPv4 VPN DNS, so no IPv6 DNS is set.
+     * proxy app). Only the IPv4 VPN DNS is set: every query reaches the engine and goes to the
+     * resolver the user chose, never to a hidden fallback.
      */
-    fun configure(b: VpnService.Builder, session: String, lanBypass: Boolean, excludedApps: List<String>, dohProxy: Boolean) {
+    fun configure(b: VpnService.Builder, session: String, lanBypass: Boolean, excludedApps: List<String>) {
         b.setMtu(MTU)
             .setSession(session)
             .addAddress(IP4, 30)
@@ -41,13 +42,6 @@ object VpnSetup {
                 b.addDisallowedApplication(pkg)
             } catch (e: Exception) {
                 Log.w(TAG, "cannot exclude $pkg: $e")
-            }
-        }
-        if (!dohProxy) {
-            try {
-                b.addDnsServer(FALLBACK_DNS6)
-            } catch (e: IllegalArgumentException) {
-                Log.w(TAG, "IPv6 DNS not set: $e")
             }
         }
     }
