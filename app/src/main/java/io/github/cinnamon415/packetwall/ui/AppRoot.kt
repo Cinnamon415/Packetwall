@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -26,13 +27,18 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -62,69 +68,77 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
         if (drawer.isOpen) scope.launch { drawer.close() } else nav.pop()
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawer,
-        gesturesEnabled = nav.stack.size <= 2,
-        drawerContent = {
-            DrawerContent(nav.current, state) { d ->
-                scope.launch { drawer.close() }
-                if (nav.current != d) nav.root(d)
-            }
-        }
-    ) {
-        AnimatedContent(
-            targetState = nav.stack.toList(),
-            transitionSpec = {
-                val forward = targetState.size >= initialState.size
-                if (targetState.size == initialState.size) {
-                    fadeIn(tween(180)) togetherWith fadeOut(tween(120))
-                } else if (forward) {
-                    (slideInHorizontally(tween(260)) { it / 4 } + fadeIn(tween(260))) togetherWith fadeOut(tween(200))
-                } else {
-                    fadeIn(tween(220)) togetherWith (slideOutHorizontally(tween(220)) { it / 4 } + fadeOut(tween(220)))
+    val snackbar = remember { SnackbarHostState() }
+    val undoLabel = stringResource(R.string.undo)
+    val undo = remember(scope, snackbar, undoLabel) { UndoController(scope, snackbar, undoLabel) }
+    CompositionLocalProvider(LocalUndo provides undo) {
+        Box(Modifier.fillMaxSize()) {
+            ModalNavigationDrawer(
+                drawerState = drawer,
+                gesturesEnabled = nav.stack.size <= 2,
+                drawerContent = {
+                    DrawerContent(nav.current, state) { d ->
+                        scope.launch { drawer.close() }
+                        if (nav.current != d) nav.root(d)
+                    }
                 }
-            },
-            label = "nav"
-        ) { stack ->
-            val d0 = stack.last()
-            saveable.SaveableStateProvider("${stack.size}:$d0") {
-                when (val d = d0) {
-                    Dest.Home -> HomeScreen(
-                        app,
-                        state,
-                        onToggleProtection,
-                        openDrawer,
-                        onOpenLogs = { nav.root(Dest.Logs) },
-                        onOpenStats = { nav.root(Dest.Stats) },
-                        onOpenConn = { nav.push(Dest.Connection(it)) }
-                    )
-                    Dest.Logs -> LogsScreen(app, state, openDrawer, onOpenConn = { nav.push(Dest.Connection(it)) })
-                    is Dest.Connection -> ConnectionScreen(
-                        app,
-                        d.id,
-                        d.tab,
-                        onNeighbor = { id, tab -> nav.replace(Dest.Connection(id, tab)) },
-                        onBack = { nav.pop() },
-                        onOpenApp = { nav.push(Dest.AppRules(it)) },
-                        onOpenPacket = { nav.push(Dest.Packet(d.id, it)) }
-                    )
-                    is Dest.Packet -> PacketScreen(app, d.connId, d.seq, onBack = { nav.pop() })
-                    Dest.Stats -> StatsScreen(app, openDrawer)
-                    Dest.Apps -> AppsScreen(
-                        app,
-                        openDrawer,
-                        onOpenApp = { nav.push(Dest.AppRules(it)) },
-                        onOpenGroup = { nav.push(Dest.GroupRules(it)) }
-                    )
-                    is Dest.AppRules -> WhoRulesScreen(app, Who.App(d.pkg), onBack = { nav.pop() })
-                    is Dest.GroupRules -> WhoRulesScreen(app, Who.Group(d.id), onBack = { nav.pop() })
-                    Dest.Global -> GlobalScreen(app, openDrawer)
-                    Dest.Blocklists -> BlocklistsScreen(app, openDrawer)
-                    Dest.Sets -> SetsScreen(app, openDrawer)
-                    Dest.Settings -> SettingsScreen(app, openDrawer)
-                    Dest.About -> AboutScreen(openDrawer)
+            ) {
+                AnimatedContent(
+                    targetState = nav.stack.toList(),
+                    transitionSpec = {
+                        val forward = targetState.size >= initialState.size
+                        if (targetState.size == initialState.size) {
+                            fadeIn(tween(180)) togetherWith fadeOut(tween(120))
+                        } else if (forward) {
+                            (slideInHorizontally(tween(260)) { it / 4 } + fadeIn(tween(260))) togetherWith fadeOut(tween(200))
+                        } else {
+                            fadeIn(tween(220)) togetherWith (slideOutHorizontally(tween(220)) { it / 4 } + fadeOut(tween(220)))
+                        }
+                    },
+                    label = "nav"
+                ) { stack ->
+                    val d0 = stack.last()
+                    saveable.SaveableStateProvider("${stack.size}:$d0") {
+                        when (val d = d0) {
+                            Dest.Home -> HomeScreen(
+                                app,
+                                state,
+                                onToggleProtection,
+                                openDrawer,
+                                onOpenLogs = { nav.root(Dest.Logs) },
+                                onOpenStats = { nav.root(Dest.Stats) },
+                                onOpenConn = { nav.push(Dest.Connection(it)) }
+                            )
+                            Dest.Logs -> LogsScreen(app, state, openDrawer, onOpenConn = { nav.push(Dest.Connection(it)) })
+                            is Dest.Connection -> ConnectionScreen(
+                                app,
+                                d.id,
+                                d.tab,
+                                onNeighbor = { id, tab -> nav.replace(Dest.Connection(id, tab)) },
+                                onBack = { nav.pop() },
+                                onOpenApp = { nav.push(Dest.AppRules(it)) },
+                                onOpenPacket = { nav.push(Dest.Packet(d.id, it)) }
+                            )
+                            is Dest.Packet -> PacketScreen(app, d.connId, d.seq, onBack = { nav.pop() })
+                            Dest.Stats -> StatsScreen(app, openDrawer)
+                            Dest.Apps -> AppsScreen(
+                                app,
+                                openDrawer,
+                                onOpenApp = { nav.push(Dest.AppRules(it)) },
+                                onOpenGroup = { nav.push(Dest.GroupRules(it)) }
+                            )
+                            is Dest.AppRules -> WhoRulesScreen(app, Who.App(d.pkg), onBack = { nav.pop() })
+                            is Dest.GroupRules -> WhoRulesScreen(app, Who.Group(d.id), onBack = { nav.pop() })
+                            Dest.Global -> GlobalScreen(app, openDrawer)
+                            Dest.Blocklists -> BlocklistsScreen(app, openDrawer)
+                            Dest.Sets -> SetsScreen(app, openDrawer)
+                            Dest.Settings -> SettingsScreen(app, openDrawer)
+                            Dest.About -> AboutScreen(openDrawer)
+                        }
+                    }
                 }
             }
+            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 8.dp))
         }
     }
 }

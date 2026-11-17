@@ -368,4 +368,14 @@
     <string name="import_replace_action">Replace</string>
     <string name="import_restore">Bring back the previous</string>
     <string name="import_restored">The previous configuration is back</string>
+    <string name="undo">Undo</string>
+    <string name="undo_rule_deleted">Rule deleted</string>
+    <string name="undo_rules_deleted">Rules deleted: %1$d</string>
+    <string name="undo_group_deleted">Group “%1$s” deleted</string>
+    <string name="undo_profile_deleted">Profile “%1$s” deleted</string>
+    <string name="confirm_delete_file">Delete %1$s?</string>
+    <string name="confirm_log_clear">Delete the saved log? This cannot be undone.</string>
+    <string name="confirm_log_shorter">Keep the log for %1$s? Older entries are deleted right away.</string>
+    <string name="confirm_geo_delete">Delete the GeoIP databases? Country and AS rules (%1$d) stop matching until they are downloaded again.</string>
+    <string name="confirm_trackers_delete">Delete the tracker database? Connections are no longer marked as trackers.</string>
 </resources>

@@ -186,6 +186,9 @@ class FirewallStore(
 
     fun activateProfile(id: Int) = update { st -> withProfile(st, id) }
 
+    /** Undo of a deletion: back to [prev] (ids keep growing, so nothing new is reused). */
+    fun restore(prev: FwState) = update { st -> prev.copy(nextId = maxOf(prev.nextId, st.nextId)) }
+
     /** [st] with profile [id] active: its set order and switches, sets it does not know appended disabled. */
     private fun withProfile(st: FwState, id: Int): FwState {
         val p = st.profiles.firstOrNull { it.id == id } ?: return st

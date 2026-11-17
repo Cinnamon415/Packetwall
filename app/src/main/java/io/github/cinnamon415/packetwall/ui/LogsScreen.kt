@@ -328,6 +328,14 @@ private fun CapturesTab(app: PacketwallApp) {
     fun refresh() {
         files = capturesDir(app).listFiles()?.sortedByDescending { it.lastModified() } ?: emptyList()
     }
+    var deleting by remember { mutableStateOf<File?>(null) }
+    deleting?.let { f ->
+        ConfirmDialog(stringResource(R.string.confirm_delete_file, f.name), { deleting = null }) {
+            f.delete()
+            deleting = null
+            refresh()
+        }
+    }
 
     val export = rememberFileExport("application/octet-stream")
     val stamp = { SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) }
@@ -402,10 +410,7 @@ private fun CapturesTab(app: PacketwallApp) {
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            IconButton({
-                                f.delete()
-                                refresh()
-                            }) { Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.delete)) }
+                            IconButton({ deleting = f }) { Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.delete)) }
                         }
                     }
                 }

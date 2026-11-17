@@ -56,6 +56,7 @@ import io.github.cinnamon415.packetwall.engine.AppInfo
 import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import io.github.cinnamon415.packetwall.engine.DnsProxy
 import io.github.cinnamon415.packetwall.engine.UdpAssociation
+import io.github.cinnamon415.packetwall.fw.TargetKind
 import io.github.cinnamon415.packetwall.system.Schedules
 import java.net.DatagramPacket
 import java.net.DatagramSocket
@@ -76,6 +77,7 @@ import okhttp3.Request
 
 @Composable
 fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
+    var shorterLog by remember { mutableStateOf<Int?>(null) }
     val s by app.settings.values.collectAsState()
     ScreenScaffold(title = stringResource(R.string.nav_settings), onMenu = openDrawer) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
@@ -144,7 +146,17 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     s.logDays,
                     { if (it == 0) stringResource(R.string.storage_session) else pluralStringResource(R.plurals.days, it, it) }
                 ) { v ->
-                    app.settings.update { it.copy(logDays = v) }
+                    // a shorter retention deletes older entries right away: ask first
+                    if (v in 1 until s.logDays) shorterLog = v else app.settings.update { it.copy(logDays = v) }
+                }
+                shorterLog?.let { v ->
+                    ConfirmDialog(stringResource(R.string.confirm_log_shorter, pluralStringResource(R.plurals.days, v, v)), {
+                        shorterLog =
+                            null
+                    }) {
+                        app.settings.update { it.copy(logDays = v) }
+                        shorterLog = null
+                    }
                 }
                 Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 10.dp)) {
                     Text(
@@ -161,12 +173,17 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                             Text(stringResource(R.string.log_blocked_only))
                         }
                         val scope = rememberCoroutineScope()
-                        TextButton({
-                            scope.launch(Dispatchers.IO) {
-                                app.logDb.clear()
-                                app.connections.configureLog(app.logDb, s.logDays)
+                        var confirmClear by remember { mutableStateOf(false) }
+                        TextButton({ confirmClear = true }) { Text(stringResource(R.string.log_clear)) }
+                        if (confirmClear) {
+                            ConfirmDialog(stringResource(R.string.confirm_log_clear), { confirmClear = false }) {
+                                confirmClear = false
+                                scope.launch(Dispatchers.IO) {
+                                    app.logDb.clear()
+                                    app.connections.configureLog(app.logDb, s.logDays)
+                                }
                             }
-                        }) { Text(stringResource(R.string.log_clear)) }
+                        }
                     }
                 }
             }
@@ -563,6 +580,15 @@ private fun SwitchRow(title: String, hint: String?, value: Boolean, onChange: (B
 
 @Composable
 private fun GeoSettings(app: PacketwallApp) {
+    var confirmGeo by remember { mutableStateOf(false) }
+    if (confirmGeo) {
+        val fw by app.firewall.state.collectAsState()
+        val affected = fw.rules.count { it.target.kind == TargetKind.COUNTRY || it.target.kind == TargetKind.ASN }
+        ConfirmDialog(stringResource(R.string.confirm_geo_delete, affected), { confirmGeo = false }) {
+            confirmGeo = false
+            app.geo.delete()
+        }
+    }
     val info by app.geo.info.collectAsState()
     val scope = rememberCoroutineScope()
     RoundedGroup {
@@ -585,7 +611,7 @@ private fun GeoSettings(app: PacketwallApp) {
                 OutlinedButton(enabled = !info.busy, onClick = {
                     scope.launch(Dispatchers.IO) { app.geo.download() }
                 }) { Text(stringResource(if (info.loaded) R.string.update_now else R.string.download)) }
-                if (info.loaded) TextButton({ app.geo.delete() }) { Text(stringResource(R.string.delete)) }
+                if (info.loaded) TextButton({ confirmGeo = true }) { Text(stringResource(R.string.delete)) }
             }
             Text(
                 "IP Geolocation by DB-IP (db-ip.com), CC BY 4.0",
@@ -599,6 +625,13 @@ private fun GeoSettings(app: PacketwallApp) {
 
 @Composable
 private fun TrackersSettings(app: PacketwallApp) {
+    var confirmTrackers by remember { mutableStateOf(false) }
+    if (confirmTrackers) {
+        ConfirmDialog(stringResource(R.string.confirm_trackers_delete), { confirmTrackers = false }) {
+            confirmTrackers = false
+            app.trackers.delete()
+        }
+    }
     val info by app.trackers.info.collectAsState()
     val scope = rememberCoroutineScope()
     RoundedGroup {
@@ -621,7 +654,7 @@ private fun TrackersSettings(app: PacketwallApp) {
                 OutlinedButton(enabled = !info.busy, onClick = {
                     scope.launch(Dispatchers.IO) { app.trackers.download() }
                 }) { Text(stringResource(if (info.loaded) R.string.update_now else R.string.download)) }
-                if (info.loaded) TextButton({ app.trackers.delete() }) { Text(stringResource(R.string.delete)) }
+                if (info.loaded) TextButton({ confirmTrackers = true }) { Text(stringResource(R.string.delete)) }
             }
             Text(
                 stringResource(R.string.trackers_attribution),

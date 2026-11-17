@@ -450,6 +450,8 @@ fun ConfirmDialog(text: String, onDismiss: () -> Unit, onOk: () -> Unit) {
 
 @Composable
 fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
+    val undo = LocalUndo.current
+    val profileDeletedMsg = stringResource(R.string.undo_profile_deleted)
     val st by app.firewall.state.collectAsState()
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -526,7 +528,9 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                                 { Text(stringResource(R.string.delete)) },
                                 {
                                     profileMenu = null
+                                    val prev = app.firewall.state.value
                                     app.firewall.deleteProfile(p.id)
+                                    undo?.offer(profileDeletedMsg.format(p.name)) { app.firewall.restore(prev) }
                                 },
                                 enabled = st.profiles.size > 1
                             )

@@ -259,6 +259,9 @@ fun ListSubheader(text: String) {
 /** Rules of one app (or app group) in every set. */
 @Composable
 fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit) {
+    val undo = LocalUndo.current
+    val ruleDeletedMsg = stringResource(R.string.undo_rule_deleted)
+    val groupDeletedMsg = stringResource(R.string.undo_group_deleted)
     val st by app.firewall.state.collectAsState()
     val info = (who as? Who.App)?.let { remember(it.pkg) { app.apps.byPackage(it.pkg) } }
     val group = (who as? Who.Group)?.let { st.group(it.id) }
@@ -315,7 +318,9 @@ fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit) {
                         { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
                         {
                             menu = false
+                            val prev = app.firewall.state.value
                             app.firewall.deleteGroup(group.id)
+                            undo?.offer(groupDeletedMsg.format(group.name)) { app.firewall.restore(prev) }
                         }
                     )
                 }
@@ -372,8 +377,10 @@ fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit) {
             },
             onDelete = if (r.id != 0) {
                 {
+                    val prev = app.firewall.state.value
                     app.firewall.deleteRule(r.id)
                     editing = null
+                    undo?.offer(ruleDeletedMsg) { app.firewall.restore(prev) }
                 }
             } else {
                 null
@@ -464,6 +471,9 @@ fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onOk: (Str
 
 @Composable
 fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
+    val undo = LocalUndo.current
+    val ruleDeletedMsg = stringResource(R.string.undo_rule_deleted)
+    val groupDeletedMsg = stringResource(R.string.undo_group_deleted)
     val st by app.firewall.state.collectAsState()
     var q by rememberSaveable { mutableStateOf("") }
     var setFilter by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -579,8 +589,10 @@ fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
             },
             onDelete = if (r.id != 0) {
                 {
+                    val prev = app.firewall.state.value
                     app.firewall.deleteRule(r.id)
                     editing = null
+                    undo?.offer(ruleDeletedMsg) { app.firewall.restore(prev) }
                 }
             } else {
                 null
@@ -612,8 +624,12 @@ private fun RowScope.SelectionActions(app: PacketwallApp, st: FwState, selection
     IconButton({
         export.launchText("packetwall-rules-${selection.size}.json") { app.firewall.exportRules(selection) }
     }) { Icon(painterResource(R.drawable.ic_save), stringResource(R.string.export)) }
+    val undo = LocalUndo.current
+    val deletedMsg = stringResource(R.string.undo_rules_deleted, selection.size)
     IconButton({
+        val prev = app.firewall.state.value
         app.firewall.deleteRules(selection)
         onDone()
+        undo?.offer(deletedMsg) { app.firewall.restore(prev) }
     }) { Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.delete)) }
 }
