@@ -37,8 +37,13 @@ class TestConfigActivity : Activity() {
                 app.settings.reload()
             }
             intent.getStringExtra("fw")?.let { b64 ->
-                app.firewall.importJson(String(Base64.decode(b64, Base64.DEFAULT)), replace = true)
+                val sum = app.firewall.importJson(String(Base64.decode(b64, Base64.DEFAULT)), replace = true)
                 app.firewall.compileNow()
+                val st = app.firewall.state.value
+                Log.i(
+                    "TestConfig",
+                    "imported $sum; order=${st.order} active=${st.activeProfile} loaded=${app.firewall.loaded.value}"
+                )
             }
             Log.i("TestConfig", "applied (protection running: ${CaptureStatus.state.value})")
         } catch (e: Exception) {

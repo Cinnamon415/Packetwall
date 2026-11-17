@@ -21,8 +21,24 @@ PROXY_LOG = os.environ.get("PROXY_LOG", "")
 results = []
 
 
+SERIAL = os.environ.get("ANDROID_SERIAL", "")
+TRANSPORT_ERRORS = ("device offline", "no devices", "not found", "error: closed", "device still connecting")
+
+
 def adb(*args, check=False, timeout=60):
-    r = subprocess.run([ADB, *args], capture_output=True, text=True, timeout=timeout)
+    # Over adb-over-TCP (Waydroid, phones over Wi-Fi) the connection drops for a moment whenever the
+    # VPN goes up or down (Android destroys the sockets of affected apps). A command sent in that gap
+    # is lost, so retry it once the device is back instead of silently going on.
+    for attempt in range(15):
+        r = subprocess.run([ADB, *args], capture_output=True, text=True, timeout=timeout)
+        err = r.stderr.lower()
+        if r.returncode == 0 or not any(e in err for e in TRANSPORT_ERRORS):
+            break
+        if ":" in SERIAL:
+            subprocess.run([ADB, "connect", SERIAL], capture_output=True, text=True, timeout=10)
+        time.sleep(1)
+    else:
+        raise RuntimeError(f"adb {args[0]}: device unreachable: {r.stderr.strip()}")
     if check and r.returncode != 0:
         raise RuntimeError(r.stderr)
     return r.stdout
@@ -282,6 +298,9 @@ def s_streaming():
     m = re.search(r"Number of packets:\s+(\d+)", n)
     check("pcap-over-IP stream readable by Wireshark", m and int(m.group(1)) > 5, m.group(0) if m else n[-200:])
     time.sleep(1.5)
+    if not RUN_AS:
+        skip("ring recording readable while recording", "the app's files cannot be read without run-as")
+        return
     files = sorted(x for x in sh(f"run-as {PKG} ls files/captures").split() if x.startswith("ring-"))
     local = tempfile.mktemp(suffix=".pcapng")
     with open(local, "wb") as f:

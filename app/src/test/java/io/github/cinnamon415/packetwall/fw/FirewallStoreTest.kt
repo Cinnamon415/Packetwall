@@ -137,4 +137,24 @@ class FirewallStoreTest {
         assertEquals(ids.toSet(), order.takeLast(3).toSet())
         assertTrue("important above the list", order.indexOf(ids[0]) < order.indexOf(ids[1]))
     }
+
+    @Test fun replaceImportOfAHandWrittenFileCompilesItsRules() = runTest {
+        // the shape tools/e2e sends through the debug TestConfigActivity
+        val text = """
+            {"format": "packetwall-rules", "formatVersion": 1, "lists": {},
+             "state": {"sets": [{"id": 1, "name": "Default"}, {"id": 2, "name": "Low"}],
+                       "order": [{"id": 1, "enabled": true}, {"id": 2, "enabled": true}],
+                       "rules": [{"id": 10, "setId": 1, "who": {"type": "global"},
+                                  "target": {"kind": "DOMAIN", "value": "example.org", "subdomains": true}, "action": "BLOCK"},
+                                 {"id": 11, "setId": 1, "who": {"type": "global"},
+                                  "target": {"kind": "DOMAIN", "value": "www.example.org", "subdomains": false}, "action": "ALLOW"}],
+                       "profiles": [{"id": 3, "name": "Main", "sets": [{"id": 1, "enabled": true}, {"id": 2, "enabled": true}]}],
+                       "activeProfile": 3, "nextId": 10000}}
+        """.trimIndent()
+        val s = store()
+        s.importJson(text, replace = true)
+        s.compileNow()
+        assertEquals(2, s.state.value.rules.size)
+        assertTrue(lastCompiled, lastCompiled.contains("example.org"))
+    }
 }
