@@ -50,6 +50,8 @@ class Settings(ctx: Context, private val box: SecretBox = SecretBox.keystore()) 
         val stream: Boolean = false,
         val streamPort: Int = 57012,
         val streamLan: Boolean = false,
+        /** Secret the LAN stream client must ask for (GET /<token>); made on first use. */
+        val streamToken: String = "",
         val record: Boolean = false,
         val recordMb: Int = 32,
         val recordMinutes: Int = 60,
@@ -84,7 +86,9 @@ class Settings(ctx: Context, private val box: SecretBox = SecretBox.keystore()) 
         lanBypass = prefs.getBoolean("lan_bypass", false),
         logBlockedOnly = prefs.getBoolean("log_blocked_only", false),
         stream = prefs.getBoolean("stream", false), streamPort = prefs.getInt("stream_port", 57012),
-        streamLan = prefs.getBoolean("stream_lan", false), record = prefs.getBoolean("record", false),
+        streamLan = prefs.getBoolean("stream_lan", false),
+        streamToken = prefs.getString("stream_token", null) ?: "",
+        record = prefs.getBoolean("record", false),
         recordMb = prefs.getInt(
             "record_mb",
             32
@@ -127,6 +131,7 @@ class Settings(ctx: Context, private val box: SecretBox = SecretBox.keystore()) 
             .putString("backup_uri", v.backupUri).putLong("last_backup", v.lastBackup)
             .putInt("log_days", v.logDays).putBoolean("lan_bypass", v.lanBypass).putBoolean("log_blocked_only", v.logBlockedOnly)
             .putBoolean("stream", v.stream).putInt("stream_port", v.streamPort).putBoolean("stream_lan", v.streamLan)
+            .putString("stream_token", v.streamToken)
             .putBoolean(
                 "record",
                 v.record

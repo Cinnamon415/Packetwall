@@ -26,8 +26,7 @@ class ProtectionWidget : AppWidgetProvider() {
                     CaptureService.stop(ctx)
                 } else if (VpnService.prepare(ctx) != null) {
                     ctx.startActivity(
-                        Intent(ctx, MainActivity::class.java).setAction(MainActivity.ACTION_TOGGLE_ON)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        Intent(ctx, VpnConsentActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     )
                 } else {
                     CaptureService.start(ctx)

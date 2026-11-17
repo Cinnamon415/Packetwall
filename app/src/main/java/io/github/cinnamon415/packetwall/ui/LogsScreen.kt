@@ -1,5 +1,7 @@
 package io.github.cinnamon415.packetwall.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
@@ -26,14 +29,18 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -41,10 +48,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +71,7 @@ import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.Settings
 import io.github.cinnamon415.packetwall.analysis.Dissector
+import io.github.cinnamon415.packetwall.analysis.PcapServer
 import io.github.cinnamon415.packetwall.engine.CaptureState
 import io.github.cinnamon415.packetwall.engine.Conn
 import io.github.cinnamon415.packetwall.ui.theme.LocalExtraColors
@@ -414,15 +424,17 @@ private fun CapturesTab(app: PacketwallApp) {
 @Composable
 private fun StreamCard(app: PacketwallApp, s: Settings.Values) {
     val st by app.pcapServer.state.collectAsState()
+    var howTo by rememberSaveable { mutableStateOf(false) }
     RoundedGroup {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(R.string.stream_title), style = MaterialTheme.typography.titleSmall)
                     Text(
                         when {
                             st.error != null -> problemText(st.error!!)
-                            st.running -> stringResource(R.string.stream_running, st.port, st.clients)
+                            st.running && st.lan -> stringResource(R.string.stream_lan_running, st.address, st.port, st.clients)
+                            st.running -> stringResource(R.string.stream_usb_running, st.clients)
                             else -> stringResource(R.string.stream_off)
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -432,9 +444,12 @@ private fun StreamCard(app: PacketwallApp, s: Settings.Values) {
                 Switch(s.stream, { v -> app.settings.update { it.copy(stream = v) } })
             }
             if (s.stream) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(s.streamLan, { v -> app.settings.update { it.copy(streamLan = v) } })
-                    Text(stringResource(R.string.stream_lan), style = MaterialTheme.typography.bodySmall)
+                Row(
+                    Modifier.fillMaxWidth().clickable { app.settings.update { it.copy(streamLan = !it.streamLan) } },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(s.streamLan, null, Modifier.padding(end = 8.dp))
+                    Text(stringResource(R.string.stream_lan), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 }
                 if (s.streamLan) {
                     Text(
@@ -443,19 +458,89 @@ private fun StreamCard(app: PacketwallApp, s: Settings.Values) {
                         color = MaterialTheme.colorScheme.error
                     )
                 }
-                val cmd = if (s.streamLan) {
-                    "nc <phone-ip> ${s.streamPort} | wireshark -k -i -"
-                } else {
-                    "adb forward tcp:${s.streamPort} tcp:${s.streamPort}\nnc 127.0.0.1 ${s.streamPort} | wireshark -k -i -"
-                }
-                Text(
-                    cmd,
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+                FilledTonalButton(onClick = { howTo = true }) { Text(stringResource(R.string.stream_how)) }
             }
+        }
+    }
+    if (howTo) StreamHowToSheet(app, s, st) { howTo = false }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StreamHowToSheet(app: PacketwallApp, s: Settings.Values, st: PcapServer.State, onDismiss: () -> Unit) {
+    var tab by rememberSaveable { mutableIntStateOf(if (s.streamLan) 1 else 0) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.stream_sheet_title), style = MaterialTheme.typography.titleLarge)
+            PrimaryTabRow(selectedTabIndex = tab) {
+                Tab(tab == 0, { tab = 0 }, text = { Text(stringResource(R.string.stream_tab_usb)) })
+                Tab(tab == 1, { tab = 1 }, text = { Text(stringResource(R.string.stream_tab_wifi)) })
+            }
+            val wireshark = "wireshark -k -i -"
+            val wiresharkWin = "\"C:\\Program Files\\Wireshark\\Wireshark.exe\" -k -i -"
+            if (tab == 0) {
+                val local = 57012
+                Step("1.", stringResource(R.string.stream_usb_step1))
+                Step("2.", stringResource(R.string.stream_usb_step2))
+                CopyCode("adb forward tcp:$local localabstract:${app.packageName}.pcap")
+                Step("3.", stringResource(R.string.stream_step_open))
+                CopyCode("curl -sN http://127.0.0.1:$local/ | $wireshark")
+                Text(stringResource(R.string.stream_step_open_win), style = MaterialTheme.typography.bodySmall)
+                CopyCode("curl -sN http://127.0.0.1:$local/ | $wiresharkWin")
+                Step("4.", stringResource(R.string.stream_step_done))
+                Text(
+                    stringResource(R.string.stream_usb_only_adb),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else if (!s.streamLan) {
+                Text(stringResource(R.string.stream_wifi_off), style = MaterialTheme.typography.bodyMedium)
+            } else {
+                val url = "http://${st.address.ifEmpty { "<IP>" }}:${s.streamPort}/${s.streamToken}"
+                Step("1.", stringResource(R.string.stream_wifi_step1))
+                Step("2.", stringResource(R.string.stream_step_open))
+                CopyCode("curl -sN $url | $wireshark")
+                Text(stringResource(R.string.stream_step_open_win), style = MaterialTheme.typography.bodySmall)
+                CopyCode("curl -sN $url | $wiresharkWin")
+                Step("3.", stringResource(R.string.stream_step_done))
+                Text(
+                    stringResource(R.string.stream_wifi_token),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(onClick = { app.settings.update { it.copy(streamToken = PcapServer.newToken()) } }) {
+                    Text(stringResource(R.string.stream_new_token))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun Step(n: String, text: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(n, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text(text, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** A command in a monospace box with a copy button. */
+@Composable
+fun CopyCode(text: String) {
+    val ctx = LocalContext.current
+    val copied = stringResource(R.string.copied)
+    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+        Row(Modifier.padding(start = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f).padding(vertical = 8.dp)
+            )
+            IconButton(onClick = {
+                ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("command", text))
+                Toast.makeText(ctx, copied, Toast.LENGTH_SHORT).show()
+            }) { Icon(painterResource(R.drawable.ic_copy), stringResource(R.string.copy)) }
         }
     }
 }

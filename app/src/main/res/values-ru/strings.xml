@@ -277,10 +277,9 @@
     <string name="tls_cert">Сертификат</string>
     <string name="tls_cert_encrypted">зашифрован (TLS 1.3)</string>
     <string name="stream_title">Трансляция на ПК (pcap-over-IP)</string>
-    <string name="stream_running">Слушает порт %1$d · клиентов: %2$d</string>
     <string name="stream_off">Живой поток pcapng для Wireshark</string>
     <string name="stream_lan">Разрешить подключения из локальной сети</string>
-    <string name="stream_lan_warn">Тогда любой в этой сети сможет читать захваченный трафик.</string>
+    <string name="stream_lan_warn">Любой в этой сети Wi-Fi, у кого есть ссылка с ключом, сможет читать захваченный трафик.</string>
     <string name="record_title">Непрерывная запись</string>
     <string name="record_hint">Кольцо файлов pcapng на устройстве</string>
     <string name="record_size">Размер файла</string>
@@ -342,4 +341,23 @@
     <string name="err_vpn_consent">Нет разрешения на VPN: откройте Packetwall и включите защиту</string>
     <string name="trackers_attribution">Данные о трекерах: AdGuard companiesdb, CC BY-SA 4.0</string>
     <string name="import_default_name">Импорт</string>
+    <string name="problem_no_lan">Нет подключения к Wi-Fi или Ethernet</string>
+    <string name="stream_usb_running">Готов для USB (adb) · клиентов: %1$d</string>
+    <string name="stream_lan_running">Слушает %1$s:%2$d · клиентов: %3$d</string>
+    <string name="stream_how">Как подключиться</string>
+    <string name="stream_sheet_title">Подключить Wireshark</string>
+    <string name="stream_tab_usb">По USB</string>
+    <string name="stream_tab_wifi">По Wi-Fi</string>
+    <string name="stream_usb_step1">Подключите телефон к компьютеру кабелем, отладка по USB должна быть включена (Для разработчиков → Отладка по USB).</string>
+    <string name="stream_usb_step2">Перенаправьте поток на компьютере:</string>
+    <string name="stream_step_open">Откройте его в Wireshark (Linux, macOS):</string>
+    <string name="stream_step_open_win">Windows (в cmd, не в PowerShell):</string>
+    <string name="stream_step_done">Wireshark начнёт показывать пакеты, а здесь увеличится число клиентов.</string>
+    <string name="stream_usb_only_adb">Подключиться может только adb: другие приложения на телефоне поток не прочитают.</string>
+    <string name="stream_wifi_off">Сначала включите «Разрешить подключения из локальной сети».</string>
+    <string name="stream_wifi_step1">Компьютер должен быть в той же сети Wi-Fi, что и телефон.</string>
+    <string name="stream_wifi_token">В ссылке есть секретный ключ: без него телефон откажет в подключении. Любой, у кого есть ссылка, может читать трафик, поэтому если она утекла — сделайте новый ключ.</string>
+    <string name="stream_new_token">Новый ключ</string>
+    <string name="copy">Копировать</string>
+    <string name="copied">Скопировано</string>
 </resources>

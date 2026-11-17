@@ -1,6 +1,7 @@
 package io.github.cinnamon415.packetwall
 
 import android.content.Context
+import io.github.cinnamon415.packetwall.analysis.PcapServer
 import io.github.cinnamon415.packetwall.fw.ForeignImport
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -41,6 +42,9 @@ sealed interface Problem {
 
     data object FileAccess : Problem
 
+    /** No Wi-Fi or Ethernet network to listen on. */
+    data object NoLan : Problem
+
     data class Unsupported(val reason: ForeignImport.Unsupported.Reason) : Problem
 
     /** Anything else, with the technical detail (English, for bug reports). */
@@ -54,6 +58,7 @@ sealed interface Problem {
         BadData -> "bad-data"
         is PortInUse -> "port:$port"
         FileAccess -> "file"
+        NoLan -> "no-lan"
         is Unsupported -> "unsupported:${reason.name}"
         is Other -> detail
     }
@@ -66,6 +71,7 @@ sealed interface Problem {
         BadData -> ctx.getString(R.string.problem_bad_data)
         is PortInUse -> ctx.getString(R.string.problem_port, port)
         FileAccess -> ctx.getString(R.string.problem_file)
+        NoLan -> ctx.getString(R.string.problem_no_lan)
         is Unsupported -> ctx.getString(
             when (reason) {
                 ForeignImport.Unsupported.Reason.SINGBOX_BINARY -> R.string.problem_srs_binary
@@ -78,6 +84,7 @@ sealed interface Problem {
     companion object {
         fun of(e: Throwable, port: Int = 0): Problem = when (e) {
             is HttpStatusException -> Http(e.code)
+            is PcapServer.NoLanException -> NoLan
             is BadDataException, is SerializationException, is ZipException -> BadData
             is ForeignImport.Unsupported -> Unsupported(e.reason)
             is BindException -> PortInUse(port)
@@ -97,6 +104,7 @@ sealed interface Problem {
             s == "tls" -> Secure
             s == "bad-data" -> BadData
             s == "file" -> FileAccess
+            s == "no-lan" -> NoLan
             s.startsWith("http:") -> s.substring(5).toIntOrNull()?.let(::Http) ?: Other(s)
             s.startsWith("port:") -> s.substring(5).toIntOrNull()?.let(::PortInUse) ?: Other(s)
             s.startsWith("unsupported:") ->

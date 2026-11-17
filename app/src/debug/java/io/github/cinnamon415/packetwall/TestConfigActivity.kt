@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Bundle
 import android.util.Base64
 import android.util.Log
+import io.github.cinnamon415.packetwall.engine.CaptureService
 import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -14,8 +15,10 @@ import kotlinx.serialization.json.jsonObject
 /**
  * Debug builds only. Applies a test configuration sent by tools/e2e:
  *   am start -n <pkg>/io.github.cinnamon415.packetwall.TestConfigActivity \
- *       --es fw <base64 export JSON> --es settings <base64 {"key": value}>
+ *       --es fw <base64 export JSON> --es settings <base64 {"key": value}> --es protection on|off
  * The firewall state replaces the current one (import with replace); settings are written and reloaded.
+ * "protection" starts or stops the VPN (consent must already be granted, e.g. appops ACTIVATE_VPN allow):
+ * release builds have no way for another app or the shell to toggle protection.
  */
 class TestConfigActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,6 +47,10 @@ class TestConfigActivity : Activity() {
                     "TestConfig",
                     "imported $sum; order=${st.order} active=${st.activeProfile} loaded=${app.firewall.loaded.value}"
                 )
+            }
+            when (intent.getStringExtra("protection")) {
+                "on" -> CaptureService.start(this)
+                "off" -> CaptureService.stop(this)
             }
             Log.i("TestConfig", "applied (protection running: ${CaptureStatus.state.value})")
         } catch (e: Exception) {

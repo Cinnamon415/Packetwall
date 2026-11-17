@@ -32,6 +32,14 @@
             </intent-filter>
         </activity>
 
+        <!-- VPN consent for the tile and widget; not exported, so other apps cannot toggle protection -->
+        <activity
+            android:name=".system.VpnConsentActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <service
             android:name=".engine.CaptureService"
             android:exported="false"

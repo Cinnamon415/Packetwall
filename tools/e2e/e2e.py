@@ -17,6 +17,7 @@ HOST = os.environ.get("HOST", "10.0.2.2")    # the host as seen from the device 
 ROOTED = False                                # adb root available (emulator) or not (Waydroid)
 RUN_AS = True                                 # run-as works (not in Waydroid's LXC container)
 ACTIVITY = f"{PKG}/io.github.cinnamon415.packetwall.MainActivity"
+TESTCONF = f"{PKG}/io.github.cinnamon415.packetwall.TestConfigActivity"
 PROXY_LOG = os.environ.get("PROXY_LOG", "")
 results = []
 
@@ -63,7 +64,7 @@ def vpn_up():
 
 def stop():
     if ROOTED: sh(f"am startservice -n {SVC} -a io.github.cinnamon415.packetwall.STOP")
-    else: sh(f"am start -n {ACTIVITY} -a io.github.cinnamon415.packetwall.TOGGLE_OFF")
+    else: sh(f"am start -W -n {TESTCONF} --es protection off")
     for _ in range(20):
         if not vpn_up():
             return
@@ -73,7 +74,7 @@ def stop():
 def start():
     sh(f"appops set {PKG} ACTIVATE_VPN allow")
     if ROOTED: sh(f"am start-foreground-service -n {SVC} -a io.github.cinnamon415.packetwall.START")
-    else: sh(f"am start -n {ACTIVITY} -a io.github.cinnamon415.packetwall.TOGGLE_ON")
+    else: sh(f"am start -W -n {TESTCONF} --es protection on")
     for _ in range(30):
         if vpn_up():
             time.sleep(2.5)       # rules compiled + loop started
@@ -119,7 +120,7 @@ def configure(rules=(), sets=None, order=None, settings=None, lists=None):
         export = {"format": "packetwall-rules", "formatVersion": 1, "state": state,
                   "lists": {str(k): v for k, v in (lists or {}).items()}}
         b64 = lambda o: base64.b64encode(json.dumps(o).encode()).decode()
-        sh(f"am start -W -n {PKG}/io.github.cinnamon415.packetwall.TestConfigActivity --es settings {b64(base)} --es fw {b64(export)}")
+        sh(f"am start -W -n {TESTCONF} --es settings {b64(base)} --es fw {b64(export)}")
         time.sleep(1.5)
     start()
 
@@ -182,6 +183,14 @@ def s_baseline():
     configure()
     check("baseline: example.org allowed", allowed("example.org"))
     check("baseline: wikipedia allowed", allowed("www.wikipedia.org"))
+
+
+def s_toggle_guard():
+    # another app (here: the shell) must not be able to switch protection off through the launcher
+    configure()
+    sh(f"am start -n {ACTIVITY} -a io.github.cinnamon415.packetwall.TOGGLE_OFF")
+    time.sleep(3)
+    check("other apps cannot turn protection off", vpn_up())
 
 
 def s_domain_rules():
@@ -288,7 +297,9 @@ def s_geo():
 
 def s_streaming():
     configure(settings={"stream": True, "record": True, "record_mb": 8})
-    adb("forward", "tcp:57012", "tcp:57012")
+    # USB mode: an abstract unix socket only adb may use; no TCP port is open on the phone
+    check("stream: no TCP port open to other apps", "open" not in sh("nc -z -w 2 127.0.0.1 57012 && echo open"))
+    adb("forward", "tcp:57012", f"localabstract:{PKG}.pcap")
     out = tempfile.mktemp(suffix=".pcapng")
     p = subprocess.Popen(f"timeout 8 nc 127.0.0.1 57012 > {out}", shell=True)
     time.sleep(2)
@@ -310,6 +321,28 @@ def s_streaming():
     check("ring recording readable while recording", m2 and int(m2.group(1)) > 5, m2.group(0) if m2 else "")
 
 
+def s_stream_lan():
+    # LAN mode: only reachable over the device's own network address (Waydroid / phones on Wi-Fi)
+    if ":" not in SERIAL:
+        skip("stream LAN mode", "the host cannot reach an emulator's address directly")
+        return
+    dev = SERIAL.split(":")[0]
+    token = "e2etoken23"
+    configure(settings={"stream": True, "stream_lan": True, "stream_port": 57013, "stream_token": token})
+    time.sleep(1)
+    bad = subprocess.run(["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "-m", "5", f"http://{dev}:57013/wrong"],
+                         capture_output=True, text=True).stdout
+    check("stream LAN: wrong key refused", bad == "403", bad)
+    out = tempfile.mktemp(suffix=".pcapng")
+    p = subprocess.Popen(f"timeout 6 curl -sN http://{dev}:57013/{token} > {out}", shell=True)
+    time.sleep(1.5)
+    http("example.org")
+    p.wait()
+    n = subprocess.run(["capinfos", "-c", out], capture_output=True, text=True).stdout
+    m = re.search(r"Number of packets:\s+(\d+)", n)
+    check("stream LAN: right key gets a readable pcapng", m and int(m.group(1)) > 3, m.group(0) if m else n[-200:])
+
+
 def s_stress():
     configure([rule(10, 1, G, "DOMAIN", "example.org", True)])
     sh("for i in $(seq 1 60); do (printf 'GET / HTTP/1.0\\r\\nHost: www.wikipedia.org\\r\\n\\r\\n' | timeout 8 toybox nc www.wikipedia.org 80 >/dev/null 2>&1 &); "
@@ -319,8 +352,8 @@ def s_stress():
     check("stress: still filtering", refused(http("example.org")) and allowed("www.wikipedia.org"))
 
 
-SCENARIOS = [s_baseline, s_domain_rules, s_app_rules, s_set_priority, s_ip_port_reject, s_blocklist, s_disabled_set,
-             s_doh, s_upstream_socks, s_upstream_http, s_kill_switch, s_route_rule, s_geo, s_streaming, s_stress]
+SCENARIOS = [s_baseline, s_toggle_guard, s_domain_rules, s_app_rules, s_set_priority, s_ip_port_reject, s_blocklist, s_disabled_set,
+             s_doh, s_upstream_socks, s_upstream_http, s_kill_switch, s_route_rule, s_geo, s_streaming, s_stream_lan, s_stress]
 
 
 def main():

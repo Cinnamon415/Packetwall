@@ -3,6 +3,8 @@ package io.github.cinnamon415.packetwall
 import android.app.Application
 import android.content.ComponentName
 import android.content.res.Configuration
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.service.quicksettings.TileService
 import io.github.cinnamon415.packetwall.analysis.ConnFilter
 import io.github.cinnamon415.packetwall.analysis.DiskRecorder
@@ -22,6 +24,8 @@ import io.github.cinnamon415.packetwall.system.ProtectionWidget
 import io.github.cinnamon415.packetwall.system.Schedules
 import io.github.cinnamon415.packetwall.ui.Units
 import java.io.File
+import java.net.Inet4Address
+import java.net.InetAddress
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,21 +44,48 @@ class PacketwallApp : Application() {
     lateinit var settings: Settings
         private set
     val packets = PacketStore()
-    val pcapServer by lazy { PcapServer(packets) }
+    val pcapServer by lazy { PcapServer(packets, "$packageName.pcap", ::lanAddress) }
+
+    /** The IPv4 address of the Wi-Fi or Ethernet network (not the VPN), for the LAN stream. */
+    private fun lanAddress(): InetAddress? {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return null
+        @Suppress("DEPRECATION") // allNetworks: the callback API would be overkill for a one-off lookup
+        return cm.allNetworks.asSequence()
+            .filter { n ->
+                val c = cm.getNetworkCapabilities(n) ?: return@filter false
+                !c.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+                    (c.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || c.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET))
+            }
+            .flatMap { cm.getLinkProperties(it)?.linkAddresses.orEmpty().asSequence() }
+            .map { it.address }
+            .firstOrNull { it is Inet4Address && !it.isLoopbackAddress }
+    }
     val recorder by lazy { DiskRecorder(packets, File(filesDir, "captures")) }
 
+    private var streamToken = ""
+
     /** Starts/stops streaming and recording to match the settings while protection is on. */
+    @Synchronized
     fun applySinks(running: Boolean) {
         val s = settings.current
         val wantStream = running && s.capturePackets && s.stream
         val st = pcapServer.state.value
-        if (wantStream && (!st.running || st.port != s.streamPort || st.lan != s.streamLan)) {
-            pcapServer.start(s.streamPort, s.streamLan)
+        if (wantStream && s.streamLan && s.streamToken.isEmpty()) {
+            settings.update { it.copy(streamToken = PcapServer.newToken()) } // applySinks runs again
+            return
+        }
+        if (wantStream &&
+            (!st.running || st.lan != s.streamLan || (s.streamLan && (st.port != s.streamPort || streamToken != s.streamToken)))
+        ) {
+            streamToken = s.streamToken
+            pcapServer.start(s.streamPort, s.streamLan, s.streamToken)
         } else if (!wantStream && st.running) {
             pcapServer.stop()
         }
         val wantRec = running && s.capturePackets && s.record
-        if (wantRec && !recorder.state.value.running) {
+        val rec = recorder.state.value
+        val recChanged = rec.maxMb != s.recordMb || rec.maxMinutes != s.recordMinutes || rec.keep != s.recordKeep
+        if (wantRec && (!rec.running || recChanged)) {
             recorder.start(s.recordMb, s.recordMinutes, s.recordKeep)
         } else if (!wantRec && recorder.state.value.running) {
             recorder.stop()
@@ -104,7 +135,7 @@ class PacketwallApp : Application() {
         CoroutineScope(Dispatchers.IO).launch {
             combine(settings.values, CaptureStatus.state) { s, st ->
                 Triple(
-                    listOf(s.stream, s.streamLan, s.record, s.capturePackets),
+                    listOf(s.stream, s.streamLan, s.record, s.capturePackets, s.streamToken),
                     listOf(s.streamPort, s.recordMb, s.recordMinutes, s.recordKeep),
                     st is CaptureState.Running
                 )
