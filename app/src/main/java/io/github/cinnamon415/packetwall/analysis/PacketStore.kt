@@ -1,12 +1,14 @@
 package io.github.cinnamon415.packetwall.analysis
 
 import io.github.cinnamon415.packetwall.engine.Conn
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import java.io.ByteArrayOutputStream
 import java.io.OutputStream
 import java.net.InetAddress
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * In-memory ring of captured packets, fed with the pcapng stream of the native dumper
@@ -28,7 +30,7 @@ class PacketStore {
         /** The raw EPB; the packet (raw IP) is at [DATA_OFF] for [capLen] bytes. */
         val block: ByteArray,
         val capLen: Int,
-        val key: String,
+        val key: String
     ) {
         val dataOff get() = DATA_OFF
     }
@@ -38,17 +40,19 @@ class PacketStore {
         /** Called first with the file preamble + metadata blocks, then with every new block. */
         fun onBlock(block: ByteArray)
     }
-    private val sinks = java.util.concurrent.CopyOnWriteArrayList<Sink>()
+    private val sinks = CopyOnWriteArrayList<Sink>()
 
     fun addSink(s: Sink) {
         synchronized(lock) { s.onBlock(header()) }
         sinks.add(s)
     }
-    fun removeSink(s: Sink) { sinks.remove(s) }
+    fun removeSink(s: Sink) {
+        sinks.remove(s)
+    }
 
     /** SHB + IDB + metadata blocks: the start of a valid pcapng file. */
     fun header(): ByteArray = synchronized(lock) {
-        val o = java.io.ByteArrayOutputStream()
+        val o = ByteArrayOutputStream()
         o.write(if (preamble.isEmpty()) defaultPreamble() else preamble)
         extraBlocks.values.forEach { o.write(it) }
         o.toByteArray()
@@ -62,6 +66,7 @@ class PacketStore {
     private var preamble = ByteArray(0)
     private val extraBlocks = LinkedHashMap<String, ByteArray>()
     private var pending = ByteArray(0)
+
     @Volatile var capacity = 16L shl 20
 
     data class Info(val packets: Int = 0, val bytes: Long = 0, val dropped: Long = 0, val firstTs: Long = 0)
@@ -75,8 +80,13 @@ class PacketStore {
 
     fun reset(capacityBytes: Long) = synchronized(lock) {
         capacity = capacityBytes
-        packets.clear(); byKey.clear(); bytes = 0; evicted = 0
-        preamble = ByteArray(0); extraBlocks.clear(); pending = ByteArray(0)
+        packets.clear()
+        byKey.clear()
+        bytes = 0
+        evicted = 0
+        preamble = ByteArray(0)
+        extraBlocks.clear()
+        pending = ByteArray(0)
         _info.value = Info()
         _version.value = _version.value + 1
     }
@@ -90,13 +100,19 @@ class PacketStore {
             while (data.size - pos >= 12) {
                 val type = bb.getInt(pos)
                 val len = bb.getInt(pos + 4)
-                if (len < 12 || len % 4 != 0) { pos = data.size; break }   // corrupt: drop the rest
+                if (len < 12 || len % 4 != 0) {
+                    pos = data.size
+                    break
+                } // corrupt: drop the rest
                 if (data.size - pos < len) break
                 val block = data.copyOfRange(pos, pos + len)
                 when (type) {
-                    0x0A0D0D0A, 0x00000001 -> preamble += block               // SHB, IDB
-                    0x00000006 -> { addEpb(block); sinks.forEach { it.onBlock(block) } }
-                    else -> {                                                   // uid map, secrets…
+                    0x0A0D0D0A, 0x00000001 -> preamble += block // SHB, IDB
+                    0x00000006 -> {
+                        addEpb(block)
+                        sinks.forEach { it.onBlock(block) }
+                    }
+                    else -> { // uid map, secrets…
                         if (extraBlocks.put(block.contentHashCode().toString(), block) == null) sinks.forEach { it.onBlock(block) }
                     }
                 }
@@ -130,8 +146,11 @@ class PacketStore {
             when (code) {
                 1 -> {
                     val s = String(block, v, olen, Charsets.US_ASCII)
-                    if (s.startsWith("u-")) uid = s.substring(2).toIntOrNull() ?: -1
-                    else if (s == "dropped") dropped = true
+                    if (s.startsWith("u-")) {
+                        uid = s.substring(2).toIntOrNull() ?: -1
+                    } else if (s == "dropped") {
+                        dropped = true
+                    }
                 }
                 2 -> if (olen >= 4) tx = (bb.getInt(v) and 0x3) != 1
             }
@@ -147,7 +166,10 @@ class PacketStore {
             val old = packets.removeFirst()
             bytes -= old.block.size
             evicted++
-            byKey[old.key]?.let { q -> q.removeFirstOrNull(); if (q.isEmpty()) byKey.remove(old.key) }
+            byKey[old.key]?.let { q ->
+                q.removeFirstOrNull()
+                if (q.isEmpty()) byKey.remove(old.key)
+            }
         }
     }
 
@@ -173,13 +195,14 @@ class PacketStore {
         val shb = ByteBuffer.allocate(28).order(ByteOrder.LITTLE_ENDIAN)
             .putInt(0x0A0D0D0A).putInt(28).putInt(0x1A2B3C4D).putShort(1).putShort(0).putLong(-1L).putInt(28)
         val idb = ByteBuffer.allocate(20).order(ByteOrder.LITTLE_ENDIAN)
-            .putInt(1).putInt(20).putShort(101 /* LINKTYPE_RAW */).putShort(0).putInt(0).putInt(20)
+            .putInt(1).putInt(20).putShort(LINKTYPE_RAW).putShort(0).putInt(0).putInt(20)
         return shb.array() + idb.array()
     }
 
     companion object {
         /** Offset of the packet data inside an EPB. */
         const val DATA_OFF = 28
+        private const val LINKTYPE_RAW: Short = 101
 
         private fun hex(b: ByteArray, off: Int, len: Int): String {
             val sb = StringBuilder(len * 2)
@@ -191,21 +214,29 @@ class PacketStore {
         fun keyOf(b: ByteArray, off: Int, len: Int, tx: Boolean): String? {
             if (len < 20) return null
             val ver = (b[off].toInt() shr 4) and 0xf
-            val proto: Int; val src: String; val dst: String; val l4: Int
+            val proto: Int
+            val src: String
+            val dst: String
+            val l4: Int
             when (ver) {
                 4 -> {
                     val ihl = (b[off].toInt() and 0xf) * 4
                     proto = b[off + 9].toInt() and 0xff
-                    src = hex(b, off + 12, 4); dst = hex(b, off + 16, 4); l4 = off + ihl
+                    src = hex(b, off + 12, 4)
+                    dst = hex(b, off + 16, 4)
+                    l4 = off + ihl
                 }
                 6 -> {
                     if (len < 40) return null
                     proto = b[off + 6].toInt() and 0xff
-                    src = hex(b, off + 8, 16); dst = hex(b, off + 24, 16); l4 = off + 40
+                    src = hex(b, off + 8, 16)
+                    dst = hex(b, off + 24, 16)
+                    l4 = off + 40
                 }
                 else -> return null
             }
-            var sp = 0; var dp = 0
+            var sp = 0
+            var dp = 0
             if ((proto == 6 || proto == 17) && l4 + 4 <= off + len) {
                 sp = ((b[l4].toInt() and 0xff) shl 8) or (b[l4 + 1].toInt() and 0xff)
                 dp = ((b[l4 + 2].toInt() and 0xff) shl 8) or (b[l4 + 3].toInt() and 0xff)
@@ -220,6 +251,8 @@ class PacketStore {
             val icmp = c.ipproto == 1 || c.ipproto == 58
             val p = if (c.ipproto == 58) 1 else c.ipproto
             "$p|${hex(s, 0, s.size)}|${if (icmp) 0 else c.srcPort}|${hex(d, 0, d.size)}|${if (icmp) 0 else c.dstPort}"
-        } catch (e: Exception) { null }
+        } catch (e: Exception) {
+            null
+        }
     }
 }

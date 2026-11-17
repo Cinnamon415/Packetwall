@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
@@ -23,7 +24,7 @@ private val Light = lightColorScheme(
     surfaceContainerHighest = Color(0xFFD7D9E3),
     outline = Color(0xFF74777F), outlineVariant = Color(0xFFC4C6D0),
     error = Color(0xFFBA1A1A), onError = Color.White,
-    errorContainer = Color(0xFFFFDAD6), onErrorContainer = Color(0xFF410002),
+    errorContainer = Color(0xFFFFDAD6), onErrorContainer = Color(0xFF410002)
 )
 
 private val Dark = darkColorScheme(
@@ -38,7 +39,7 @@ private val Dark = darkColorScheme(
     surfaceContainerHighest = Color(0xFF33363E),
     outline = Color(0xFF8E9099), outlineVariant = Color(0xFF44474E),
     error = Color(0xFFFFB4AB), onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A), onErrorContainer = Color(0xFFFFDAD6),
+    errorContainer = Color(0xFF93000A), onErrorContainer = Color(0xFFFFDAD6)
 )
 
 /** Semantic colors that Material 3 has no slot for. */
@@ -53,7 +54,7 @@ val Mono = FontFamily.Monospace
 
 @Composable
 fun PacketwallTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    androidx.compose.runtime.CompositionLocalProvider(LocalExtraColors provides if (dark) DarkExtra else LightExtra) {
+    CompositionLocalProvider(LocalExtraColors provides if (dark) DarkExtra else LightExtra) {
         MaterialTheme(colorScheme = if (dark) Dark else Light, content = content)
     }
 }

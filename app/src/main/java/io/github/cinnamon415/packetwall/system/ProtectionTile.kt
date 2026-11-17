@@ -22,7 +22,7 @@ class ProtectionTile : TileService() {
         if (running) {
             CaptureService.stop(this)
         } else if (VpnService.prepare(this) != null) {
-            openApp(MainActivity.ACTION_TOGGLE_ON)   // VPN consent needs an activity
+            openApp(MainActivity.ACTION_TOGGLE_ON) // VPN consent needs an activity
         } else {
             try {
                 CaptureService.start(this)
@@ -36,9 +36,12 @@ class ProtectionTile : TileService() {
 
     private fun openApp(action: String) {
         val i = Intent(this, MainActivity::class.java).setAction(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (Build.VERSION.SDK_INT >= 34)
+        if (Build.VERSION.SDK_INT >= 34) {
             startActivityAndCollapse(PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_IMMUTABLE))
-        else @Suppress("DEPRECATION") startActivityAndCollapse(i)
+        } else {
+            @Suppress("DEPRECATION")
+            startActivityAndCollapse(i)
+        }
     }
 
     private fun refresh(on: Boolean = CaptureService.state.value is CaptureState.Running) {

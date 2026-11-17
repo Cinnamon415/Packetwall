@@ -1,6 +1,7 @@
 package io.github.cinnamon415.packetwall.engine
 
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Process
 import java.util.concurrent.ConcurrentHashMap
@@ -28,8 +29,12 @@ class AppsResolver(private val ctx: Context) {
     fun installed(): List<AppInfo> {
         val pm = ctx.packageManager
         val list = pm.getInstalledApplications(0).map { ai ->
-            AppInfo(ai.uid, ai.packageName, pm.getApplicationLabel(ai).toString(),
-                (ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0)
+            AppInfo(
+                ai.uid,
+                ai.packageName,
+                pm.getApplicationLabel(ai).toString(),
+                (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+            )
         }
         return SPECIAL.keys.map { get(it) } + list.filter { it.packageName !in SPECIAL.values }
     }
@@ -40,8 +45,12 @@ class AppsResolver(private val ctx: Context) {
         return try {
             val pm = ctx.packageManager
             val ai = pm.getApplicationInfo(pkg, 0)
-            AppInfo(ai.uid, pkg, pm.getApplicationLabel(ai).toString(),
-                (ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0)
+            AppInfo(
+                ai.uid,
+                pkg,
+                pm.getApplicationLabel(ai).toString(),
+                (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+            )
         } catch (e: PackageManager.NameNotFoundException) {
             null
         }
@@ -51,13 +60,14 @@ class AppsResolver(private val ctx: Context) {
         special(uid)?.let { return it }
         val pm = ctx.packageManager
         val pkgs = pm.getPackagesForUid(uid)
-        if (pkgs.isNullOrEmpty())
+        if (pkgs.isNullOrEmpty()) {
             return AppInfo(uid, "uid:$uid", "uid $uid", true)
+        }
         val pkg = pkgs.sorted().first()
         return try {
             val ai = pm.getApplicationInfo(pkg, 0)
             val label = pm.getApplicationLabel(ai).toString()
-            val sys = (ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+            val sys = (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0
             AppInfo(uid, pkg, if (pkgs.size > 1) "$label (+${pkgs.size - 1})" else label, sys)
         } catch (e: PackageManager.NameNotFoundException) {
             AppInfo(uid, pkg, pkg, true)
@@ -78,7 +88,13 @@ class AppsResolver(private val ctx: Context) {
 
     companion object {
         /** System uids without a package of their own, mapped to pseudo-package names. */
-        val SPECIAL = linkedMapOf(-1 to "unknown", 0 to "root", Process.SYSTEM_UID to "android",
-            1001 to "phone", 1051 to "netd", 1052 to "dns_tether")
+        val SPECIAL = linkedMapOf(
+            -1 to "unknown",
+            0 to "root",
+            Process.SYSTEM_UID to "android",
+            1001 to "phone",
+            1051 to "netd",
+            1052 to "dns_tether"
+        )
     }
 }

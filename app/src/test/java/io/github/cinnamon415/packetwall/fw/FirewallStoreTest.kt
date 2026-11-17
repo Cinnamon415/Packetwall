@@ -1,5 +1,6 @@
 package io.github.cinnamon415.packetwall.fw
 
+import java.io.File
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -11,7 +12,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import java.io.File
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FirewallStoreTest {
@@ -23,12 +23,15 @@ class FirewallStoreTest {
     private fun TestScope.store(dir: File = tmp.root) = FirewallStore(
         dir = dir,
         uidOf = { uids[it] },
-        loader = { path -> lastCompiled = File(path).readText(); 0 },
+        loader = { path ->
+            lastCompiled = File(path).readText()
+            0
+        },
         defaultSetName = "Default",
         defaultProfileName = "Main",
         lists = { url -> "||ads.$url^\n@@||ok.$url^\nexample.com##.banner\n".reader().buffered() },
         io = UnconfinedTestDispatcher(testScheduler),
-        scope = TestScope(UnconfinedTestDispatcher(testScheduler)),
+        scope = TestScope(UnconfinedTestDispatcher(testScheduler))
     )
 
     private fun rule(set: Int, who: Who, value: String, action: Action = Action.BLOCK) =
@@ -52,14 +55,14 @@ class FirewallStoreTest {
     @Test fun profilesFollowTheLiveConfiguration() = runTest {
         val s = store()
         val work = s.addSet("Work")
-        s.addProfile("Strict")                           // snapshot of the current order, becomes active
+        s.addProfile("Strict") // snapshot of the current order, becomes active
         val strict = s.state.value.activeProfile!!
-        s.setEnabled(work, false)                        // edits the active profile ("Strict")
+        s.setEnabled(work, false) // edits the active profile ("Strict")
         assertFalse(s.state.value.profiles.first { it.id == strict }.sets.first { it.id == work }.enabled)
         val main = s.state.value.profiles.first { it.name == "Main" }.id
         s.activateProfile(main)
         assertTrue("Main had Work enabled", s.state.value.isEnabled(work))
-        val later = s.addSet("Later")                    // other profiles get new sets appended, disabled
+        val later = s.addSet("Later") // other profiles get new sets appended, disabled
         assertFalse(s.state.value.profiles.first { it.id == strict }.sets.first { it.id == later }.enabled)
         s.deleteSet(work)
         assertTrue(s.state.value.profiles.all { p -> p.sets.none { it.id == work } })
@@ -122,9 +125,12 @@ class FirewallStoreTest {
 
     @Test fun foreignImportLandsInNewSetsAtTheLowestPriority() = runTest {
         val s = store()
-        val plan = ForeignImport.Plan(ForeignImport.Format.LIST,
+        val plan = ForeignImport.Plan(
+            ForeignImport.Format.LIST,
             rules = listOf(Rule(0, 0, Who.App("com.a"), Target(TargetKind.DOMAIN, "pay.example", true), Action.BLOCK)),
-            entries = listOf("ads.example"), important = listOf("track.example"))
+            entries = listOf("ads.example"),
+            important = listOf("track.example")
+        )
         val ids = s.applyImport("Imp", plan, Action.BLOCK)
         assertEquals(3, ids.size)
         val order = s.state.value.order.map { it.id }

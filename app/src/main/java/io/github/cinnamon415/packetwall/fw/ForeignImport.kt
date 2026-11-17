@@ -1,8 +1,8 @@
 package io.github.cinnamon415.packetwall.fw
 
+import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -12,7 +12,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.w3c.dom.Element
-import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * Converts rules of other firewalls into Packetwall rules (spec 3). Packetwall has no network-type
@@ -21,8 +20,14 @@ import javax.xml.parsers.DocumentBuilderFactory
  */
 object ForeignImport {
     enum class Format(val label: String) {
-        AUTO("Auto"), LIST("hosts / domains / uBO / AdGuard"), PCAPDROID("PCAPdroid"), NETGUARD("NetGuard"),
-        AFWALL("AFWall+"), RETHINK("RethinkDNS"), SINGBOX("sing-box rule-set"), PACKETWALL("Packetwall JSON"),
+        AUTO("Auto"),
+        LIST("hosts / domains / uBO / AdGuard"),
+        PCAPDROID("PCAPdroid"),
+        NETGUARD("NetGuard"),
+        AFWALL("AFWall+"),
+        RETHINK("RethinkDNS"),
+        SINGBOX("sing-box rule-set"),
+        PACKETWALL("Packetwall JSON")
     }
 
     /** Installed app, for "block every app not listed" translations. */
@@ -38,28 +43,36 @@ object ForeignImport {
         val important: List<String> = emptyList(),
         val skipped: Int = 0,
         val samples: List<String> = emptyList(),
-        val notes: List<String> = emptyList(),
+        val notes: List<String> = emptyList()
     ) {
         val empty get() = rules.isEmpty() && entries.isEmpty() && important.isEmpty()
     }
 
     class Unsupported(msg: String) : Exception(msg)
 
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+    }
 
     fun detect(bytes: ByteArray): Format {
         if (bytes.size >= 4 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()) return Format.RETHINK
         if (bytes.size >= 3 && String(bytes, 0, 3, Charsets.ISO_8859_1) == "SRS") return Format.SINGBOX
-        val head = String(bytes, 0, minOf(bytes.size, 4096), Charsets.UTF_8).trimStart('﻿', ' ', '\n', '\r', '\t')
+        val head = String(bytes, 0, minOf(bytes.size, 4096), Charsets.UTF_8).trimStart('\uFEFF', ' ', '\n', '\r', '\t')
         if (head.startsWith("<")) return if (head.contains("<netguard")) Format.NETGUARD else Format.LIST
         if (head.startsWith("{") || head.startsWith("[")) {
-            val root = try { json.parseToJsonElement(String(bytes, Charsets.UTF_8)) } catch (e: Exception) { return Format.LIST }
+            val root = try {
+                json.parseToJsonElement(String(bytes, Charsets.UTF_8))
+            } catch (e: Exception) {
+                return Format.LIST
+            }
             val o = root as? JsonObject ?: return Format.LIST
             return when {
                 o["format"]?.jsonPrimitive?.contentOrNull == ExportFile.FORMAT -> Format.PACKETWALL
                 o.containsKey("settings") && (o["settings"] as? JsonObject)?.containsKey("bl") == true -> Format.PCAPDROID
                 o.containsKey("mode") && (o.containsKey("v2") || o.containsKey("rules") || o.containsKey("default")) -> Format.AFWALL
-                (o["rules"] as? JsonArray)?.firstOrNull()?.let { it is JsonObject && it.containsKey("type") && it.containsKey("value") } == true -> Format.PCAPDROID
+                (o["rules"] as? JsonArray)?.firstOrNull()?.let { it is JsonObject && it.containsKey("type") && it.containsKey("value") } ==
+                    true -> Format.PCAPDROID
                 o.containsKey("rules") && o.containsKey("version") -> Format.SINGBOX
                 else -> Format.LIST
             }
@@ -71,7 +84,10 @@ object ForeignImport {
         var skipped = 0
         val samples = ArrayList<String>()
         val notes = LinkedHashSet<String>()
-        fun skip(what: String) { skipped++; if (samples.size < 30) samples.add(what.take(200)) }
+        fun skip(what: String) {
+            skipped++
+            if (samples.size < 30) samples.add(what.take(200))
+        }
     }
 
     private fun rule(who: Who, target: Target, action: Action, proto: Proto = Proto.ANY, port: Int = 0) =
@@ -103,7 +119,9 @@ object ForeignImport {
                 rules += pcapdroidList(json.parseToJsonElement(it).jsonObject, Action.ALLOW, r)
                 r.notes.add("PCAPdroid whitelist mode is not supported: its apps were imported as allow rules")
             }
-        } else rules += pcapdroidList(root, Action.BLOCK, r)
+        } else {
+            rules += pcapdroidList(root, Action.BLOCK, r)
+        }
         return Plan(Format.PCAPDROID, rules, skipped = r.skipped, samples = r.samples, notes = r.notes.toList())
     }
 
@@ -116,14 +134,24 @@ object ForeignImport {
             when (type) {
                 "HOST" -> hostTarget(value)?.let { out += rule(Who.Global, it, action) } ?: r.skip("HOST $value")
                 "IP" -> ipTarget(value)?.let { out += rule(Who.Global, it, action) } ?: r.skip("IP $value")
-                "COUNTRY" -> if (value.length == 2) out += rule(Who.Global, Target(TargetKind.COUNTRY, value.lowercase()), action) else r.skip("COUNTRY $value")
+                "COUNTRY" -> if (value.length ==
+                    2
+                ) {
+                    out += rule(Who.Global, Target(TargetKind.COUNTRY, value.lowercase()), action)
+                } else {
+                    r.skip("COUNTRY $value")
+                }
                 "APP" -> {
                     out += rule(Who.App(value), Target(TargetKind.ALL), action)
                     // per-app exceptions of the PCAPdroid blocklist
                     for (al in (ro["allowlist"] as? JsonArray) ?: JsonArray(emptyList())) {
                         val ao = al as? JsonObject ?: continue
                         val av = ao["value"]?.jsonPrimitive?.contentOrNull ?: continue
-                        val t = when (ao["type"]?.jsonPrimitive?.contentOrNull) { "HOST" -> hostTarget(av); "IP" -> ipTarget(av); else -> null }
+                        val t = when (ao["type"]?.jsonPrimitive?.contentOrNull) {
+                            "HOST" -> hostTarget(av)
+                            "IP" -> ipTarget(av)
+                            else -> null
+                        }
                         if (t != null) out += rule(Who.App(value), t, Action.ALLOW) else r.skip("allowlist $av")
                     }
                 }
@@ -171,7 +199,11 @@ object ForeignImport {
             r.notes.add("Blocked only on Wi-Fi or only on mobile data (not supported, left allowed): ${partial.size}")
             partial.take(10).forEach { r.skip("network-only block: $it") }
         }
-        if (defWifi && defMobile) r.notes.add("NetGuard blocks apps by default: every installed non-system app without an exception got a block rule")
+        if (defWifi &&
+            defMobile
+        ) {
+            r.notes.add("NetGuard blocks apps by default: every installed non-system app without an exception got a block rule")
+        }
         // per-address access rules
         val filters = doc.getElementsByTagName("rule")
         for (i in 0 until filters.length) {
@@ -179,10 +211,21 @@ object ForeignImport {
             val pkg = e.getAttribute("pkg")
             val addr = e.getAttribute("daddr").lowercase()
             val port = e.getAttribute("dport").toIntOrNull() ?: 0
-            val proto = when (e.getAttribute("protocol")) { "6" -> Proto.TCP; "17" -> Proto.UDP; else -> Proto.ANY }
-            val action = when (e.getAttribute("block")) { "1" -> Action.BLOCK; "0" -> Action.ALLOW; else -> null }
+            val proto = when (e.getAttribute("protocol")) {
+                "6" -> Proto.TCP
+                "17" -> Proto.UDP
+                else -> Proto.ANY
+            }
+            val action = when (e.getAttribute("block")) {
+                "1" -> Action.BLOCK
+                "0" -> Action.ALLOW
+                else -> null
+            }
             val t = ipTarget(addr) ?: hostTarget(addr)
-            if (pkg.isEmpty() || t == null || action == null) { r.skip("filter $pkg $addr:$port"); continue }
+            if (pkg.isEmpty() || t == null || action == null) {
+                r.skip("filter $pkg $addr:$port")
+                continue
+            }
             rules += rule(Who.App(pkg), t, action, proto, if (port in 1..65535) port else 0)
         }
         if (doc.getElementsByTagName("port").length > 0) r.notes.add("Port forwarding rules are not imported")
@@ -209,17 +252,29 @@ object ForeignImport {
             for (el in v2rules) {
                 val o = el as? JsonObject ?: continue
                 val on = o["on"]?.jsonArray?.mapNotNull { it.jsonPrimitive.intOrNull }?.toSet() ?: continue
-                if (o["special"]?.jsonPrimitive?.contentOrNull == "dev.afwall.special.any") { anyApp = on; continue }
+                if (o["special"]?.jsonPrimitive?.contentOrNull == "dev.afwall.special.any") {
+                    anyApp = on
+                    continue
+                }
                 val pkgs = o["packages"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
-                if (pkgs.isNullOrEmpty()) { r.skip("special uid ${o["uid"]}"); continue }
+                if (pkgs.isNullOrEmpty()) {
+                    r.skip("special uid ${o["uid"]}")
+                    continue
+                }
                 pkgs.forEach { listed.getOrPut(it) { HashSet() }.addAll(on) }
             }
         } else {
             val maps = (root["rules"] as? JsonArray)?.filterIsInstance<JsonObject>()
                 ?: listOfNotNull(((root["default"] as? JsonObject)?.get("rules") as? JsonArray)?.firstOrNull() as? JsonObject)
-            for (m in maps) for ((pkg, v) in m) {
-                val codes = (v as? JsonObject)?.filter { it.value.jsonPrimitive.booleanOrNull == true }?.keys?.mapNotNull { it.toIntOrNull() }?.toSet() ?: continue
-                listed.getOrPut(pkg) { HashSet() }.addAll(codes)
+            for (m in maps) {
+                for ((pkg, v) in m) {
+                    val codes =
+                        (v as? JsonObject)?.filter {
+                            it.value.jsonPrimitive.booleanOrNull == true
+                        }?.keys?.mapNotNull { it.toIntOrNull() }?.toSet()
+                            ?: continue
+                    listed.getOrPut(pkg) { HashSet() }.addAll(codes)
+                }
             }
         }
         val rules = ArrayList<Rule>()
@@ -228,9 +283,11 @@ object ForeignImport {
         fun either(s: Set<Int>?) = s != null && (AF_WIFI in s || AF_DATA in s)
         if (!whitelist) {
             if (both(anyApp)) rules += rule(Who.Global, Target(TargetKind.ALL), Action.BLOCK)
-            for ((pkg, s) in listed) when {
-                both(s) -> rules += rule(Who.App(pkg), Target(TargetKind.ALL), Action.BLOCK)
-                either(s) -> partial.add(pkg)
+            for ((pkg, s) in listed) {
+                when {
+                    both(s) -> rules += rule(Who.App(pkg), Target(TargetKind.ALL), Action.BLOCK)
+                    either(s) -> partial.add(pkg)
+                }
             }
         } else if (!both(anyApp)) {
             // allow-list mode: everything not listed for both networks is blocked
@@ -256,8 +313,9 @@ object ForeignImport {
     // ------------------------------------------------------------------ sing-box
 
     fun singbox(bytes: ByteArray): Plan {
-        if (bytes.size >= 3 && String(bytes, 0, 3, Charsets.ISO_8859_1) == "SRS")
+        if (bytes.size >= 3 && String(bytes, 0, 3, Charsets.ISO_8859_1) == "SRS") {
             throw Unsupported("Binary .srs rule-sets are not supported: convert with 'sing-box rule-set decompile' and import the JSON")
+        }
         val r = Report()
         val root = json.parseToJsonElement(String(bytes, Charsets.UTF_8)).jsonObject
         val entries = LinkedHashSet<String>()
@@ -268,12 +326,17 @@ object ForeignImport {
         }
         for (el in root["rules"]?.jsonArray ?: JsonArray(emptyList())) {
             val o = el as? JsonObject ?: continue
-            if (o["type"]?.jsonPrimitive?.contentOrNull == "logical") { r.skip("logical rule"); continue }
-            strings(o, "domain").forEach { d -> if (ListParser.isDomain(d.lowercase())) entries.add("=${d.lowercase()}") else r.skip("domain $d") }
+            if (o["type"]?.jsonPrimitive?.contentOrNull == "logical") {
+                r.skip("logical rule")
+                continue
+            }
+            strings(o, "domain").forEach { d ->
+                if (ListParser.isDomain(d.lowercase())) entries.add("=${d.lowercase()}") else r.skip("domain $d")
+            }
             strings(o, "domain_suffix").forEach { d0 ->
                 val d = d0.lowercase()
                 when {
-                    d.startsWith(".") && ListParser.isDomain(d.drop(1)) -> entries.add("=**${d}")
+                    d.startsWith(".") && ListParser.isDomain(d.drop(1)) -> entries.add("=**$d")
                     ListParser.isDomain(d) -> entries.add(d)
                     else -> r.skip("domain_suffix $d0")
                 }
@@ -321,22 +384,52 @@ object ForeignImport {
         val byUid = installed.groupBy { it.uid }
         fun who(uid: Int): Who? = when {
             uid == RETHINK_EVERYBODY -> Who.Global
-            uid < 0 -> null                                    // deleted (tombstoned) rule
+            uid < 0 -> null // deleted (tombstoned) rule
             else -> byUid[uid]?.firstOrNull()?.let { Who.App(it.pkg) }
         }
         val rules = ArrayList<Rule>()
         for (d in rows.domains) {
-            val w = who(d.uid) ?: run { r.skip("domain ${d.domain} (uid ${d.uid})"); null } ?: continue
-            val action = when (d.status) { 1 -> Action.BLOCK; 2 -> Action.ALLOW; else -> null } ?: continue
-            val t = hostTarget(d.domain) ?: run { r.skip("domain ${d.domain}"); null } ?: continue
+            val w = who(d.uid) ?: run {
+                r.skip("domain ${d.domain} (uid ${d.uid})")
+                null
+            } ?: continue
+            val action = when (d.status) {
+                1 -> Action.BLOCK
+                2 -> Action.ALLOW
+                else -> null
+            } ?: continue
+            val t = hostTarget(d.domain) ?: run {
+                r.skip("domain ${d.domain}")
+                null
+            } ?: continue
             rules += rule(w, if (d.wildcard || d.domain.startsWith("*.")) t else t.copy(subdomains = false), action)
         }
         for (i in rows.ips) {
             if (!i.active) continue
-            val w = who(i.uid) ?: run { r.skip("ip ${i.ip} (uid ${i.uid})"); null } ?: continue
-            val action = when (i.status) { 1 -> Action.BLOCK; 2 -> Action.ALLOW; else -> null } ?: run { r.skip("ip ${i.ip} status ${i.status}"); null } ?: continue
-            val t = ipTarget(i.ip) ?: run { r.skip("ip ${i.ip}"); null } ?: continue
-            val proto = when (i.protocol.lowercase()) { "tcp", "6" -> Proto.TCP; "udp", "17" -> Proto.UDP; else -> Proto.ANY }
+            val w = who(i.uid) ?: run {
+                r.skip("ip ${i.ip} (uid ${i.uid})")
+                null
+            } ?: continue
+            val action =
+                when (i.status) {
+                    1 -> Action.BLOCK
+                    2 -> Action.ALLOW
+                    else -> null
+                }
+                    ?: run {
+                        r.skip("ip ${i.ip} status ${i.status}")
+                        null
+                    }
+                    ?: continue
+            val t = ipTarget(i.ip) ?: run {
+                r.skip("ip ${i.ip}")
+                null
+            } ?: continue
+            val proto = when (i.protocol.lowercase()) {
+                "tcp", "6" -> Proto.TCP
+                "udp", "17" -> Proto.UDP
+                else -> Proto.ANY
+            }
             rules += rule(w, t, action, proto, if (i.port in 1..65535) i.port else 0)
         }
         var partial = 0
@@ -355,9 +448,7 @@ object ForeignImport {
         return Plan(Format.RETHINK, rules, skipped = r.skipped, samples = r.samples, notes = r.notes.toList())
     }
 
-    class RethinkRows(
-        val domains: List<Domain>, val ips: List<Ip>, val apps: List<AppRow>,
-    ) {
+    class RethinkRows(val domains: List<Domain>, val ips: List<Ip>, val apps: List<AppRow>) {
         class Domain(val domain: String, val uid: Int, val status: Int, val wildcard: Boolean)
         class Ip(val ip: String, val port: Int, val protocol: String, val uid: Int, val status: Int, val active: Boolean)
         class AppRow(val pkg: String, val uid: Int, val firewallStatus: Int, val connectionStatus: Int)

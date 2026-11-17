@@ -1,5 +1,6 @@
 package io.github.cinnamon415.packetwall.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -51,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -64,6 +66,7 @@ import io.github.cinnamon415.packetwall.fw.Action
 import io.github.cinnamon415.packetwall.fw.FwState
 import io.github.cinnamon415.packetwall.fw.ListParser
 import io.github.cinnamon415.packetwall.fw.Proto
+import io.github.cinnamon415.packetwall.fw.Route
 import io.github.cinnamon415.packetwall.fw.Rule
 import io.github.cinnamon415.packetwall.fw.SetKind
 import io.github.cinnamon415.packetwall.fw.Target
@@ -92,8 +95,9 @@ fun ruleProps(r: Rule, st: FwState, withSet: Boolean, withWho: Boolean, app: Pac
         parts.add(if (r.port != 0) "$p/${r.port}" else p)
     }
     if (r.action == Action.BLOCK && r.reject) parts.add("reject")
-    if (r.action == Action.ALLOW && r.route != io.github.cinnamon415.packetwall.fw.Route.DEFAULT)
-        parts.add("→ " + stringResource(if (r.route == io.github.cinnamon415.packetwall.fw.Route.UPSTREAM) R.string.route_upstream else R.string.route_direct))
+    if (r.action == Action.ALLOW && r.route != Route.DEFAULT) {
+        parts.add("→ " + stringResource(if (r.route == Route.UPSTREAM) R.string.route_upstream else R.string.route_direct))
+    }
     if (withSet) st.set(r.setId)?.let { parts.add(it.name) }
     return parts.joinToString(" · ")
 }
@@ -132,33 +136,58 @@ fun RoundedGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope
 fun ActionDot(action: Action) {
     val c = if (action == Action.BLOCK) MaterialTheme.colorScheme.error else LocalExtraColors.current.ok
     Box(Modifier.size(28.dp).clip(CircleShape).background(c.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-        Icon(painterResource(if (action == Action.BLOCK) R.drawable.ic_block else R.drawable.ic_check), null,
-            tint = c, modifier = Modifier.size(16.dp))
+        Icon(
+            painterResource(if (action == Action.BLOCK) R.drawable.ic_block else R.drawable.ic_check),
+            null,
+            tint = c,
+            modifier = Modifier.size(16.dp)
+        )
     }
 }
 
 @Composable
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 fun RuleRow(r: Rule, props: String, selected: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth()
-        .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
-        .combinedClickable(onLongClick = onLongClick, onClick = onClick).padding(horizontal = 12.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth()
+            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .combinedClickable(onLongClick = onLongClick, onClick = onClick).padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         ActionDot(r.action)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(ruleTitle(r), fontFamily = if (r.target.kind == TargetKind.ALL) null else FontFamily.Monospace,
-                style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (props.isNotEmpty())
-                Text(props, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                ruleTitle(r),
+                fontFamily = if (r.target.kind == TargetKind.ALL) null else FontFamily.Monospace,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (props.isNotEmpty()) {
+                Text(
+                    props,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
 
 @Composable
-fun RulesList(rules: List<Rule>, st: FwState, withSet: Boolean, withWho: Boolean, app: PacketwallApp,
-              selection: Set<Int> = emptySet(), onLongClick: ((Rule) -> Unit)? = null, onClick: (Rule) -> Unit) {
+fun RulesList(
+    rules: List<Rule>,
+    st: FwState,
+    withSet: Boolean,
+    withWho: Boolean,
+    app: PacketwallApp,
+    selection: Set<Int> = emptySet(),
+    onLongClick: ((Rule) -> Unit)? = null,
+    onClick: (Rule) -> Unit
+) {
     RoundedGroup {
         rules.forEachIndexed { i, r ->
             if (i > 0) HorizontalDivider(Modifier.padding(start = 52.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -170,8 +199,10 @@ fun RulesList(rules: List<Rule>, st: FwState, withSet: Boolean, withWho: Boolean
 /** Set filter chips ("folders" on top of rule screens). null = all sets. */
 @Composable
 fun SetChips(st: FwState, selected: Int?, onSelect: (Int?) -> Unit, includeBlocklists: Boolean = false) {
-    Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(
+        Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
         FilterChip(selected == null, { onSelect(null) }, { Text(stringResource(R.string.all_sets)) })
         st.orderedSets.filter { includeBlocklists || it.kind == SetKind.USER }.forEach { s ->
             FilterChip(selected == s.id, { onSelect(s.id) }, {
@@ -183,8 +214,12 @@ fun SetChips(st: FwState, selected: Int?, onSelect: (Int?) -> Unit, includeBlock
 
 @Composable
 fun EmptyHint(text: String) {
-    Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium,
-        modifier = Modifier.fillMaxWidth().padding(24.dp))
+    Text(
+        text,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.fillMaxWidth().padding(24.dp)
+    )
 }
 
 // ------------------------------------------------------------------ rule editor
@@ -203,7 +238,17 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
     var action by remember { mutableStateOf(initial.action) }
     var kind by remember { mutableStateOf(initial.target.kind) }
     var value by remember { mutableStateOf(initial.target.value) }
-    var subs by remember { mutableStateOf(if (initial.id == 0 && initial.target.kind != TargetKind.DOMAIN) true else initial.target.subdomains) }
+    var subs by remember {
+        mutableStateOf(
+            if (initial.id == 0 &&
+                initial.target.kind != TargetKind.DOMAIN
+            ) {
+                true
+            } else {
+                initial.target.subdomains
+            }
+        )
+    }
     var proto by remember { mutableStateOf(initial.proto) }
     var port by remember { mutableStateOf(if (initial.port == 0) "" else initial.port.toString()) }
     var reject by remember { mutableStateOf(initial.reject) }
@@ -225,26 +270,55 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
                         SegmentedButton(action == a, { action = a }, SegmentedButtonDefaults.itemShape(i, 2)) { Text(stringResource(s)) }
                     }
                 }
-                Text(whoLabel(initial.who, st, null).let { stringResource(R.string.rule_for, it) },
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    whoLabel(initial.who, st, null).let { stringResource(R.string.rule_for, it) },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
-                val kinds = listOf(TargetKind.ALL to R.string.target_all, TargetKind.DOMAIN to R.string.target_domain,
-                    TargetKind.IP to R.string.target_ip, TargetKind.ASN to R.string.kind_asn, TargetKind.COUNTRY to R.string.target_country)
+                val kinds = listOf(
+                    TargetKind.ALL to R.string.target_all,
+                    TargetKind.DOMAIN to R.string.target_domain,
+                    TargetKind.IP to R.string.target_ip,
+                    TargetKind.ASN to R.string.kind_asn,
+                    TargetKind.COUNTRY to R.string.target_country
+                )
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     kinds.forEach { (k, s) -> FilterChip(kind == k, { kind = k }, { Text(stringResource(s)) }) }
                 }
                 if (kind != TargetKind.ALL) {
-                    OutlinedTextField(value, { value = it }, Modifier.fillMaxWidth(), singleLine = true,
+                    OutlinedTextField(
+                        value,
+                        { value = it },
+                        Modifier.fillMaxWidth(),
+                        singleLine = true,
                         isError = value.isNotBlank() && !validTarget(target),
                         textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
-                        placeholder = { Text(when (kind) { TargetKind.DOMAIN -> "ads.example.com"; TargetKind.IP -> "203.0.113.0/24"; TargetKind.ASN -> "AS13335"; else -> "US" },
-                            fontFamily = FontFamily.Monospace) },
-                        supportingText = if (kind == TargetKind.DOMAIN) {{ Text(stringResource(R.string.domain_mask_help)) }}
-                            else if (kind == TargetKind.COUNTRY) {{ Text(stringResource(R.string.country_help)) }}
-                            else if (kind == TargetKind.ASN) {{ Text(stringResource(R.string.asn_help)) }} else null)
+                        placeholder = {
+                            Text(
+                                when (kind) {
+                                    TargetKind.DOMAIN -> "ads.example.com"
+                                    TargetKind.IP -> "203.0.113.0/24"
+                                    TargetKind.ASN -> "AS13335"
+                                    else -> "US"
+                                },
+                                fontFamily = FontFamily.Monospace
+                            )
+                        },
+                        supportingText = if (kind == TargetKind.DOMAIN) {
+                            { Text(stringResource(R.string.domain_mask_help)) }
+                        } else if (kind == TargetKind.COUNTRY) {
+                            { Text(stringResource(R.string.country_help)) }
+                        } else if (kind == TargetKind.ASN) {
+                            { Text(stringResource(R.string.asn_help)) }
+                        } else {
+                            null
+                        }
+                    )
                 }
-                if (kind == TargetKind.DOMAIN)
+                if (kind == TargetKind.DOMAIN) {
                     CheckRow(subs, stringResource(R.string.prop_subdomains)) { subs = it }
+                }
 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
@@ -254,18 +328,27 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
                             }
                         }
                     }
-                    OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, Modifier.width(96.dp), singleLine = true,
-                        isError = !portOk, label = { Text(stringResource(R.string.port)) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    OutlinedTextField(
+                        port,
+                        { port = it.filter(Char::isDigit).take(5) },
+                        Modifier.width(96.dp),
+                        singleLine = true,
+                        isError = !portOk,
+                        label = { Text(stringResource(R.string.port)) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
                 }
-                if (action == Action.BLOCK)
+                if (action == Action.BLOCK) {
                     CheckRow(reject, stringResource(R.string.reject_label)) { reject = it }
+                }
                 if (action == Action.ALLOW) {
                     Text(stringResource(R.string.kv_route), style = MaterialTheme.typography.labelMedium)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(io.github.cinnamon415.packetwall.fw.Route.DEFAULT to R.string.route_default,
-                            io.github.cinnamon415.packetwall.fw.Route.DIRECT to R.string.route_direct,
-                            io.github.cinnamon415.packetwall.fw.Route.UPSTREAM to R.string.route_upstream).forEach { (rt, s) ->
+                        listOf(
+                            Route.DEFAULT to R.string.route_default,
+                            Route.DIRECT to R.string.route_direct,
+                            Route.UPSTREAM to R.string.route_upstream
+                        ).forEach { (rt, s) ->
                             FilterChip(route == rt, { route = rt }, { Text(stringResource(s)) })
                         }
                     }
@@ -276,25 +359,36 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
         },
         confirmButton = {
             Button(enabled = ok, onClick = {
-                onSave(initial.copy(action = action, target = target.copy(subdomains = kind == TargetKind.DOMAIN && subs),
-                    proto = proto, port = portNum ?: 0, reject = action == Action.BLOCK && reject, setId = setId,
-                    route = if (action == Action.ALLOW) route else io.github.cinnamon415.packetwall.fw.Route.DEFAULT))
+                onSave(
+                    initial.copy(
+                        action = action,
+                        target = target.copy(subdomains = kind == TargetKind.DOMAIN && subs),
+                        proto = proto,
+                        port = portNum ?: 0,
+                        reject = action == Action.BLOCK && reject,
+                        setId = setId,
+                        route = if (action == Action.ALLOW) route else Route.DEFAULT
+                    )
+                )
             }) { Text(stringResource(R.string.save)) }
         },
         dismissButton = {
             Row {
-                if (onDelete != null)
+                if (onDelete != null) {
                     TextButton(onClick = onDelete) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
+                }
                 TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
             }
-        },
+        }
     )
 }
 
 @Composable
 fun CheckRow(checked: Boolean, label: String, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onChange(!checked) },
-        verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Checkbox(checked, onChange)
         Text(label)
     }
@@ -305,13 +399,21 @@ fun CheckRow(checked: Boolean, label: String, onChange: (Boolean) -> Unit) {
 fun SetDropdown(st: FwState, setId: Int, onSelect: (Int) -> Unit) {
     var open by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(open, { open = it }) {
-        OutlinedTextField(st.set(setId)?.name ?: "", {}, readOnly = true, singleLine = true,
+        OutlinedTextField(
+            st.set(setId)?.name ?: "",
+            {},
+            readOnly = true,
+            singleLine = true,
             label = { Text(stringResource(R.string.rule_set)) },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(open) },
-            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable))
+            modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable)
+        )
         ExposedDropdownMenu(open, { open = false }) {
             st.userSets.forEach { s ->
-                DropdownMenuItem({ Text(s.name) }, { onSelect(s.id); open = false })
+                DropdownMenuItem({ Text(s.name) }, {
+                    onSelect(s.id)
+                    open = false
+                })
             }
         }
     }
@@ -332,11 +434,18 @@ fun QuickRuleSheet(c: Conn, app: PacketwallApp, st: FwState, onDismiss: () -> Un
     // The rule (or blocklist) that decided this connection. An exception must live in the same set or a
     // higher one (spec 2.5): we pre-select it and warn when a lower set is chosen.
     val decidingRule = if (c.fwRule > 0) st.rule(c.fwRule) else null
-    val decidingSet: Int? = when { c.fwRule > 0 -> decidingRule?.setId; c.fwRule < 0 -> -c.fwRule; else -> null }
+    val decidingSet: Int? = when {
+        c.fwRule > 0 -> decidingRule?.setId
+        c.fwRule < 0 -> -c.fwRule
+        else -> null
+    }
     val pos = { id: Int -> st.order.indexOfFirst { it.id == id } }
     val suggested = decidingSet?.let { ds ->
-        if (st.set(ds)?.kind == SetKind.USER) ds
-        else st.order.take(maxOf(0, pos(ds))).lastOrNull { st.set(it.id)?.kind == SetKind.USER }?.id
+        if (st.set(ds)?.kind == SetKind.USER) {
+            ds
+        } else {
+            st.order.take(maxOf(0, pos(ds))).lastOrNull { st.set(it.id)?.kind == SetKind.USER }?.id
+        }
     } ?: FwState.DEFAULT_SET
     var setId by rememberSaveable { mutableStateOf(if (c.blocked) suggested else FwState.DEFAULT_SET) }
 
@@ -361,8 +470,14 @@ fun QuickRuleSheet(c: Conn, app: PacketwallApp, st: FwState, onDismiss: () -> Un
                 Spacer(Modifier.width(10.dp))
                 Column {
                     Text(c.app.name, style = MaterialTheme.typography.titleMedium)
-                    Text("${c.protoLabel} · ${c.title}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        "${c.protoLabel} · ${c.title}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -374,25 +489,44 @@ fun QuickRuleSheet(c: Conn, app: PacketwallApp, st: FwState, onDismiss: () -> Un
                 SegmentedButton(forApp, { forApp = true }, SegmentedButtonDefaults.itemShape(0, 2), enabled = c.uid >= 0) {
                     Text(stringResource(R.string.for_app), maxLines = 1)
                 }
-                SegmentedButton(!forApp, { forApp = false; if (sel.kind == TargetKind.ALL) choice = 0 }, SegmentedButtonDefaults.itemShape(1, 2)) {
+                SegmentedButton(!forApp, {
+                    forApp = false
+                    if (sel.kind ==
+                        TargetKind.ALL
+                    ) {
+                        choice = 0
+                    }
+                }, SegmentedButtonDefaults.itemShape(1, 2)) {
                     Text(stringResource(R.string.who_global), maxLines = 1)
                 }
             }
             Column {
                 options.forEachIndexed { i, t ->
-                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { choice = i },
-                        verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { choice = i },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         RadioButton(choice == i, { choice = i })
                         Column {
-                            Text(if (t.kind == TargetKind.ALL) stringResource(R.string.target_all_traffic) else t.value,
-                                fontFamily = if (t.kind == TargetKind.ALL) null else FontFamily.Monospace)
+                            Text(
+                                if (t.kind == TargetKind.ALL) stringResource(R.string.target_all_traffic) else t.value,
+                                fontFamily = if (t.kind == TargetKind.ALL) null else FontFamily.Monospace
+                            )
                             val hint = when {
                                 t.kind == TargetKind.DOMAIN && t.subdomains -> stringResource(R.string.prop_subdomains)
                                 t.kind == TargetKind.DOMAIN -> stringResource(R.string.exact_host)
                                 t.kind == TargetKind.IP -> "IP"
                                 else -> null
                             }
-                            if (hint != null) Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (hint !=
+                                null
+                            ) {
+                                Text(
+                                    hint,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }

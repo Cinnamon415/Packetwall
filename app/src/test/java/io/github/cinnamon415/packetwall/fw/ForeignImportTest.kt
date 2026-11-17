@@ -6,18 +6,26 @@ import org.junit.Test
 
 class ForeignImportTest {
     private val installed = listOf(
-        ForeignImport.App("com.a", 10100, false), ForeignImport.App("com.b", 10101, false),
-        ForeignImport.App("com.c", 10102, false), ForeignImport.App("android", 1000, true),
+        ForeignImport.App("com.a", 10100, false),
+        ForeignImport.App("com.b", 10101, false),
+        ForeignImport.App("com.c", 10102, false),
+        ForeignImport.App("android", 1000, true)
     )
-    private fun Rule.short() = "${(who as? Who.App)?.pkg ?: "*"} ${action} ${target.kind}:${target.value}${if (target.subdomains) "+" else ""}" +
-        (if (port != 0) ":$port" else "") + (if (proto != Proto.ANY) "/$proto" else "")
+    private fun Rule.short(): String {
+        val pkg = (who as? Who.App)?.pkg ?: "*"
+        val subs = if (target.subdomains) "+" else ""
+        return "$pkg $action ${target.kind}:${target.value}$subs" +
+            (if (port != 0) ":$port" else "") + (if (proto != Proto.ANY) "/$proto" else "")
+    }
+
+    private fun detect(json: String) = ForeignImport.detect(json.toByteArray())
 
     @Test fun detect() {
         assertEquals(ForeignImport.Format.NETGUARD, ForeignImport.detect("<?xml version='1.0'?><netguard></netguard>".toByteArray()))
-        assertEquals(ForeignImport.Format.PCAPDROID, ForeignImport.detect("""{"rules":[{"type":"HOST","value":"x.com"}]}""".toByteArray()))
-        assertEquals(ForeignImport.Format.AFWALL, ForeignImport.detect("""{"rules":[{"com.a":{"0":true}}],"mode":"blacklist"}""".toByteArray()))
-        assertEquals(ForeignImport.Format.SINGBOX, ForeignImport.detect("""{"version":2,"rules":[{"domain":["a.com"]}]}""".toByteArray()))
-        assertEquals(ForeignImport.Format.PACKETWALL, ForeignImport.detect("""{"format":"packetwall-rules","state":{}}""".toByteArray()))
+        assertEquals(ForeignImport.Format.PCAPDROID, detect("""{"rules":[{"type":"HOST","value":"x.com"}]}"""))
+        assertEquals(ForeignImport.Format.AFWALL, detect("""{"rules":[{"com.a":{"0":true}}],"mode":"blacklist"}"""))
+        assertEquals(ForeignImport.Format.SINGBOX, detect("""{"version":2,"rules":[{"domain":["a.com"]}]}"""))
+        assertEquals(ForeignImport.Format.PACKETWALL, detect("""{"format":"packetwall-rules","state":{}}"""))
         assertEquals(ForeignImport.Format.RETHINK, ForeignImport.detect(byteArrayOf(0x50, 0x4b, 3, 4)))
         assertEquals(ForeignImport.Format.LIST, ForeignImport.detect("0.0.0.0 a.com\n".toByteArray()))
     }
@@ -26,8 +34,16 @@ class ForeignImportTest {
         val list = """{"rules":[{"type":"HOST","value":"ads.com"},{"type":"IP","value":"1.2.3.0/24"},{"type":"COUNTRY","value":"CN"},
             {"type":"APP","value":"com.a","allowlist":[{"type":"HOST","value":"ok.com"}]},{"type":"PROTOCOL","value":"QUIC"}]}"""
         val p = ForeignImport.pcapdroid(list)
-        assertEquals(listOf("* BLOCK DOMAIN:ads.com+", "* BLOCK IP:1.2.3.0/24", "* BLOCK COUNTRY:cn", "com.a BLOCK ALL:", "com.a ALLOW DOMAIN:ok.com+"),
-            p.rules.map { it.short() })
+        assertEquals(
+            listOf(
+                "* BLOCK DOMAIN:ads.com+",
+                "* BLOCK IP:1.2.3.0/24",
+                "* BLOCK COUNTRY:cn",
+                "com.a BLOCK ALL:",
+                "com.a ALLOW DOMAIN:ok.com+"
+            ),
+            p.rules.map { it.short() }
+        )
         assertEquals(1, p.skipped)
         val backup = """{"version":1,"settings":{"bl":{"type":"string","value":"{\"rules\":[{\"type\":\"HOST\",\"value\":\"t.com\"}]}"},
             "firewall_whitelist":{"type":"string","value":"{\"rules\":[{\"type\":\"APP\",\"value\":\"com.b\"}]}"}}}"""
@@ -46,7 +62,7 @@ class ForeignImportTest {
             <forward /></netguard>"""
         val p = ForeignImport.netguard(xml, installed)
         assertEquals(listOf("com.a BLOCK ALL:", "com.c BLOCK IP:9.9.9.9:443/TCP"), p.rules.map { it.short() })
-        assertTrue(p.samples.any { it.contains("com.b") })     // Wi-Fi only
+        assertTrue(p.samples.any { it.contains("com.b") }) // Wi-Fi only
 
         // default-deny: everything without an explicit "false" on both networks is blocked (system apps excluded)
         val deny = """<netguard><application /><wifi><setting key="com.a" type="boolean" value="false" /></wifi>
@@ -61,9 +77,10 @@ class ForeignImportTest {
         val white = """{"rules":[],"mode":"whitelist","v2":{"version":2,"mode":"whitelist","rules":[
             {"uid":10100,"packages":["com.a"],"on":[0,1]},{"uid":10101,"packages":["com.b"],"on":[0]}]}}"""
         val w = ForeignImport.afwall(white, installed)
-        assertEquals(listOf("com.c BLOCK ALL:"), w.rules.map { it.short() })   // b is Wi-Fi only -> reported
+        assertEquals(listOf("com.c BLOCK ALL:"), w.rules.map { it.short() }) // b is Wi-Fi only -> reported
         assertTrue(w.samples.any { it.contains("com.b") })
-        val any = """{"mode":"blacklist","v2":{"version":2,"mode":"blacklist","rules":[{"uid":-10,"special":"dev.afwall.special.any","on":[0,1]}]}}"""
+        val anyRule = """{"uid":-10,"special":"dev.afwall.special.any","on":[0,1]}"""
+        val any = """{"mode":"blacklist","v2":{"version":2,"mode":"blacklist","rules":[$anyRule]}}"""
         assertEquals(listOf("* BLOCK ALL:"), ForeignImport.afwall(any, installed).rules.map { it.short() })
     }
 
@@ -77,21 +94,42 @@ class ForeignImportTest {
     }
 
     @Test fun adblockAppAndImportant() {
-        val p = ForeignImport.list(sequenceOf("||ads.com^", "||track.com^\$important", "@@||ok.ads.com^",
-            "||pay.com^\$app=com.a|com.b", "@@||cdn.com^\$app=com.c", "||x.com^\$app=~com.a"))
+        val p = ForeignImport.list(
+            sequenceOf(
+                "||ads.com^",
+                "||track.com^\$important",
+                "@@||ok.ads.com^",
+                "||pay.com^\$app=com.a|com.b",
+                "@@||cdn.com^\$app=com.c",
+                "||x.com^\$app=~com.a"
+            )
+        )
         assertEquals(listOf("ads.com", "!ok.ads.com"), p.entries)
         assertEquals(listOf("track.com"), p.important)
-        assertEquals(listOf("com.a BLOCK DOMAIN:pay.com+", "com.b BLOCK DOMAIN:pay.com+", "com.c ALLOW DOMAIN:cdn.com+"), p.rules.map { it.short() })
+        assertEquals(
+            listOf("com.a BLOCK DOMAIN:pay.com+", "com.b BLOCK DOMAIN:pay.com+", "com.c ALLOW DOMAIN:cdn.com+"),
+            p.rules.map { it.short() }
+        )
         assertEquals(1, p.skipped)
     }
 
     @Test fun rethink() {
         val rows = ForeignImport.RethinkRows(
-            domains = listOf(ForeignImport.RethinkRows.Domain("*.ads.com", -1000, 1, true), ForeignImport.RethinkRows.Domain("ok.com", 10100, 2, false),
-                ForeignImport.RethinkRows.Domain("gone.com", -10100, 1, false)),
-            ips = listOf(ForeignImport.RethinkRows.Ip("1.2.3.4", 443, "tcp", -1000, 1, true), ForeignImport.RethinkRows.Ip("5.6.7.8", 0, "", 10101, 1, false)),
-            apps = listOf(ForeignImport.RethinkRows.AppRow("com.c", 10102, 5, 0), ForeignImport.RethinkRows.AppRow("com.b", 10101, 5, 1)))
+            domains = listOf(
+                ForeignImport.RethinkRows.Domain("*.ads.com", -1000, 1, true),
+                ForeignImport.RethinkRows.Domain("ok.com", 10100, 2, false),
+                ForeignImport.RethinkRows.Domain("gone.com", -10100, 1, false)
+            ),
+            ips = listOf(
+                ForeignImport.RethinkRows.Ip("1.2.3.4", 443, "tcp", -1000, 1, true),
+                ForeignImport.RethinkRows.Ip("5.6.7.8", 0, "", 10101, 1, false)
+            ),
+            apps = listOf(ForeignImport.RethinkRows.AppRow("com.c", 10102, 5, 0), ForeignImport.RethinkRows.AppRow("com.b", 10101, 5, 1))
+        )
         val p = ForeignImport.rethink(rows, installed)
-        assertEquals(listOf("* BLOCK DOMAIN:ads.com+", "com.a ALLOW DOMAIN:ok.com", "* BLOCK IP:1.2.3.4:443/TCP", "com.c BLOCK ALL:"), p.rules.map { it.short() })
+        assertEquals(
+            listOf("* BLOCK DOMAIN:ads.com+", "com.a ALLOW DOMAIN:ok.com", "* BLOCK IP:1.2.3.4:443/TCP", "com.c BLOCK ALL:"),
+            p.rules.map { it.short() }
+        )
     }
 }

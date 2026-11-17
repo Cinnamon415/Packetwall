@@ -16,25 +16,50 @@ import io.github.cinnamon415.packetwall.engine.Conn
 object ConnFilter {
     class ParseError(msg: String, val pos: Int) : Exception(msg)
 
-    private sealed interface Node { fun eval(c: Conn): Boolean }
-    private class And(val a: Node, val b: Node) : Node { override fun eval(c: Conn) = a.eval(c) && b.eval(c) }
-    private class Or(val a: Node, val b: Node) : Node { override fun eval(c: Conn) = a.eval(c) || b.eval(c) }
-    private class Not(val a: Node) : Node { override fun eval(c: Conn) = !a.eval(c) }
-    private class Flag(val f: (Conn) -> Boolean) : Node { override fun eval(c: Conn) = f(c) }
+    private sealed interface Node {
+        fun eval(c: Conn): Boolean
+    }
+    private class And(val a: Node, val b: Node) : Node {
+        override fun eval(c: Conn) = a.eval(c) && b.eval(c)
+    }
+    private class Or(val a: Node, val b: Node) : Node {
+        override fun eval(c: Conn) = a.eval(c) || b.eval(c)
+    }
+    private class Not(val a: Node) : Node {
+        override fun eval(c: Conn) = !a.eval(c)
+    }
+    private class Flag(val f: (Conn) -> Boolean) : Node {
+        override fun eval(c: Conn) = f(c)
+    }
     private class Cmp(val field: String, val op: String, val value: String) : Node {
         private val num = value.toLongOrNull()
         override fun eval(c: Conn): Boolean {
             val v = fieldValue(c, field)
             if (v is Long) {
                 val n = num ?: return false
-                return when (op) { "==" -> v == n; "!=" -> v != n; "<" -> v < n; "<=" -> v <= n; ">" -> v > n; ">=" -> v >= n
-                    "~" -> v.toString().contains(value); "!~" -> !v.toString().contains(value); else -> false }
+                return when (op) {
+                    "==" -> v == n
+                    "!=" -> v != n
+                    "<" -> v < n
+                    "<=" -> v <= n
+                    ">" -> v > n
+                    ">=" -> v >= n
+                    "~" -> v.toString().contains(value)
+                    "!~" -> !v.toString().contains(value)
+                    else -> false
+                }
             }
             val sv = (v as? String ?: "").lowercase()
             val x = value.lowercase()
             return when (op) {
-                "==" -> sv == x; "!=" -> sv != x; "~" -> sv.contains(x); "!~" -> !sv.contains(x)
-                "<" -> sv < x; "<=" -> sv <= x; ">" -> sv > x; ">=" -> sv >= x
+                "==" -> sv == x
+                "!=" -> sv != x
+                "~" -> sv.contains(x)
+                "!~" -> !sv.contains(x)
+                "<" -> sv < x
+                "<=" -> sv <= x
+                ">" -> sv > x
+                ">=" -> sv >= x
                 else -> false
             }
         }
@@ -43,10 +68,13 @@ object ConnFilter {
     /** Tracker name of a host (set by the app when the tracker database is available). */
     @Volatile var trackerOf: (String?) -> String? = { null }
 
-    val fields = listOf("app", "pkg", "uid", "host", "ip", "port", "proto", "bytes", "sent", "rcvd", "tracker", "blocked", "allowed", "active")
+    val fields =
+        listOf("app", "pkg", "uid", "host", "ip", "port", "proto", "bytes", "sent", "rcvd", "tracker", "blocked", "allowed", "active")
     private val flags = mapOf<String, (Conn) -> Boolean>(
-        "blocked" to { it.blocked }, "allowed" to { !it.blocked }, "active" to { it.active },
-        "tracker" to { trackerOf(it.host) != null },
+        "blocked" to { it.blocked },
+        "allowed" to { !it.blocked },
+        "active" to { it.active },
+        "tracker" to { trackerOf(it.host) != null }
     )
 
     private fun fieldValue(c: Conn, f: String): Any? = when (f) {
@@ -70,8 +98,13 @@ object ConnFilter {
         if (t.isEmpty()) return { true }
         if (!looksLikeExpression(t)) {
             val q = t.lowercase()
-            return { c -> c.app.name.lowercase().contains(q) || c.title.lowercase().contains(q) || c.dstIp.contains(q) ||
-                c.app.packageName.contains(q) || c.protoLabel.lowercase() == q }
+            return { c ->
+                c.app.name.lowercase().contains(q) ||
+                    c.title.lowercase().contains(q) ||
+                    c.dstIp.contains(q) ||
+                    c.app.packageName.contains(q) ||
+                    c.protoLabel.lowercase() == q
+            }
         }
         val p = Parser(tokenize(t))
         val n = p.parseOr()
@@ -98,11 +131,24 @@ object ConnFilter {
                 ch == '"' || ch == '\'' -> {
                     val end = s.indexOf(ch, i + 1)
                     if (end < 0) throw ParseError("unterminated string", i)
-                    out.add(Tok(s.substring(i + 1, end), i, true)); i = end + 1
+                    out.add(Tok(s.substring(i + 1, end), i, true))
+                    i = end + 1
                 }
-                s.startsWith("&&", i) || s.startsWith("||", i) || s.startsWith("==", i) || s.startsWith("!=", i) ||
-                    s.startsWith("<=", i) || s.startsWith(">=", i) || s.startsWith("!~", i) -> { out.add(Tok(s.substring(i, i + 2), i)); i += 2 }
-                ch in "()!<>~" -> { out.add(Tok(ch.toString(), i)); i++ }
+                s.startsWith("&&", i) ||
+                    s.startsWith("||", i) ||
+                    s.startsWith("==", i) ||
+                    s.startsWith("!=", i) ||
+                    s.startsWith("<=", i) ||
+                    s.startsWith(">=", i) ||
+                    s.startsWith("!~", i) -> {
+                    out.add(Tok(s.substring(i, i + 2), i))
+                    i +=
+                        2
+                }
+                ch in "()!<>~" -> {
+                    out.add(Tok(ch.toString(), i))
+                    i++
+                }
                 else -> {
                     val st = i
                     while (i < s.length && !s[i].isWhitespace() && s[i] !in "()!<>~=&|\"'") i++
@@ -123,18 +169,27 @@ object ConnFilter {
 
         fun parseOr(): Node {
             var n = parseAnd()
-            while (isKw(peek(), "||", "or")) { i++; n = Or(n, parseAnd()) }
+            while (isKw(peek(), "||", "or")) {
+                i++
+                n = Or(n, parseAnd())
+            }
             return n
         }
 
         fun parseAnd(): Node {
             var n = parseNot()
-            while (isKw(peek(), "&&", "and")) { i++; n = And(n, parseNot()) }
+            while (isKw(peek(), "&&", "and")) {
+                i++
+                n = And(n, parseNot())
+            }
             return n
         }
 
         fun parseNot(): Node {
-            if (isKw(peek(), "!", "not")) { i++; return Not(parseNot()) }
+            if (isKw(peek(), "!", "not")) {
+                i++
+                return Not(parseNot())
+            }
             return parseAtom()
         }
 
@@ -150,7 +205,11 @@ object ConnFilter {
             flags[name]?.let { if (!isKw(peek(), "==", "!=", "~", "!~", "<", "<=", ">", ">=")) return Flag(it) }
             if (name !in fields) throw ParseError("unknown field '${t.text}'", t.pos)
             val op = next()
-            if (op.quoted || op.text !in setOf("==", "!=", "~", "!~", "<", "<=", ">", ">=")) throw ParseError("expected an operator", op.pos)
+            if (op.quoted ||
+                op.text !in setOf("==", "!=", "~", "!~", "<", "<=", ">", ">=")
+            ) {
+                throw ParseError("expected an operator", op.pos)
+            }
             val v = next()
             return Cmp(name, op.text, v.text)
         }

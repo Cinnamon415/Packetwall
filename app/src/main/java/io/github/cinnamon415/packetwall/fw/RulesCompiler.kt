@@ -11,8 +11,13 @@ import java.io.File
  * <set> is the priority position among enabled sets (0 = highest).
  */
 object RulesCompiler {
-    fun compile(st: FwState, uidOf: (String) -> Int?, listFile: (Int) -> File, out: File,
-                asnPrefixes: (Set<Long>) -> Map<Long, List<String>> = { emptyMap() }): Int {
+    fun compile(
+        st: FwState,
+        uidOf: (String) -> Int?,
+        listFile: (Int) -> File,
+        out: File,
+        asnPrefixes: (Set<Long>) -> Map<Long, List<String>> = { emptyMap() }
+    ): Int {
         var lines = 0
         // ASN rules are expanded into the AS prefixes (kind S keeps their "ASN" rank in the engine)
         val enabledIds = st.order.filter { it.enabled }.map { it.id }.toSet()
@@ -30,10 +35,17 @@ object RulesCompiler {
                     val value = if (r.target.kind == TargetKind.ALL) "-" else sanitize(r.target.value)
                     if (value.isEmpty()) continue
                     val kind = when (r.target.kind) {
-                        TargetKind.ALL -> 'A'; TargetKind.DOMAIN -> 'D'; TargetKind.IP -> 'I'; TargetKind.COUNTRY -> 'C'; TargetKind.ASN -> 'S'
+                        TargetKind.ALL -> 'A'
+                        TargetKind.DOMAIN -> 'D'
+                        TargetKind.IP -> 'I'
+                        TargetKind.COUNTRY -> 'C'
+                        TargetKind.ASN -> 'S'
                     }
-                    val values = if (r.target.kind == TargetKind.ASN)
-                        prefixes[ListParser.asnNumber(r.target.value)] ?: emptyList() else listOf(value)
+                    val values = if (r.target.kind == TargetKind.ASN) {
+                        prefixes[ListParser.asnNumber(r.target.value)] ?: emptyList()
+                    } else {
+                        listOf(value)
+                    }
                     val (who, uids) = when (val wh = r.who) {
                         Who.Global -> 0 to listOf(-1)
                         is Who.App -> 2 to listOfNotNull(uidOf(wh.pkg))
@@ -42,9 +54,14 @@ object RulesCompiler {
                     val block = if (r.action == Action.BLOCK) 1 else 0
                     val reject = if (r.action == Action.BLOCK && r.reject) 1 else 0
                     val subs = if (r.target.kind == TargetKind.DOMAIN && r.target.subdomains) 1 else 0
-                    for (uid in uids) for (v in values) {
-                        w.write("R\t${r.id}\t$prio\t$who\t$uid\t$block\t$reject\t$kind\t$v\t$subs\t${r.proto.ipproto}\t${r.port}\t${if (r.action == Action.ALLOW) r.route.code else 0}\n")
-                        lines++
+                    val route = if (r.action == Action.ALLOW) r.route.code else 0
+                    for (uid in uids) {
+                        for (v in values) {
+                            w.write(
+                                "R\t${r.id}\t$prio\t$who\t$uid\t$block\t$reject\t$kind\t$v\t$subs\t${r.proto.ipproto}\t${r.port}\t$route\n"
+                            )
+                            lines++
+                        }
                     }
                 }
                 if (set.kind == SetKind.BLOCKLIST) {

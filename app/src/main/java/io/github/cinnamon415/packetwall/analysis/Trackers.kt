@@ -2,6 +2,7 @@ package io.github.cinnamon415.packetwall.analysis
 
 import android.util.Log
 import android.util.LruCache
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
@@ -9,7 +10,8 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.io.File
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 /**
  * Offline tracker labels: AdGuard companiesdb (https://github.com/AdguardTeam/companiesdb,
@@ -20,24 +22,45 @@ class Trackers(dir: File) {
     data class Tracker(val name: String, val category: Category)
 
     enum class Category(val ids: Set<Int>, val tracking: Boolean) {
-        ADVERTISING(setOf(3, 4), true), ANALYTICS(setOf(6, 101), true), TELEMETRY(setOf(15), true),
-        SOCIAL(setOf(7), true), OTHER(emptySet(), false);
-        companion object { fun of(id: Int) = entries.firstOrNull { id in it.ids } ?: OTHER }
+        ADVERTISING(setOf(3, 4), true),
+        ANALYTICS(setOf(6, 101), true),
+        TELEMETRY(setOf(15), true),
+        SOCIAL(setOf(7), true),
+        OTHER(emptySet(), false);
+
+        companion object {
+            fun of(id: Int) = entries.firstOrNull { id in it.ids } ?: OTHER
+        }
     }
 
     private val file = File(dir, "trackers.json")
+
     @Volatile private var domains: Map<String, Tracker> = emptyMap()
     private val cache = LruCache<String, Any>(4096)
     private val none = Any()
 
-    data class Info(val loaded: Boolean = false, val domains: Int = 0, val updated: Long = 0, val busy: Boolean = false, val error: String? = null)
+    data class Info(
+        val loaded: Boolean = false,
+        val domains: Int = 0,
+        val updated: Long = 0,
+        val busy: Boolean = false,
+        val error: String? = null
+    )
     private val _info = MutableStateFlow(Info())
     val info: StateFlow<Info> = _info
 
-    init { load() }
+    init {
+        load()
+    }
 
     private fun load() {
-        domains = try { if (file.exists()) parse(file.readText()) else emptyMap() } catch (e: Exception) { Log.w(TAG, "bad file", e); emptyMap() }
+        domains =
+            try {
+                if (file.exists()) parse(file.readText()) else emptyMap()
+            } catch (e: Exception) {
+                Log.w(TAG, "bad file", e)
+                emptyMap()
+            }
         cache.evictAll()
         _info.value = Info(domains.isNotEmpty(), domains.size, if (domains.isEmpty()) 0 else file.lastModified())
     }
@@ -65,17 +88,25 @@ class Trackers(dir: File) {
     fun download() {
         _info.value = _info.value.copy(busy = true, error = null)
         try {
-            val text = okhttp3.OkHttpClient().newCall(okhttp3.Request.Builder().url(URL).header("User-Agent", "Packetwall").build())
-                .execute().use { r -> if (r.code != 200) throw IllegalStateException("HTTP ${r.code}"); r.body!!.string() }
+            val text = OkHttpClient().newCall(Request.Builder().url(URL).header("User-Agent", "Packetwall").build())
+                .execute().use { r ->
+                    if (r.code != 200) throw IllegalStateException("HTTP ${r.code}")
+                    r.body!!.string()
+                }
             require(parse(text).isNotEmpty()) { "empty database" }
-            val tmp = File(file.path + ".tmp"); tmp.writeText(text); tmp.renameTo(file)
+            val tmp = File(file.path + ".tmp")
+            tmp.writeText(text)
+            tmp.renameTo(file)
             load()
         } catch (e: Exception) {
             _info.value = _info.value.copy(busy = false, error = e.message ?: e.javaClass.simpleName)
         }
     }
 
-    fun delete() { file.delete(); load() }
+    fun delete() {
+        file.delete()
+        load()
+    }
 
     companion object {
         private const val TAG = "Trackers"

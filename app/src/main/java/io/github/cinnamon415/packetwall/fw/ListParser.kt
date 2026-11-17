@@ -17,7 +17,7 @@ object ListParser {
         /** "$important" entries: they must beat the list's own exceptions. */
         val important: List<String> = emptyList(),
         /** "$app=pkg1|pkg2" entries: (packages, entry). */
-        val appRules: List<Pair<List<String>, String>> = emptyList(),
+        val appRules: List<Pair<List<String>, String>> = emptyList()
     )
 
     /** An AdBlock network rule split into its parts. */
@@ -27,12 +27,17 @@ object ListParser {
     private val ipv4Re = Regex("^\\d{1,3}(\\.\\d{1,3}){3}(/\\d{1,2})?$")
     private val ipv6Re = Regex("^[0-9a-f:]+:[0-9a-f:.]*(/\\d{1,3})?$")
     private val hostsIps = setOf("0.0.0.0", "127.0.0.1", "::", "::1", "0", "::0")
-    private val hostsIgnore = setOf("localhost", "localhost.localdomain", "local", "broadcasthost",
+    private val hostsIgnore = setOf(
+        "localhost", "localhost.localdomain", "local", "broadcasthost",
         "ip6-localhost", "ip6-loopback", "ip6-localnet", "ip6-mcastprefix", "ip6-allnodes",
-        "ip6-allrouters", "ip6-allhosts", "0.0.0.0")
+        "ip6-allrouters", "ip6-allhosts", "0.0.0.0"
+    )
+
     /** AdBlock options that do not change the meaning for a DNS/IP firewall. */
-    private val harmlessOptions = setOf("important", "all", "document", "doc", "third-party", "3p",
-        "first-party", "1p", "popup", "network", "~third-party")
+    private val harmlessOptions = setOf(
+        "important", "all", "document", "doc", "third-party", "3p",
+        "first-party", "1p", "popup", "network", "~third-party"
+    )
 
     fun isDomain(s: String) = domainRe.matches(s)
     private val asnRe = Regex("^(as)?\\d{1,10}$", RegexOption.IGNORE_CASE)
@@ -74,7 +79,7 @@ object ListParser {
             val e = convert(line)
             when {
                 e == null -> skip(line)
-                e.isEmpty() -> comments++   // intentionally ignored (localhost entries…)
+                e.isEmpty() -> comments++ // intentionally ignored (localhost entries…)
                 else -> out.add(e)
             }
         }
@@ -121,7 +126,10 @@ object ListParser {
     private fun adblockParsed(l: String): Adb? {
         var s = l
         var allow = false
-        if (s.startsWith("@@")) { allow = true; s = s.removePrefix("@@") }
+        if (s.startsWith("@@")) {
+            allow = true
+            s = s.removePrefix("@@")
+        }
 
         val opts = s.substringAfter('$', "")
         s = s.substringBefore('$')
@@ -133,22 +141,25 @@ object ListParser {
                 when {
                     name == "app" -> {
                         val v = o.substringAfter('=', "").split('|').filter { it.isNotBlank() }
-                        if (v.isEmpty() || v.any { it.startsWith("~") }) return null   // negated app lists: no equivalent
+                        if (v.isEmpty() || v.any { it.startsWith("~") }) return null // negated app lists: no equivalent
                         apps = v
                     }
                     name == "important" -> important = true
-                    name !in harmlessOptions -> return null   // $denyallow=, $client=, $dnstype=…
+                    name !in harmlessOptions -> return null // $denyallow=, $client=, $dnstype=…
                 }
             }
         }
 
         val sub: Boolean
         when {
-            s.startsWith("||") -> { sub = true; s = s.removePrefix("||") }
+            s.startsWith("||") -> {
+                sub = true
+                s = s.removePrefix("||")
+            }
             s.startsWith("|http://") || s.startsWith("|https://") -> {
                 sub = false
                 s = s.removePrefix("|").substringAfter("://")
-                if (s.substringAfter('/', "").isNotEmpty()) return null   // URL path: not a host rule
+                if (s.substringAfter('/', "").isNotEmpty()) return null // URL path: not a host rule
                 s = s.substringBefore('/')
             }
             else -> return null

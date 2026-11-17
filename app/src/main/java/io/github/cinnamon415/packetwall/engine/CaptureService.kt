@@ -33,7 +33,13 @@ import io.github.cinnamon415.packetwall.engine.model.CaptureStats
 import io.github.cinnamon415.packetwall.engine.model.ConnectionDescriptor
 import io.github.cinnamon415.packetwall.engine.model.ConnectionUpdate
 import java.net.Inet4Address
+import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.Proxy
+import java.net.Socket
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * The VPN service hosting the native packet loop (zdtun + nDPI).
@@ -53,16 +59,23 @@ class CaptureService : VpnService() {
     private var dnsServer = FALLBACK_DNS4
     private var netCallback: ConnectivityManager.NetworkCallback? = null
     private var proxy: DnsProxy? = null
+
     @Volatile private var upstreamIp: String? = null
     private var upstreamMonitor: Thread? = null
 
     /** Resolves the upstream host off the main thread (a literal IP is returned as is). */
     private fun resolveUpstream(host: String): String? = try {
-        java.util.concurrent.Executors.newSingleThreadExecutor().let { ex ->
-            try { ex.submit<String?> { java.net.InetAddress.getByName(host.trim()).hostAddress }.get(4, java.util.concurrent.TimeUnit.SECONDS) }
-            finally { ex.shutdownNow() }
+        Executors.newSingleThreadExecutor().let { ex ->
+            try {
+                ex.submit<String?> { InetAddress.getByName(host.trim()).hostAddress }.get(4, TimeUnit.SECONDS)
+            } finally {
+                ex.shutdownNow()
+            }
         }
-    } catch (e: Exception) { Log.w(TAG, "cannot resolve upstream $host", e); null }
+    } catch (e: Exception) {
+        Log.w(TAG, "cannot resolve upstream $host", e)
+        null
+    }
 
     /**
      * Checks every 10 s that the SOCKS5 upstream accepts connections. When it is down the engine
@@ -71,7 +84,11 @@ class CaptureService : VpnService() {
     private fun startUpstreamMonitor() {
         val st = app.settings.current
         val ip = upstreamIp
-        if (ip == null) { setUpstreamState(true, false); setUdpRelay("", 0); return }
+        if (ip == null) {
+            setUpstreamState(true, false)
+            setUdpRelay("", 0)
+            return
+        }
         // UDP through the proxy only exists for SOCKS5 (UDP ASSOCIATE)
         val udpRelay = st.upUdp == 2 && st.upType == 0
         setUpstreamState(true, st.upUdp != 0)
@@ -80,8 +97,11 @@ class CaptureService : VpnService() {
             try {
                 while (!Thread.currentThread().isInterrupted) {
                     val up = try {
-                        java.net.Socket().use { it.connect(java.net.InetSocketAddress(ip, st.upPort), 2000) }; true
-                    } catch (e: Exception) { false }
+                        Socket().use { it.connect(InetSocketAddress(ip, st.upPort), 2000) }
+                        true
+                    } catch (e: Exception) {
+                        false
+                    }
                     if (upstreamUp.value != up) Log.i(TAG, "upstream ${if (up) "up" else "down"}")
                     upstreamUp.value = up
                     if (udpRelay) {
@@ -89,7 +109,11 @@ class CaptureService : VpnService() {
                             assoc?.close()
                             assoc = UdpAssociation(ip, st.upPort, st.upUser, st.upPass).takeIf { it.open() }
                             setUdpRelay(assoc?.relayIp ?: "", assoc?.relayPort ?: 0)
-                        } else if (!up && assoc != null) { assoc.close(); assoc = null; setUdpRelay("", 0) }
+                        } else if (!up && assoc != null) {
+                            assoc.close()
+                            assoc = null
+                            setUdpRelay("", 0)
+                        }
                     }
                     udpRelayUp.value = assoc?.alive == true
                     val active = up || st.upOnDown == 0
@@ -106,6 +130,7 @@ class CaptureService : VpnService() {
             }
         }, "UpstreamMonitor").also { it.start() }
     }
+
     /** Non-VPN networks: link properties and transports, to follow DNS and Private DNS changes. */
     private val networks = HashMap<Network, Pair<LinkProperties?, NetworkCapabilities?>>()
 
@@ -122,8 +147,9 @@ class CaptureService : VpnService() {
             return START_NOT_STICKY
         }
         startForegroundCompat()
-        if (loopThread?.isAlive != true)
+        if (loopThread?.isAlive != true) {
             startCapture()
+        }
         return START_STICKY
     }
 
@@ -150,17 +176,27 @@ class CaptureService : VpnService() {
         if (st.upstream && upstreamIp == null) reportError(getString(R.string.upstream_bad_host, st.upHost))
         // DoH through the upstream: HTTP proxies (with or without login), SOCKS5 without login
         val upProxy = upstreamIp?.takeIf { st.upType == 1 || st.upUser.isEmpty() }?.let {
-            java.net.Proxy(if (st.upType == 1) java.net.Proxy.Type.HTTP else java.net.Proxy.Type.SOCKS, java.net.InetSocketAddress(it, st.upPort))
+            Proxy(if (st.upType == 1) Proxy.Type.HTTP else Proxy.Type.SOCKS, InetSocketAddress(it, st.upPort))
         }
         val upAuth = if (st.upType == 1 && st.upUser.isNotEmpty()) st.upUser to st.upPass else null
         setUpstreamHttp(st.upType == 1)
         setUpstreamScope(st.upAll)
-        proxy?.stop(); proxy = null
+        proxy?.stop()
+        proxy = null
         if (st.dnsMode == 1) {
             DnsProxy.resetStats()
-            proxy = try { DnsProxy(st.dohUrl, upProxy, upAuth).also { it.start() } } catch (e: Exception) { Log.e(TAG, "DoH proxy", e); null }
+            proxy =
+                try {
+                    DnsProxy(st.dohUrl, upProxy, upAuth).also { it.start() }
+                } catch (e: Exception) {
+                    Log.e(TAG, "DoH proxy", e)
+                    null
+                }
         }
-        proxy?.let { dnsServer = "127.0.0.1"; setDnsServerPort(it.port) } ?: setDnsServerPort(53)
+        proxy?.let {
+            dnsServer = "127.0.0.1"
+            setDnsServerPort(it.port)
+        } ?: setDnsServerPort(53)
         dohActive.value = proxy?.let { st.dohUrl }
         Log.i(TAG, "Starting capture, upstream DNS $dnsServer")
 
@@ -173,7 +209,9 @@ class CaptureService : VpnService() {
             .addRoute("2000::", 3)
         if (st.lanBypass) {
             // everything except private networks; the VPN's own /30 (DNS 10.215.173.2) stays inside
-            Routes.subtract(Routes.parse("0.0.0.0/0"), Routes.LOCAL_V4).forEach { builder.addRoute(it.toString().substringBefore('/'), it.prefix) }
+            Routes.subtract(Routes.parse("0.0.0.0/0"), Routes.LOCAL_V4).forEach {
+                builder.addRoute(it.toString().substringBefore('/'), it.prefix)
+            }
             builder.addRoute("10.215.173.0", 30)
         } else {
             builder.addRoute("0.0.0.0", 1).addRoute("128.0.0.0", 1).addRoute("fc00::", 7)
@@ -181,15 +219,26 @@ class CaptureService : VpnService() {
         builder.setMetered(false)
         builder.setConfigureIntent(mainActivityIntent())
         // Packetwall's own traffic (DoH, list downloads) goes straight to the network
-        try { builder.addDisallowedApplication(packageName) } catch (e: Exception) { Log.w(TAG, "addDisallowedApplication", e) }
+        try {
+            builder.addDisallowedApplication(packageName)
+        } catch (e: Exception) {
+            Log.w(TAG, "addDisallowedApplication", e)
+        }
         // the upstream proxy app must not send its own traffic back into the VPN
-        if (upstreamIp != null && st.upApp.isNotEmpty() && st.upApp != packageName)
-            try { builder.addDisallowedApplication(st.upApp) } catch (e: Exception) { Log.w(TAG, "proxy app not found: ${st.upApp}") }
+        if (upstreamIp != null && st.upApp.isNotEmpty() && st.upApp != packageName) {
+            try {
+                builder.addDisallowedApplication(st.upApp)
+            } catch (e: Exception) {
+                Log.w(TAG, "proxy app not found: ${st.upApp}")
+            }
+        }
         // with DoH every query must go to the IPv4 VPN DNS (it is redirected to the proxy)
-        if (proxy == null) try {
-            builder.addDnsServer(FALLBACK_DNS6)
-        } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "IPv6 DNS not set: $e")
+        if (proxy == null) {
+            try {
+                builder.addDnsServer(FALLBACK_DNS6)
+            } catch (e: IllegalArgumentException) {
+                Log.w(TAG, "IPv6 DNS not set: $e")
+            }
         }
 
         val fd = try {
@@ -259,13 +308,22 @@ class CaptureService : VpnService() {
             .build()
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                handler.post { networks[network] = networks[network]?.first to caps; handleLinkProperties(pickUnderlying()) }
+                handler.post {
+                    networks[network] = networks[network]?.first to caps
+                    handleLinkProperties(pickUnderlying())
+                }
             }
             override fun onLinkPropertiesChanged(network: Network, lp: LinkProperties) {
-                handler.post { networks[network] = lp to networks[network]?.second; handleLinkProperties(pickUnderlying()) }
+                handler.post {
+                    networks[network] = lp to networks[network]?.second
+                    handleLinkProperties(pickUnderlying())
+                }
             }
             override fun onLost(network: Network) {
-                handler.post { networks.remove(network); handleLinkProperties(pickUnderlying()) }
+                handler.post {
+                    networks.remove(network)
+                    handleLinkProperties(pickUnderlying())
+                }
             }
         }
         try {
@@ -277,7 +335,13 @@ class CaptureService : VpnService() {
     }
 
     private fun stopNetworkTracking() {
-        netCallback?.let { cb -> try { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } catch (_: Exception) {} }
+        netCallback?.let { cb ->
+            try {
+                getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb)
+            } catch (
+                _: Exception
+            ) {}
+        }
         netCallback = null
         networks.clear()
         setPrivateDnsBlocked(false)
@@ -285,12 +349,16 @@ class CaptureService : VpnService() {
 
     private fun onLoopExited() {
         stopNetworkTracking()
-        upstreamMonitor?.interrupt(); upstreamMonitor = null
+        upstreamMonitor?.interrupt()
+        upstreamMonitor = null
         upstreamUp.value = null
-        proxy?.stop(); proxy = null
+        proxy?.stop()
+        proxy = null
         dohActive.value = null
         setDnsServerPort(53)
-        try { pfd?.close() } catch (_: Exception) {}
+        try {
+            pfd?.close()
+        } catch (_: Exception) {}
         pfd = null
         loopThread = null
         state.value = CaptureState.Stopped
@@ -298,10 +366,11 @@ class CaptureService : VpnService() {
     }
 
     private fun stopCapture() {
-        if (loopThread?.isAlive == true)
+        if (loopThread?.isAlive == true) {
             stopPacketLoop()
-        else if (state.value is CaptureState.Running)
+        } else if (state.value is CaptureState.Running) {
             onLoopExited()
+        }
     }
 
     private fun stopSelfCompat() {
@@ -320,12 +389,22 @@ class CaptureService : VpnService() {
 
     private fun startForegroundCompat() {
         val nm = getSystemService(NotificationManager::class.java)
-        if (nm.getNotificationChannel(CHANNEL_ID) == null)
-            nm.createNotificationChannel(NotificationChannel(CHANNEL_ID,
-                getString(R.string.notif_channel_status), NotificationManager.IMPORTANCE_LOW))
+        if (nm.getNotificationChannel(CHANNEL_ID) == null) {
+            nm.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    getString(R.string.notif_channel_status),
+                    NotificationManager.IMPORTANCE_LOW
+                )
+            )
+        }
 
-        val stop = PendingIntent.getService(this, 1,
-            Intent(this, CaptureService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
+        val stop = PendingIntent.getService(
+            this,
+            1,
+            Intent(this, CaptureService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE
+        )
         val n: Notification = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_wall)
             .setContentTitle(getString(R.string.notif_running))
@@ -333,15 +412,19 @@ class CaptureService : VpnService() {
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, getString(R.string.action_stop), stop).build())
             .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFY_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        else
+        } else {
             startForeground(NOTIFY_ID, n)
+        }
     }
 
-    private fun mainActivityIntent(): PendingIntent = PendingIntent.getActivity(this, 0,
+    private fun mainActivityIntent(): PendingIntent = PendingIntent.getActivity(
+        this,
+        0,
         Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
-        PendingIntent.FLAG_IMMUTABLE)
+        PendingIntent.FLAG_IMMUTABLE
+    )
 
     /* ============ Called from native code ============ */
 
@@ -362,7 +445,9 @@ class CaptureService : VpnService() {
         register.onUpdate(newConns, updates)
     }
 
-    fun sendStatsDump(stats: CaptureStats) { register.onStats(stats) }
+    fun sendStatsDump(stats: CaptureStats) {
+        register.onStats(stats)
+    }
 
     fun sendServiceStatus(status: String) {
         Log.i(TAG, "service status: $status")
@@ -388,7 +473,7 @@ class CaptureService : VpnService() {
     fun isVpnCapture(): Int = 1
     fun isRootCapture(): Int = 0
     fun isPcapFileCapture(): Int = 0
-    fun getPayloadMode(): Int = 0           // NONE (M2 enables payload)
+    fun getPayloadMode(): Int = 0 // NONE (M2 enables payload)
     fun pcapDumpEnabled(): Int = if (app.settings.current.capturePackets) 1 else 0
     fun dumpExtensionsEnabled(): Int = 1
     fun isPcapngEnabled(): Int = 1
@@ -400,7 +485,7 @@ class CaptureService : VpnService() {
     fun getSocks5ProxyPort(): Int = app.settings.current.upPort
     fun getSocks5ProxyAuth(): String = app.settings.current.let { if (it.upUser.isNotEmpty()) "${it.upUser}:${it.upPass}" else "" }
     fun malwareDetectionEnabled(): Int = 0
-    fun firewallEnabled(): Int = 0          // M1: rule engine
+    fun firewallEnabled(): Int = 0 // M1: rule engine
     fun isTlsDecryptionEnabled(): Int = 0
     fun getWorkingDir(): String = cacheDir.absolutePath
     fun getPersistentDir(): String = filesDir.absolutePath
@@ -432,7 +517,7 @@ class CaptureService : VpnService() {
         const val FALLBACK_DNS6 = "2620:fe::10"
         const val UID_UNKNOWN = -1
 
-        val state = kotlinx.coroutines.flow.MutableStateFlow<CaptureState>(CaptureState.Stopped)
+        val state = MutableStateFlow<CaptureState>(CaptureState.Stopped)
 
         init {
             System.loadLibrary("capture")
@@ -448,24 +533,39 @@ class CaptureService : VpnService() {
         }
 
         @JvmStatic external fun initPlatformInfo(appver: String, device: String, os: String)
+
         @JvmStatic external fun runPacketLoop(fd: Int, vpn: CaptureService, sdk: Int)
+
         @JvmStatic external fun stopPacketLoop()
+
         @JvmStatic external fun askStatsDump()
+
         @JvmStatic external fun setDnsServer(server: String)
+
         @JvmStatic external fun setPrivateDnsBlocked(block: Boolean)
+
         @JvmStatic external fun setDnsServerPort(port: Int)
+
         @JvmStatic external fun setUpstreamState(active: Boolean, blockUdp: Boolean)
+
         @JvmStatic external fun setUpstreamHttp(http: Boolean)
+
         @JvmStatic external fun setUpstreamScope(all: Boolean)
+
         @JvmStatic external fun setUdpRelay(ip: String, port: Int)
+
         /** The SOCKS5 UDP ASSOCIATE relay is established. */
-        val udpRelayUp = kotlinx.coroutines.flow.MutableStateFlow(false)
+        val udpRelayUp = MutableStateFlow(false)
+
         /** null = no upstream configured, else whether the SOCKS5 server answers. */
-        val upstreamUp = kotlinx.coroutines.flow.MutableStateFlow<Boolean?>(null)
+        val upstreamUp = MutableStateFlow<Boolean?>(null)
+
         /** DoH URL while the built-in DNS-over-HTTPS proxy is in use. */
-        val dohActive = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+        val dohActive = MutableStateFlow<String?>(null)
+
         /** Private DNS is in strict mode: queries are encrypted, rules by name only see SNI. */
-        val privateDnsStrict = kotlinx.coroutines.flow.MutableStateFlow(false)
+        val privateDnsStrict = MutableStateFlow(false)
+
         /** Loads a compiled rules file into the native engine; works while stopped too. */
         @JvmStatic external fun loadRules(path: String): Int
     }

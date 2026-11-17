@@ -69,7 +69,7 @@ class Navigator(initial: List<Dest> = listOf(Dest.Home)) {
 
         val saver: Saver<Navigator, String> = Saver(
             save = { Json.encodeToString(serializer, it.stack.toList()) },
-            restore = { Navigator(runCatching { Json.decodeFromString(serializer, it) }.getOrDefault(emptyList())) },
+            restore = { Navigator(runCatching { Json.decodeFromString(serializer, it) }.getOrDefault(emptyList())) }
         )
     }
 }

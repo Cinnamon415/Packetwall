@@ -1,6 +1,7 @@
 package io.github.cinnamon415.packetwall
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
@@ -17,8 +18,11 @@ import io.github.cinnamon415.packetwall.ui.theme.PacketwallTheme
 class MainActivity : ComponentActivity() {
 
     private val vpnConsent = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-        if (res.resultCode == RESULT_OK) CaptureService.start(this)
-        else Toast.makeText(this, R.string.vpn_denied, Toast.LENGTH_SHORT).show()
+        if (res.resultCode == RESULT_OK) {
+            CaptureService.start(this)
+        } else {
+            Toast.makeText(this, R.string.vpn_denied, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -27,8 +31,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 33 &&
-            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
             notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
 
         val app = application as PacketwallApp
         setContent {
@@ -39,16 +45,22 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
     }
 
-    override fun onNewIntent(intent: android.content.Intent) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
     }
 
     /** The tile / widget asked to turn protection on but the VPN consent is still needed. */
-    private fun handleIntent(intent: android.content.Intent?) {
+    private fun handleIntent(intent: Intent?) {
         when (intent?.action) {
-            ACTION_TOGGLE_ON -> { intent.action = null; toggleProtection(true) }
-            ACTION_TOGGLE_OFF -> { intent.action = null; toggleProtection(false) }
+            ACTION_TOGGLE_ON -> {
+                intent.action = null
+                toggleProtection(true)
+            }
+            ACTION_TOGGLE_OFF -> {
+                intent.action = null
+                toggleProtection(false)
+            }
         }
     }
 

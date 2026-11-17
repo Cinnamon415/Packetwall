@@ -29,21 +29,27 @@ class UdpAssociation(private val host: String, private val port: Int, private va
         val out = s.getOutputStream()
         val inp = DataInputStream(s.getInputStream())
         val auth = user.isNotEmpty()
-        out.write(byteArrayOf(5, 1, if (auth) 2 else 0)); out.flush()
-        val ver = inp.readUnsignedByte(); val method = inp.readUnsignedByte()
+        out.write(byteArrayOf(5, 1, if (auth) 2 else 0))
+        out.flush()
+        val ver = inp.readUnsignedByte()
+        val method = inp.readUnsignedByte()
         require(ver == 5) { "not a SOCKS5 server" }
         when (method) {
             0 -> {}
             2 -> {
                 require(auth) { "the proxy wants a login" }
-                val u = user.toByteArray(); val p = pass.toByteArray()
-                out.write(byteArrayOf(1, u.size.toByte()) + u + byteArrayOf(p.size.toByte()) + p); out.flush()
-                inp.readUnsignedByte(); require(inp.readUnsignedByte() == 0) { "authentication failed" }
+                val u = user.toByteArray()
+                val p = pass.toByteArray()
+                out.write(byteArrayOf(1, u.size.toByte()) + u + byteArrayOf(p.size.toByte()) + p)
+                out.flush()
+                inp.readUnsignedByte()
+                require(inp.readUnsignedByte() == 0) { "authentication failed" }
             }
             else -> throw IllegalStateException("no acceptable auth method ($method)")
         }
         // UDP ASSOCIATE, client address unknown: 0.0.0.0:0
-        out.write(byteArrayOf(5, 3, 0, 1, 0, 0, 0, 0, 0, 0)); out.flush()
+        out.write(byteArrayOf(5, 3, 0, 1, 0, 0, 0, 0, 0, 0))
+        out.flush()
         require(inp.readUnsignedByte() == 5) { "bad reply" }
         val rep = inp.readUnsignedByte()
         require(rep == 0) { "UDP ASSOCIATE refused ($rep)" }
@@ -60,7 +66,9 @@ class UdpAssociation(private val host: String, private val port: Int, private va
         s.soTimeout = 0
         alive = true
         Thread({
-            try { while (s.getInputStream().read() >= 0) { } } catch (_: Exception) {}
+            try {
+                while (s.getInputStream().read() >= 0) { }
+            } catch (_: Exception) {}
             alive = false
             Log.i(TAG, "UDP association closed")
         }, "UdpAssociation").apply { isDaemon = true }.start()
@@ -74,9 +82,13 @@ class UdpAssociation(private val host: String, private val port: Int, private va
 
     fun close() {
         alive = false
-        try { sock?.close() } catch (_: Exception) {}
+        try {
+            sock?.close()
+        } catch (_: Exception) {}
         sock = null
     }
 
-    companion object { private const val TAG = "UdpAssociation" }
+    companion object {
+        private const val TAG = "UdpAssociation"
+    }
 }

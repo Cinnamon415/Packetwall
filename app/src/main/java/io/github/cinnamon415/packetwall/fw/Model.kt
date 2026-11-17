@@ -28,19 +28,22 @@ data class Target(
     val kind: TargetKind,
     val value: String = "",
     /** For [TargetKind.DOMAIN]: also match every subdomain. */
-    val subdomains: Boolean = false,
+    val subdomains: Boolean = false
 )
 
 @Serializable
 sealed interface Who {
-    @Serializable @SerialName("global")
+    @Serializable
+    @SerialName("global")
     data object Global : Who
 
     /** An app by package name; system uids use the pseudo-packages of AppsResolver (netd, root, …). */
-    @Serializable @SerialName("app")
+    @Serializable
+    @SerialName("app")
     data class App(val pkg: String) : Who
 
-    @Serializable @SerialName("group")
+    @Serializable
+    @SerialName("group")
     data class Group(val id: Int) : Who
 }
 
@@ -57,7 +60,7 @@ data class Rule(
     val port: Int = 0,
     val created: Long = 0,
     /** For allow rules: send the matching traffic directly or through the upstream proxy. */
-    val route: Route = Route.DEFAULT,
+    val route: Route = Route.DEFAULT
 )
 
 @Serializable
@@ -76,7 +79,7 @@ data class RuleSet(
     val updated: Long = 0,
     val entries: Int = 0,
     val skipped: Int = 0,
-    val error: String? = null,
+    val error: String? = null
 )
 
 @Serializable
@@ -99,7 +102,7 @@ data class FwState(
     val groups: List<AppGroup> = emptyList(),
     val profiles: List<Profile> = emptyList(),
     val activeProfile: Int? = null,
-    val nextId: Int = 100,
+    val nextId: Int = 100
 ) {
     fun set(id: Int) = sets.firstOrNull { it.id == id }
     fun rule(id: Int) = rules.firstOrNull { it.id == id }
@@ -109,6 +112,7 @@ data class FwState(
     val userSets get() = orderedSets.filter { it.kind == SetKind.USER }
     val blocklists get() = orderedSets.filter { it.kind == SetKind.BLOCKLIST }
     val profile get() = activeProfile?.let { id -> profiles.firstOrNull { it.id == id } }
+
     /** The active profile no longer matches the live configuration. */
     val profileModified get() = profile?.let { it.sets != order } ?: false
 
@@ -122,7 +126,7 @@ data class FwState(
                 order = order,
                 profiles = listOf(Profile(2, defaultProfileName, order)),
                 activeProfile = 2,
-                nextId = 100,
+                nextId = 100
             )
         }
     }
@@ -137,7 +141,7 @@ data class ExportFile(
     val exported: Long = 0,
     val state: FwState,
     /** setId -> normalized list lines, for blocklists imported from files (no URL). */
-    val lists: Map<Int, List<String>> = emptyMap(),
+    val lists: Map<Int, List<String>> = emptyMap()
 ) {
     companion object {
         const val FORMAT = "packetwall-rules"

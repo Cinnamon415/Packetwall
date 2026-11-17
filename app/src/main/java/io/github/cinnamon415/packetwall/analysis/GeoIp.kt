@@ -2,14 +2,16 @@ package io.github.cinnamon415.packetwall.analysis
 
 import android.util.Log
 import android.util.LruCache
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 import java.net.InetAddress
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import java.util.zip.GZIPInputStream
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 /**
  * Country and AS lookups for rules and the connection screen, backed by the free DB-IP
@@ -20,7 +22,9 @@ class GeoIp(dir: File) {
     private val countryFile = File(geoDir, "country.mmdb")
     private val asnFile = File(geoDir, "asn.mmdb")
     private val prefixDir = File(geoDir, "asn-prefixes").apply { mkdirs() }
+
     @Volatile private var country: MmdbReader? = null
+
     @Volatile private var asnDb: MmdbReader? = null
     private val countryCache = LruCache<String, String>(4096)
     private val asnCache = LruCache<String, Pair<Long, String>>(4096)
@@ -35,18 +39,32 @@ class GeoIp(dir: File) {
     /** Called after a database changes (rules with ASN targets must be recompiled). */
     var onChanged: (() -> Unit)? = null
 
-    init { open() }
+    init {
+        open()
+    }
 
-    private fun load(f: File): MmdbReader? = try { if (f.exists()) MmdbReader(f) else null } catch (e: Exception) { Log.w(TAG, "bad db ${f.name}", e); null }
+    private fun load(f: File): MmdbReader? = try {
+        if (f.exists()) MmdbReader(f) else null
+    } catch (e: Exception) {
+        Log.w(TAG, "bad db ${f.name}", e)
+        null
+    }
 
-    private fun dbInfo(r: MmdbReader?, f: File) = if (r == null) Db() else Db(true,
-        (r.metadata["build_epoch"] as? Number)?.let { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(it.toLong() * 1000) } ?: "",
-        f.length() / 1048576f)
+    private fun dbInfo(r: MmdbReader?, f: File) = if (r == null) {
+        Db()
+    } else {
+        Db(
+            true,
+            (r.metadata["build_epoch"] as? Number)?.let { SimpleDateFormat("yyyy-MM-dd", Locale.US).format(it.toLong() * 1000) } ?: "",
+            f.length() / 1048576f
+        )
+    }
 
     private fun open() {
         country = load(countryFile)
         asnDb = load(asnFile)
-        countryCache.evictAll(); asnCache.evictAll()
+        countryCache.evictAll()
+        asnCache.evictAll()
         _info.value = Info(dbInfo(country, countryFile), dbInfo(asnDb, asnFile))
     }
 
@@ -58,7 +76,9 @@ class GeoIp(dir: File) {
             @Suppress("UNCHECKED_CAST")
             val rec = r.lookup(InetAddress.getByName(ip)) as? Map<String, Any?>
             ((rec?.get("country") as? Map<String, Any?>)?.get("iso_code") as? String) ?: ""
-        } catch (e: Exception) { "" }
+        } catch (e: Exception) {
+            ""
+        }
         countryCache.put(ip, cc)
         return cc
     }
@@ -72,7 +92,9 @@ class GeoIp(dir: File) {
             val rec = r.lookup(InetAddress.getByName(ip)) as? Map<String, Any?>
             val n = (rec?.get("autonomous_system_number") as? Number)?.toLong() ?: 0L
             n to ((rec?.get("autonomous_system_organization") as? String) ?: "")
-        } catch (e: Exception) { 0L to "" }
+        } catch (e: Exception) {
+            0L to ""
+        }
         asnCache.put(ip, v)
         return v.takeIf { it.first > 0 }
     }
@@ -141,11 +163,11 @@ class GeoIp(dir: File) {
             val url = "https://download.db-ip.com/free/dbip-$kind-lite-${fmt.format(cal.time)}.mmdb.gz"
             try {
                 val tmp = File(geoDir, "${file.name}.tmp")
-                okhttp3.OkHttpClient().newCall(okhttp3.Request.Builder().url(url).header("User-Agent", "Packetwall").build()).execute().use { r ->
+                OkHttpClient().newCall(Request.Builder().url(url).header("User-Agent", "Packetwall").build()).execute().use { r ->
                     if (r.code != 200) throw IllegalStateException("HTTP ${r.code}")
                     GZIPInputStream(r.body!!.byteStream()).use { input -> tmp.outputStream().use { input.copyTo(it) } }
                 }
-                MmdbReader(tmp)   // validate
+                MmdbReader(tmp) // validate
                 tmp.renameTo(file)
                 return null
             } catch (e: Exception) {
@@ -157,10 +179,14 @@ class GeoIp(dir: File) {
     }
 
     fun delete() {
-        countryFile.delete(); asnFile.delete(); prefixDir.listFiles()?.forEach { it.delete() }
+        countryFile.delete()
+        asnFile.delete()
+        prefixDir.listFiles()?.forEach { it.delete() }
         open()
         onChanged?.invoke()
     }
 
-    companion object { private const val TAG = "GeoIp" }
+    companion object {
+        private const val TAG = "GeoIp"
+    }
 }

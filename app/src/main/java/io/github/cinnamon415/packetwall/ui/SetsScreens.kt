@@ -11,6 +11,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,6 +33,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +47,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -75,18 +78,17 @@ import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.fw.Action
 import io.github.cinnamon415.packetwall.fw.Catalog
-import io.github.cinnamon415.packetwall.fw.FwState
-import io.github.cinnamon415.packetwall.fw.ListParser
 import io.github.cinnamon415.packetwall.fw.ForeignImport
+import io.github.cinnamon415.packetwall.fw.FwState
 import io.github.cinnamon415.packetwall.fw.RethinkReader
 import io.github.cinnamon415.packetwall.fw.RuleSet
 import io.github.cinnamon415.packetwall.fw.SetKind
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private fun formatDate(ms: Long): String =
     if (ms == 0L) "—" else DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(ms))
@@ -113,50 +115,82 @@ fun BlocklistsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
         }
         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
         DropdownMenu(menu, { menu = false }) {
-            DropdownMenuItem({ Text(stringResource(R.string.import_file)) }, { menu = false; openFile.launch(arrayOf("*/*")) })
+            DropdownMenuItem({ Text(stringResource(R.string.import_file)) }, {
+                menu = false
+                openFile.launch(arrayOf("*/*"))
+            })
         }
     }) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
                 // one-line summary (spec: no big banner)
-                Text(stringResource(R.string.blocklists_summary, lists.size, total, formatDate(last)),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
-                if (lists.isEmpty()) EmptyHint(stringResource(R.string.no_blocklists))
-                else RoundedGroup {
-                    lists.forEachIndexed { i, s ->
-                        if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
-                        Row(Modifier.fillMaxWidth().clickable { details = s.id }.padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(s.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                val line = when {
-                                    s.id in updating -> stringResource(R.string.updating)
-                                    s.error != null -> stringResource(R.string.list_error, s.error)
-                                    else -> listOfNotNull(
-                                        stringResource(R.string.entries_count, s.entries),
-                                        if (s.action == Action.ALLOW) stringResource(R.string.action_allow) else null,
-                                        if (s.url == null) stringResource(R.string.from_file) else formatDate(s.updated),
-                                    ).joinToString(" · ")
+                Text(
+                    stringResource(R.string.blocklists_summary, lists.size, total, formatDate(last)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                )
+                if (lists.isEmpty()) {
+                    EmptyHint(stringResource(R.string.no_blocklists))
+                } else {
+                    RoundedGroup {
+                        lists.forEachIndexed { i, s ->
+                            if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .clickable { details = s.id }
+                                    .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(s.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    val line = when {
+                                        s.id in updating -> stringResource(R.string.updating)
+                                        s.error != null -> stringResource(R.string.list_error, s.error)
+                                        else -> listOfNotNull(
+                                            stringResource(R.string.entries_count, s.entries),
+                                            if (s.action == Action.ALLOW) stringResource(R.string.action_allow) else null,
+                                            if (s.url == null) stringResource(R.string.from_file) else formatDate(s.updated)
+                                        ).joinToString(" · ")
+                                    }
+                                    Text(
+                                        line,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = if (s.error != null && s.id !in updating) {
+                                            MaterialTheme.colorScheme.error
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                    )
                                 }
-                                Text(line, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    color = if (s.error != null && s.id !in updating) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (s.id in updating) {
+                                    CircularProgressIndicator(Modifier.size(20.dp).padding(end = 4.dp), strokeWidth = 2.dp)
+                                }
+                                Switch(st.isEnabled(s.id), { app.firewall.setEnabled(s.id, it) })
                             }
-                            if (s.id in updating) CircularProgressIndicator(Modifier.size(20.dp).padding(end = 4.dp), strokeWidth = 2.dp)
-                            Switch(st.isEnabled(s.id), { app.firewall.setEnabled(s.id, it) })
                         }
                     }
                 }
                 Spacer(Modifier.height(96.dp))
             }
-            ExtendedFloatingActionButton(onClick = { adding = true }, icon = { Icon(Icons.Filled.Add, null) },
-                text = { Text(stringResource(R.string.blocklist_add)) }, modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp))
+            ExtendedFloatingActionButton(
+                onClick = { adding = true },
+                icon = { Icon(Icons.Filled.Add, null) },
+                text = { Text(stringResource(R.string.blocklist_add)) },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+            )
         }
     }
-    if (adding) AddBlocklistDialog(st, onDismiss = { adding = false }) { picks, customName, customUrl ->
-        adding = false
-        picks.forEach { app.firewall.addBlocklist(it.name, it.url) }
-        if (customUrl.isNotBlank()) app.firewall.addBlocklist(customName.ifBlank { Uri.parse(customUrl).host ?: customUrl }, customUrl.trim())
+    if (adding) {
+        AddBlocklistDialog(st, onDismiss = { adding = false }) { picks, customName, customUrl ->
+            adding = false
+            picks.forEach { app.firewall.addBlocklist(it.name, it.url) }
+            if (customUrl.isNotBlank()) {
+                app.firewall.addBlocklist(customName.ifBlank { Uri.parse(customUrl).host ?: customUrl }, customUrl.trim())
+            }
+        }
     }
     details?.let { id -> st.set(id)?.let { s -> BlocklistDetails(app, s, onDismiss = { details = null }) } }
     importUri?.let { uri -> ImportListDialog(app, uri) { importUri = null } }
@@ -169,14 +203,18 @@ private fun AddBlocklistDialog(st: FwState, onDismiss: () -> Unit, onAdd: (List<
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
     val urlOk = url.isBlank() || (url.trim().startsWith("https://") || url.trim().startsWith("http://"))
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.blocklist_add)) },
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.blocklist_add)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(stringResource(R.string.catalog), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                FieldLabel(stringResource(R.string.catalog))
                 Catalog.entries.forEach { e ->
                     val added = e.url in have
-                    Row(Modifier.fillMaxWidth().clickable(enabled = !added) { picks = if (e in picks) picks - e else picks + e },
-                        verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable(enabled = !added) { picks = if (e in picks) picks - e else picks + e },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Checkbox(added || e in picks, null, enabled = !added)
                         Column {
                             Text(e.name)
@@ -185,11 +223,22 @@ private fun AddBlocklistDialog(st: FwState, onDismiss: () -> Unit, onAdd: (List<
                     }
                 }
                 Spacer(Modifier.height(10.dp))
-                Text(stringResource(R.string.custom_url), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth(), singleLine = true, isError = !urlOk,
-                    placeholder = { Text("https://…", fontFamily = FontFamily.Monospace) })
-                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true,
-                    label = { Text(stringResource(R.string.name)) })
+                FieldLabel(stringResource(R.string.custom_url))
+                OutlinedTextField(
+                    url,
+                    { url = it },
+                    Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = !urlOk,
+                    placeholder = { Text("https://…", fontFamily = FontFamily.Monospace) }
+                )
+                OutlinedTextField(
+                    name,
+                    { name = it },
+                    Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.name)) }
+                )
             }
         },
         confirmButton = {
@@ -197,7 +246,8 @@ private fun AddBlocklistDialog(st: FwState, onDismiss: () -> Unit, onAdd: (List<
                 Text(stringResource(R.string.add))
             }
         },
-        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } })
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
+    )
 }
 
 @Composable
@@ -206,13 +256,24 @@ private fun BlocklistDetails(app: PacketwallApp, s: RuleSet, onDismiss: () -> Un
     var action by remember { mutableStateOf(s.action) }
     var reject by remember { mutableStateOf(s.reject) }
     var confirmDelete by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(s.name) },
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(s.name) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(stringResource(R.string.name)) })
-                if (s.url != null) Text(s.url, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(stringResource(R.string.list_stats, s.entries, s.skipped, formatDate(s.updated)), style = MaterialTheme.typography.bodySmall)
+                NameField(name) { name = it }
+                if (s.url != null) {
+                    Text(
+                        s.url,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Text(
+                    stringResource(R.string.list_stats, s.entries, s.skipped, formatDate(s.updated)),
+                    style = MaterialTheme.typography.bodySmall
+                )
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     listOf(Action.BLOCK to R.string.action_block, Action.ALLOW to R.string.action_allow).forEachIndexed { i, (a, l) ->
                         SegmentedButton(action == a, { action = a }, SegmentedButtonDefaults.itemShape(i, 2)) { Text(stringResource(l)) }
@@ -226,13 +287,20 @@ private fun BlocklistDetails(app: PacketwallApp, s: RuleSet, onDismiss: () -> Un
             }
         },
         confirmButton = {
-            TextButton({ app.firewall.updateSet(s.copy(name = name.trim().ifEmpty { s.name }, action = action, reject = reject)); onDismiss() }) {
+            TextButton({
+                app.firewall.updateSet(s.copy(name = name.trim().ifEmpty { s.name }, action = action, reject = reject))
+                onDismiss()
+            }) {
                 Text(stringResource(R.string.save))
             }
         },
-        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } })
-    if (confirmDelete) ConfirmDialog(stringResource(R.string.delete_set_q, s.name), { confirmDelete = false }) {
-        app.firewall.deleteSet(s.id); onDismiss()
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
+    )
+    if (confirmDelete) {
+        ConfirmDialog(stringResource(R.string.delete_set_q, s.name), { confirmDelete = false }) {
+            app.firewall.deleteSet(s.id)
+            onDismiss()
+        }
     }
 }
 
@@ -253,18 +321,24 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
     var action by remember { mutableStateOf(Action.BLOCK) }
     var done by remember { mutableStateOf<String?>(null) }
 
-    androidx.compose.runtime.LaunchedEffect(uri) {
+    LaunchedEffect(uri) {
         try {
             bytes = withContext(Dispatchers.IO) { ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes() } }
             detected = ForeignImport.detect(bytes!!)
-        } catch (e: Exception) { error = e.message ?: e.javaClass.simpleName }
+        } catch (e: Exception) {
+            error = e.message ?: e.javaClass.simpleName
+        }
     }
     val effective = if (format == ForeignImport.Format.AUTO) detected else format
-    if (effective == ForeignImport.Format.PACKETWALL) { ImportJsonDialog(app, uri, onDismiss); return }
-    androidx.compose.runtime.LaunchedEffect(bytes, effective) {
+    if (effective == ForeignImport.Format.PACKETWALL) {
+        ImportJsonDialog(app, uri, onDismiss)
+        return
+    }
+    LaunchedEffect(bytes, effective) {
         val b = bytes ?: return@LaunchedEffect
         val f = effective ?: return@LaunchedEffect
-        plan = null; error = null
+        plan = null
+        error = null
         try {
             plan = withContext(Dispatchers.IO) {
                 val installed = app.apps.installed().filter { it.uid >= 0 }.map { ForeignImport.App(it.packageName, it.uid, it.isSystem) }
@@ -277,18 +351,26 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
                     else -> ForeignImport.list(String(b, Charsets.UTF_8).lineSequence())
                 }
             }
-        } catch (e: Exception) { error = e.message ?: e.javaClass.simpleName }
+        } catch (e: Exception) {
+            error = e.message ?: e.javaClass.simpleName
+        }
     }
 
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.import_file)) },
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.import_file)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (done != null) { Text(done!!); return@Column }
-                Text(stringResource(R.string.import_format), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (done != null) {
+                    Text(done!!)
+                    return@Column
+                }
+                FieldLabel(stringResource(R.string.import_format))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ForeignImport.Format.entries.forEach { f ->
-                        androidx.compose.material3.FilterChip(format == f, { format = f }, {
-                            Text(if (f == ForeignImport.Format.AUTO) stringResource(R.string.import_auto, detected?.label ?: "…") else f.label)
+                        FilterChip(format == f, { format = f }, {
+                            val auto = f == ForeignImport.Format.AUTO
+                            Text(if (auto) stringResource(R.string.import_auto, detected?.label ?: "…") else f.label)
                         })
                     }
                 }
@@ -301,25 +383,37 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
                         p.notes.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
                         if (p.samples.isNotEmpty()) {
                             Text(stringResource(R.string.skipped_examples), style = MaterialTheme.typography.labelMedium)
-                            Text(p.samples.take(8).joinToString("\n"), style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                p.samples.take(8).joinToString("\n"),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                        OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(stringResource(R.string.name)) })
-                        if (p.entries.isNotEmpty() || p.important.isNotEmpty())
+                        NameField(name) { name = it }
+                        if (p.entries.isNotEmpty() || p.important.isNotEmpty()) {
                             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                                listOf(Action.BLOCK to R.string.action_block, Action.ALLOW to R.string.action_allow).forEachIndexed { i, (a, l) ->
-                                    SegmentedButton(action == a, { action = a }, SegmentedButtonDefaults.itemShape(i, 2)) { Text(stringResource(l)) }
+                                val choices = listOf(Action.BLOCK to R.string.action_block, Action.ALLOW to R.string.action_allow)
+                                choices.forEachIndexed { i, (a, l) ->
+                                    SegmentedButton(action == a, { action = a }, SegmentedButtonDefaults.itemShape(i, 2)) {
+                                        Text(stringResource(l))
+                                    }
                                 }
                             }
-                        Text(stringResource(R.string.import_lowest), style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(
+                            stringResource(R.string.import_lowest),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
         },
         confirmButton = {
-            if (done != null) TextButton(onDismiss) { Text(stringResource(R.string.ok)) }
-            else {
+            if (done != null) {
+                TextButton(onDismiss) { Text(stringResource(R.string.ok)) }
+            } else {
                 val okMsg = stringResource(R.string.import_done_sets)
                 TextButton(enabled = plan?.empty == false && name.isNotBlank(), onClick = {
                     scope.launch {
@@ -329,14 +423,23 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
                 }) { Text(stringResource(R.string.import_action)) }
             }
         },
-        dismissButton = { if (done == null) TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } })
+        dismissButton = { if (done == null) TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
+    )
 }
 
 @Composable
 fun ConfirmDialog(text: String, onDismiss: () -> Unit, onOk: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, text = { Text(text) },
-        confirmButton = { TextButton({ onOk(); onDismiss() }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) } },
-        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } })
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        text = { Text(text) },
+        confirmButton = {
+            TextButton({
+                onOk()
+                onDismiss()
+            }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
+        },
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
+    )
 }
 
 // ------------------------------------------------------------------ Sets & profiles
@@ -357,22 +460,30 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
 
     val doneMsg = stringResource(R.string.exported)
     val exportJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) scope.launch {
-            val ok = runCatching { withContext(Dispatchers.IO) {
-                ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(app.firewall.exportJson()) }
-            } }.isSuccess
-            Toast.makeText(ctx, if (ok) doneMsg else "Error", Toast.LENGTH_SHORT).show()
+        if (uri != null) {
+            scope.launch {
+                val ok = runCatching {
+                    withContext(Dispatchers.IO) {
+                        ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(app.firewall.exportJson()) }
+                    }
+                }.isSuccess
+                Toast.makeText(ctx, if (ok) doneMsg else "Error", Toast.LENGTH_SHORT).show()
+            }
         }
     }
     val openJson = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { importJsonUri = it }
     var exportProfileId by remember { mutableStateOf<Int?>(null) }
     val exportProfile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         val id = exportProfileId
-        if (uri != null && id != null) scope.launch {
-            val ok = runCatching { withContext(Dispatchers.IO) {
-                ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(app.firewall.exportProfile(id)) }
-            } }.isSuccess
-            Toast.makeText(ctx, if (ok) doneMsg else "Error", Toast.LENGTH_SHORT).show()
+        if (uri != null && id != null) {
+            scope.launch {
+                val ok = runCatching {
+                    withContext(Dispatchers.IO) {
+                        ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(app.firewall.exportProfile(id)) }
+                    }
+                }.isSuccess
+                Toast.makeText(ctx, if (ok) doneMsg else "Error", Toast.LENGTH_SHORT).show()
+            }
         }
     }
     val openList = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { importListUri = it }
@@ -380,12 +491,27 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
     ScreenScaffold(title = stringResource(R.string.nav_sets), onMenu = openDrawer, actions = {
         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
         DropdownMenu(menu, { menu = false }) {
-            DropdownMenuItem({ Text(stringResource(R.string.set_new)) }, { menu = false; newSet = true })
-            DropdownMenuItem({ Text(stringResource(R.string.profile_new)) }, { menu = false; newProfile = true })
+            DropdownMenuItem({ Text(stringResource(R.string.set_new)) }, {
+                menu = false
+                newSet = true
+            })
+            DropdownMenuItem({ Text(stringResource(R.string.profile_new)) }, {
+                menu = false
+                newProfile = true
+            })
             HorizontalDivider()
-            DropdownMenuItem({ Text(stringResource(R.string.export_json)) }, { menu = false; exportJson.launch("packetwall-rules.json") })
-            DropdownMenuItem({ Text(stringResource(R.string.import_json)) }, { menu = false; openJson.launch(arrayOf("application/json", "text/*", "*/*")) })
-            DropdownMenuItem({ Text(stringResource(R.string.import_file)) }, { menu = false; openList.launch(arrayOf("*/*")) })
+            DropdownMenuItem({ Text(stringResource(R.string.export_json)) }, {
+                menu = false
+                exportJson.launch("packetwall-rules.json")
+            })
+            DropdownMenuItem({ Text(stringResource(R.string.import_json)) }, {
+                menu = false
+                openJson.launch(arrayOf("application/json", "text/*", "*/*"))
+            })
+            DropdownMenuItem({ Text(stringResource(R.string.import_file)) }, {
+                menu = false
+                openList.launch(arrayOf("*/*"))
+            })
         }
     }) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
@@ -394,45 +520,83 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                 st.profiles.forEachIndexed { i, p ->
                     if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                     Box {
-                        Row(Modifier.fillMaxWidth().clickable { app.firewall.activateProfile(p.id) }.padding(end = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { app.firewall.activateProfile(p.id) }.padding(end = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             RadioButton(st.activeProfile == p.id, { app.firewall.activateProfile(p.id) })
                             Column(Modifier.weight(1f)) {
                                 Text(p.name)
-                                Text(stringResource(R.string.profile_summary, p.sets.count { it.enabled }, p.sets.size),
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(
+                                    stringResource(R.string.profile_summary, p.sets.count { it.enabled }, p.sets.size),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                             IconButton({ profileMenu = p.id }) { Icon(Icons.Filled.MoreVert, null) }
                         }
                         DropdownMenu(profileMenu == p.id, { profileMenu = null }) {
-                            DropdownMenuItem({ Text(stringResource(R.string.rename)) }, { profileMenu = null; renameProfile = p.id })
+                            DropdownMenuItem({ Text(stringResource(R.string.rename)) }, {
+                                profileMenu = null
+                                renameProfile = p.id
+                            })
                             DropdownMenuItem({ Text(stringResource(R.string.export)) }, {
-                                profileMenu = null; exportProfileId = p.id
+                                profileMenu = null
+                                exportProfileId = p.id
                                 exportProfile.launch("packetwall-profile-${p.name.replace(Regex("[^A-Za-z0-9._-]+"), "_")}.json")
                             })
-                            DropdownMenuItem({ Text(stringResource(R.string.delete)) }, { profileMenu = null; app.firewall.deleteProfile(p.id) },
-                                enabled = st.profiles.size > 1)
+                            DropdownMenuItem(
+                                { Text(stringResource(R.string.delete)) },
+                                {
+                                    profileMenu = null
+                                    app.firewall.deleteProfile(p.id)
+                                },
+                                enabled = st.profiles.size > 1
+                            )
                         }
                     }
                 }
             }
-            Text(stringResource(R.string.profiles_hint), style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+            Text(
+                stringResource(R.string.profiles_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, top = 6.dp)
+            )
 
             ListSubheader(stringResource(R.string.sets_order))
             ReorderableSets(app, st) { editSet = it }
-            Text(stringResource(R.string.sets_hint), style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
-            TextButton(onClick = { newSet = true }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.set_new)) }
+            Text(
+                stringResource(R.string.sets_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, top = 6.dp)
+            )
+            TextButton(onClick = { newSet = true }) {
+                Icon(Icons.Filled.Add, null)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.set_new))
+            }
             Spacer(Modifier.height(24.dp))
         }
     }
 
-    if (newSet) NameDialog(stringResource(R.string.set_new), "", { newSet = false }) { newSet = false; app.firewall.addSet(it) }
-    if (newProfile) NameDialog(stringResource(R.string.profile_new), "", { newProfile = false }) { newProfile = false; app.firewall.addProfile(it) }
+    if (newSet) {
+        NameDialog(stringResource(R.string.set_new), "", { newSet = false }) {
+            newSet = false
+            app.firewall.addSet(it)
+        }
+    }
+    if (newProfile) {
+        NameDialog(stringResource(R.string.profile_new), "", { newProfile = false }) {
+            newProfile = false
+            app.firewall.addProfile(it)
+        }
+    }
     renameProfile?.let { id ->
         NameDialog(stringResource(R.string.rename), st.profiles.firstOrNull { it.id == id }?.name ?: "", { renameProfile = null }) {
-            renameProfile = null; app.firewall.renameProfile(id, it)
+            renameProfile = null
+            app.firewall.renameProfile(id, it)
         }
     }
     editSet?.let { s -> SetDialog(app, s, st) { editSet = null } }
@@ -453,46 +617,69 @@ private fun ReorderableSets(app: PacketwallApp, st: FwState, onEdit: (RuleSet) -
 
     RoundedGroup {
         // the gesture lives on the (non-moving) container, rows only get an offset
-        Column(Modifier.pointerInput(Unit) {
-            detectDragGesturesAfterLongPress(
-                onDragStart = { pos -> dragIndex = (pos.y / rowPx).toInt().coerceIn(0, currentSets.size - 1); dragOffset = 0f },
-                onDragEnd = { dragIndex = -1; dragOffset = 0f },
-                onDragCancel = { dragIndex = -1; dragOffset = 0f },
-            ) { change, amount ->
-                change.consume()
-                val cur = dragIndex
-                if (cur < 0) return@detectDragGesturesAfterLongPress
-                dragOffset += amount.y
-                val target = (cur + (dragOffset / rowPx).roundToInt()).coerceIn(0, currentSets.size - 1)
-                if (target != cur) {
-                    app.firewall.moveSet(cur, target)
-                    dragOffset -= (target - cur) * rowPx
-                    dragIndex = target
+        Column(
+            Modifier.pointerInput(Unit) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { pos ->
+                        dragIndex = (pos.y / rowPx).toInt().coerceIn(0, currentSets.size - 1)
+                        dragOffset = 0f
+                    },
+                    onDragEnd = {
+                        dragIndex = -1
+                        dragOffset = 0f
+                    },
+                    onDragCancel = {
+                        dragIndex = -1
+                        dragOffset = 0f
+                    }
+                ) { change, amount ->
+                    change.consume()
+                    val cur = dragIndex
+                    if (cur < 0) return@detectDragGesturesAfterLongPress
+                    dragOffset += amount.y
+                    val target = (cur + (dragOffset / rowPx).roundToInt()).coerceIn(0, currentSets.size - 1)
+                    if (target != cur) {
+                        app.firewall.moveSet(cur, target)
+                        dragOffset -= (target - cur) * rowPx
+                        dragIndex = target
+                    }
                 }
             }
-        }) {
+        ) {
             sets.forEachIndexed { i, s ->
                 val dragging = i == dragIndex
                 val elevation by animateDpAsState(if (dragging) 8.dp else 0.dp, label = "drag")
-                Row(Modifier.fillMaxWidth().height(60.dp)
-                    .zIndex(if (dragging) 1f else 0f)
-                    .offset { IntOffset(0, if (dragging) dragOffset.roundToInt() else 0) }
-                    .shadow(elevation)
-                    .background(if (dragging) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent)
-                    .drawBehind { if (i > 0 && !dragging) drawLine(divider, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx()) }
-                    .clickable { onEdit(s) }
-                    .padding(start = 4.dp, end = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().height(60.dp)
+                        .zIndex(if (dragging) 1f else 0f)
+                        .offset { IntOffset(0, if (dragging) dragOffset.roundToInt() else 0) }
+                        .shadow(elevation)
+                        .background(if (dragging) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent)
+                        .drawBehind { if (i > 0 && !dragging) drawLine(divider, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx()) }
+                        .clickable { onEdit(s) }
+                        .padding(start = 4.dp, end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
                         Icon(painterResource(R.drawable.ic_drag), stringResource(R.string.drag), tint = MaterialTheme.colorScheme.outline)
                     }
-                    Text("${i + 1}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.width(22.dp))
+                    Text(
+                        "${i + 1}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.width(22.dp)
+                    )
                     Column(Modifier.weight(1f)) {
                         Text(s.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(if (s.kind == SetKind.BLOCKLIST) stringResource(R.string.set_blocklist_line, s.entries)
-                            else stringResource(R.string.rules_count, ruleCounts[s.id] ?: 0),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            if (s.kind == SetKind.BLOCKLIST) {
+                                stringResource(R.string.set_blocklist_line, s.entries)
+                            } else {
+                                stringResource(R.string.rules_count, ruleCounts[s.id] ?: 0)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     Switch(st.isEnabled(s.id), { app.firewall.setEnabled(s.id, it) })
                 }
@@ -509,34 +696,59 @@ private fun SetDialog(app: PacketwallApp, s: RuleSet, st: FwState, onDismiss: ()
     var confirm by remember { mutableStateOf(false) }
     val doneMsg = stringResource(R.string.exported)
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
-        if (uri != null) scope.launch {
-            val text = pendingExport ?: return@launch
-            runCatching { withContext(Dispatchers.IO) {
-                ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(text) }
-            } }
-            Toast.makeText(ctx, doneMsg, Toast.LENGTH_SHORT).show()
+        if (uri != null) {
+            scope.launch {
+                val text = pendingExport ?: return@launch
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(text) }
+                    }
+                }
+                Toast.makeText(ctx, doneMsg, Toast.LENGTH_SHORT).show()
+            }
         }
     }
     val safe = s.name.replace(Regex("[^A-Za-z0-9._-]+"), "_")
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(s.name) },
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(s.name) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(stringResource(R.string.name)) })
-                Text(stringResource(R.string.export), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                NameField(name) { name = it }
+                FieldLabel(stringResource(R.string.export))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton({ pendingExport = app.firewall.exportJson(s.id); export.launch("$safe.json") }) { Text("JSON") }
-                    TextButton({ pendingExport = app.firewall.exportPlain(s.id, hosts = true); export.launch("$safe.hosts") }) { Text("hosts") }
-                    TextButton({ pendingExport = app.firewall.exportPlain(s.id, hosts = false); export.launch("$safe.txt") }) { Text(stringResource(R.string.domains)) }
+                    TextButton({
+                        pendingExport = app.firewall.exportJson(s.id)
+                        export.launch("$safe.json")
+                    }) { Text("JSON") }
+                    TextButton({
+                        pendingExport = app.firewall.exportPlain(s.id, hosts = true)
+                        export.launch("$safe.hosts")
+                    }) { Text("hosts") }
+                    TextButton({
+                        pendingExport = app.firewall.exportPlain(s.id, hosts = false)
+                        export.launch("$safe.txt")
+                    }) { Text(stringResource(R.string.domains)) }
                 }
-                if (s.id != FwState.DEFAULT_SET)
+                if (s.id != FwState.DEFAULT_SET) {
                     TextButton({ confirm = true }) { Text(stringResource(R.string.delete_set), color = MaterialTheme.colorScheme.error) }
+                }
             }
         },
-        confirmButton = { TextButton({ if (name.isNotBlank()) app.firewall.renameSet(s.id, name); onDismiss() }) { Text(stringResource(R.string.save)) } },
-        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } })
+        confirmButton = {
+            TextButton({
+                if (name.isNotBlank()) app.firewall.renameSet(s.id, name)
+                onDismiss()
+            }) { Text(stringResource(R.string.save)) }
+        },
+        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
+    )
     if (confirm) {
         val n = st.rules.count { it.setId == s.id }
-        ConfirmDialog(stringResource(R.string.delete_set_rules_q, s.name, n), { confirm = false }) { app.firewall.deleteSet(s.id); onDismiss() }
+        ConfirmDialog(stringResource(R.string.delete_set_rules_q, s.name, n), { confirm = false }) {
+            app.firewall.deleteSet(s.id)
+            onDismiss()
+        }
     }
 }
 
@@ -549,31 +761,44 @@ private fun ImportJsonDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
     var replace by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
     val fmt = stringResource(R.string.import_json_done)
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.import_json)) },
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.import_json)) },
         text = {
             Column {
-                if (result != null) Text(result!!)
-                else {
+                if (result != null) {
+                    Text(result!!)
+                } else {
                     Row(Modifier.fillMaxWidth().clickable { replace = false }, verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(!replace, { replace = false }); Text(stringResource(R.string.import_merge))
+                        RadioButton(!replace, { replace = false })
+                        Text(stringResource(R.string.import_merge))
                     }
                     Row(Modifier.fillMaxWidth().clickable { replace = true }, verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(replace, { replace = true }); Text(stringResource(R.string.import_replace))
+                        RadioButton(replace, { replace = true })
+                        Text(stringResource(R.string.import_replace))
                     }
                 }
             }
         },
         confirmButton = {
-            if (result != null) TextButton(onDismiss) { Text(stringResource(R.string.ok)) }
-            else TextButton({
-                scope.launch {
-                    result = try {
-                        val text = withContext(Dispatchers.IO) { ctx.contentResolver.openInputStream(uri)!!.bufferedReader().readText() }
-                        val s = app.firewall.importJson(text, replace)
-                        String.format(fmt, s.sets, s.rules, s.groups, s.profiles)
-                    } catch (e: Exception) { e.message ?: e.javaClass.simpleName }
-                }
-            }) { Text(stringResource(R.string.import_action)) }
+            if (result != null) {
+                TextButton(onDismiss) { Text(stringResource(R.string.ok)) }
+            } else {
+                TextButton({
+                    scope.launch {
+                        result = try {
+                            val text = withContext(Dispatchers.IO) {
+                                ctx.contentResolver.openInputStream(uri)!!.bufferedReader().readText()
+                            }
+                            val s = app.firewall.importJson(text, replace)
+                            String.format(fmt, s.sets, s.rules, s.groups, s.profiles)
+                        } catch (e: Exception) {
+                            e.message ?: e.javaClass.simpleName
+                        }
+                    }
+                }) { Text(stringResource(R.string.import_action)) }
+            }
         },
-        dismissButton = { if (result == null) TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } })
+        dismissButton = { if (result == null) TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
+    )
 }

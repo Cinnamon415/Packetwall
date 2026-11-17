@@ -31,14 +31,24 @@ object Schedules {
                 .setRequiredNetworkType(if (s.listsWifiOnly) NetworkType.UNMETERED else NetworkType.CONNECTED)
                 .setRequiresBatteryNotLow(true)
                 .build()
-            wm.enqueueUniquePeriodicWork(LISTS, ExistingPeriodicWorkPolicy.UPDATE,
-                PeriodicWorkRequestBuilder<UpdateListsWorker>(1, TimeUnit.DAYS).setConstraints(c).build())
-        } else wm.cancelUniqueWork(LISTS)
+            wm.enqueueUniquePeriodicWork(
+                LISTS,
+                ExistingPeriodicWorkPolicy.UPDATE,
+                PeriodicWorkRequestBuilder<UpdateListsWorker>(1, TimeUnit.DAYS).setConstraints(c).build()
+            )
+        } else {
+            wm.cancelUniqueWork(LISTS)
+        }
 
-        if (s.backupUri.isNotEmpty())
-            wm.enqueueUniquePeriodicWork(BACKUP, ExistingPeriodicWorkPolicy.UPDATE,
-                PeriodicWorkRequestBuilder<BackupWorker>(1, TimeUnit.DAYS).build())
-        else wm.cancelUniqueWork(BACKUP)
+        if (s.backupUri.isNotEmpty()) {
+            wm.enqueueUniquePeriodicWork(
+                BACKUP,
+                ExistingPeriodicWorkPolicy.UPDATE,
+                PeriodicWorkRequestBuilder<BackupWorker>(1, TimeUnit.DAYS).build()
+            )
+        } else {
+            wm.cancelUniqueWork(BACKUP)
+        }
     }
 
     /** Writes packetwall-backup-<date>.json into the chosen folder and keeps the last [KEEP_BACKUPS]. */
@@ -62,16 +72,28 @@ object Schedules {
 
     private fun prune(ctx: Context, tree: Uri) {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-        val found = ArrayList<Pair<String, String>>()  // name, id
-        ctx.contentResolver.query(children, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { c ->
+        val found = ArrayList<Pair<String, String>>() // name, id
+        ctx.contentResolver.query(
+            children,
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID
+            ),
+            null,
+            null,
+            null
+        )?.use { c ->
             while (c.moveToNext()) {
                 val n = c.getString(0) ?: continue
                 if (n.startsWith("packetwall-backup-") && n.endsWith(".json")) found.add(n to c.getString(1))
             }
         }
         found.sortedByDescending { it.first }.drop(KEEP_BACKUPS).forEach { (_, id) ->
-            try { DocumentsContract.deleteDocument(ctx.contentResolver, DocumentsContract.buildDocumentUriUsingTree(tree, id)) } catch (_: Exception) {}
+            try {
+                DocumentsContract.deleteDocument(ctx.contentResolver, DocumentsContract.buildDocumentUriUsingTree(tree, id))
+            } catch (
+                _: Exception
+            ) {}
         }
     }
 }

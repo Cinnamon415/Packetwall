@@ -21,11 +21,16 @@ class ProtectionWidget : AppWidgetProvider() {
     override fun onReceive(ctx: Context, intent: Intent) {
         when (intent.action) {
             ACTION_TOGGLE -> {
-                if (CaptureService.state.value is CaptureState.Running) CaptureService.stop(ctx)
-                else if (VpnService.prepare(ctx) != null)
-                    ctx.startActivity(Intent(ctx, MainActivity::class.java).setAction(MainActivity.ACTION_TOGGLE_ON)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                else CaptureService.start(ctx)
+                if (CaptureService.state.value is CaptureState.Running) {
+                    CaptureService.stop(ctx)
+                } else if (VpnService.prepare(ctx) != null) {
+                    ctx.startActivity(
+                        Intent(ctx, MainActivity::class.java).setAction(MainActivity.ACTION_TOGGLE_ON)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                } else {
+                    CaptureService.start(ctx)
+                }
             }
             ACTION_NEXT_PROFILE -> {
                 val fw = (ctx.applicationContext as PacketwallApp).firewall
@@ -50,16 +55,27 @@ class ProtectionWidget : AppWidgetProvider() {
             if (ids.isEmpty()) return
             val on = CaptureService.state.value is CaptureState.Running
             val profile = (ctx.applicationContext as PacketwallApp).firewall.state.value.profile?.name ?: ""
-            fun pi(action: String, code: Int) = PendingIntent.getBroadcast(ctx, code,
-                Intent(ctx, ProtectionWidget::class.java).setAction(action), PendingIntent.FLAG_IMMUTABLE)
+            fun pi(action: String, code: Int) = PendingIntent.getBroadcast(
+                ctx,
+                code,
+                Intent(ctx, ProtectionWidget::class.java).setAction(action),
+                PendingIntent.FLAG_IMMUTABLE
+            )
             val v = RemoteViews(ctx.packageName, R.layout.widget_protection).apply {
                 setImageViewResource(R.id.widget_power, if (on) R.drawable.widget_power_on else R.drawable.widget_power_off)
                 setTextViewText(R.id.widget_status, ctx.getString(if (on) R.string.status_on else R.string.status_off))
                 setTextViewText(R.id.widget_profile, profile)
                 setOnClickPendingIntent(R.id.widget_power, pi(ACTION_TOGGLE, 1))
                 setOnClickPendingIntent(R.id.widget_profile, pi(ACTION_NEXT_PROFILE, 2))
-                setOnClickPendingIntent(R.id.widget_status, PendingIntent.getActivity(ctx, 3,
-                    Intent(ctx, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
+                setOnClickPendingIntent(
+                    R.id.widget_status,
+                    PendingIntent.getActivity(
+                        ctx,
+                        3,
+                        Intent(ctx, MainActivity::class.java),
+                        PendingIntent.FLAG_IMMUTABLE
+                    )
+                )
             }
             mgr.updateAppWidget(ids, v)
         }

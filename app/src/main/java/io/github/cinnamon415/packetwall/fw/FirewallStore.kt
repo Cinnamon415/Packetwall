@@ -1,6 +1,7 @@
 package io.github.cinnamon415.packetwall.fw
 
 import android.util.Log
+import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +17,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
-import java.io.File
 
 /**
  * Owns the firewall configuration: persistence, mutations, blocklist downloads and pushing the
@@ -39,7 +39,7 @@ class FirewallStore(
     private val lists: ListSource = HttpListSource(),
     /** Blocking I/O (downloads); injected so tests run it on their scheduler. */
     private val io: CoroutineDispatcher = Dispatchers.IO,
-    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + io),
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + io)
 ) {
     fun interface RulesLoader {
         /** Returns the number of loaded rules, < 0 on error. */
@@ -97,8 +97,9 @@ class FirewallStore(
         if (old.order == n.order && old.sets == n.sets) return n
         val ids = n.sets.map { it.id }.toSet()
         val profiles = n.profiles.map { p ->
-            if (p.id == n.activeProfile && old.activeProfile == n.activeProfile) p.copy(sets = n.order)
-            else {
+            if (p.id == n.activeProfile && old.activeProfile == n.activeProfile) {
+                p.copy(sets = n.order)
+            } else {
                 val kept = p.sets.filter { it.id in ids }
                 val missing = n.order.filter { s -> kept.none { it.id == s.id } }.map { it.copy(enabled = false) }
                 p.copy(sets = kept + missing)
@@ -121,7 +122,9 @@ class FirewallStore(
         return id
     }
 
-    fun saveRule(r: Rule) = if (r.id == 0) addRule(r) else {
+    fun saveRule(r: Rule) = if (r.id == 0) {
+        addRule(r)
+    } else {
         update { st -> st.copy(rules = st.rules.map { if (it.id == r.id) r else it }) }
         r.id
     }
@@ -155,7 +158,7 @@ class FirewallStore(
             st.copy(
                 sets = st.sets.filterNot { it.id == id },
                 order = st.order.filterNot { it.id == id },
-                rules = st.rules.filterNot { it.setId == id },
+                rules = st.rules.filterNot { it.setId == id }
             )
         }
         File(listsDir, "$id.txt").delete()
@@ -166,8 +169,11 @@ class FirewallStore(
     }
 
     fun moveSet(from: Int, to: Int) = update { st ->
-        if (from !in st.order.indices || to !in st.order.indices || from == to) st
-        else st.copy(order = st.order.toMutableList().apply { add(to, removeAt(from)) })
+        if (from !in st.order.indices || to !in st.order.indices || from == to) {
+            st
+        } else {
+            st.copy(order = st.order.toMutableList().apply { add(to, removeAt(from)) })
+        }
     }
 
     // ---------------------------------------------------------------- profiles
@@ -181,7 +187,7 @@ class FirewallStore(
         val p = st.profiles.firstOrNull { it.id == id } ?: return@update st
         val ids = st.sets.map { it.id }.toSet()
         val order = p.sets.filter { it.id in ids } +
-                st.order.filter { s -> p.sets.none { it.id == s.id } }.map { it.copy(enabled = false) }
+            st.order.filter { s -> p.sets.none { it.id == s.id } }.map { it.copy(enabled = false) }
         st.copy(order = order, activeProfile = id)
     }
 
@@ -190,8 +196,9 @@ class FirewallStore(
     }
 
     fun deleteProfile(id: Int) = update { st ->
-        if (st.profiles.size <= 1) st
-        else {
+        if (st.profiles.size <= 1) {
+            st
+        } else {
             val left = st.profiles.filterNot { it.id == id }
             st.copy(profiles = left, activeProfile = if (st.activeProfile == id) left.first().id else st.activeProfile)
         }
@@ -206,14 +213,18 @@ class FirewallStore(
                 val (nid, s2) = st.allocId()
                 id = nid
                 s2.copy(groups = s2.groups + g.copy(id = nid))
-            } else st.copy(groups = st.groups.map { if (it.id == g.id) g else it })
+            } else {
+                st.copy(groups = st.groups.map { if (it.id == g.id) g else it })
+            }
         }
         return id
     }
 
     fun deleteGroup(id: Int) = update { st ->
-        st.copy(groups = st.groups.filterNot { it.id == id },
-            rules = st.rules.filterNot { (it.who as? Who.Group)?.id == id })
+        st.copy(
+            groups = st.groups.filterNot { it.id == id },
+            rules = st.rules.filterNot { (it.who as? Who.Group)?.id == id }
+        )
     }
 
     // ---------------------------------------------------------------- blocklists
@@ -228,8 +239,10 @@ class FirewallStore(
         update { st ->
             val (nid, s2) = st.allocId()
             id = nid
-            s2.copy(sets = s2.sets + RuleSet(nid, name.trim(), SetKind.BLOCKLIST, url = url?.trim(), action = action),
-                order = s2.order + SetState(nid, true))
+            s2.copy(
+                sets = s2.sets + RuleSet(nid, name.trim(), SetKind.BLOCKLIST, url = url?.trim(), action = action),
+                order = s2.order + SetState(nid, true)
+            )
         }
         if (url != null) scope.launch { download(id) }
         return id
@@ -240,9 +253,15 @@ class FirewallStore(
         val id = addBlocklist(name, null, action)
         writeList(id, res.entries)
         update { st ->
-            st.copy(sets = st.sets.map {
-                if (it.id == id) it.copy(entries = res.entries.size, skipped = res.skipped, updated = System.currentTimeMillis()) else it
-            })
+            st.copy(
+                sets = st.sets.map {
+                    if (it.id == id) {
+                        it.copy(entries = res.entries.size, skipped = res.skipped, updated = System.currentTimeMillis())
+                    } else {
+                        it
+                    }
+                }
+            )
         }
         return id
     }
@@ -269,8 +288,12 @@ class FirewallStore(
                 val rules = plan.rules.map { it.copy(id = next++, setId = setId, created = System.currentTimeMillis()) }
                 created.add(setId)
                 val setName = if (plan.entries.isNotEmpty()) "$name · apps" else name
-                st.copy(sets = st.sets + RuleSet(setId, setName), order = st.order + SetState(setId, true),
-                    rules = st.rules + rules, nextId = next)
+                st.copy(
+                    sets = st.sets + RuleSet(setId, setName),
+                    order = st.order + SetState(setId, true),
+                    rules = st.rules + rules,
+                    nextId = next
+                )
             }
         }
         return created
@@ -278,7 +301,12 @@ class FirewallStore(
 
     private fun writeList(id: Int, entries: List<String>) {
         val tmp = File(listsDir, "$id.txt.tmp")
-        tmp.bufferedWriter().use { w -> entries.forEach { w.write(it); w.write("\n") } }
+        tmp.bufferedWriter().use { w ->
+            entries.forEach {
+                w.write(it)
+                w.write("\n")
+            }
+        }
         tmp.renameTo(listFile(id))
     }
 
@@ -306,10 +334,20 @@ class FirewallStore(
             val res = downloadMutex.withLock { withContext(io) { fetchAndParse(url) } }
             writeList(id, res.entries)
             update { st ->
-                st.copy(sets = st.sets.map {
-                    if (it.id == id) it.copy(entries = res.entries.size, skipped = res.skipped,
-                        updated = System.currentTimeMillis(), error = null) else it
-                })
+                st.copy(
+                    sets = st.sets.map {
+                        if (it.id == id) {
+                            it.copy(
+                                entries = res.entries.size,
+                                skipped = res.skipped,
+                                updated = System.currentTimeMillis(),
+                                error = null
+                            )
+                        } else {
+                            it
+                        }
+                    }
+                )
             }
         } catch (e: Exception) {
             Log.w(TAG, "Download failed: $url", e)
@@ -329,13 +367,20 @@ class FirewallStore(
 
     fun exportJson(onlySet: Int? = null): String {
         val st = _state.value
-        val part = if (onlySet == null) st else {
+        val part = if (onlySet == null) {
+            st
+        } else {
             val s = st.set(onlySet)!!
-            st.copy(sets = listOf(s), order = st.order.filter { it.id == onlySet },
-                rules = st.rules.filter { it.setId == onlySet }, profiles = emptyList(), activeProfile = null)
+            st.copy(
+                sets = listOf(s),
+                order = st.order.filter { it.id == onlySet },
+                rules = st.rules.filter { it.setId == onlySet },
+                profiles = emptyList(),
+                activeProfile = null
+            )
         }
         val lists = part.sets.filter { it.kind == SetKind.BLOCKLIST && it.url == null }.associate { it.id to readList(it.id) }
-        return jsonPretty.encodeToString(ExportFile.serializer(), ExportFile(exported = System.currentTimeMillis(), state = part, lists = lists))
+        return encodeExport(part, lists)
     }
 
     /** Only the given rules (with their sets, no profiles). */
@@ -344,11 +389,22 @@ class FirewallStore(
         val rules = st.rules.filter { it.id in ids }
         val setIds = rules.map { it.setId }.toSet()
         val groupIds = rules.mapNotNull { (it.who as? Who.Group)?.id }.toSet()
-        val part = st.copy(sets = st.sets.filter { it.id in setIds }.map { if (it.kind == SetKind.BLOCKLIST) it.copy(kind = SetKind.USER, url = null) else it },
-            order = st.order.filter { it.id in setIds }, rules = rules, groups = st.groups.filter { it.id in groupIds },
-            profiles = emptyList(), activeProfile = null)
-        return jsonPretty.encodeToString(ExportFile.serializer(), ExportFile(exported = System.currentTimeMillis(), state = part))
+        val part = st.copy(
+            // a blocklist's file entries are not part of a rule export: the set becomes a plain user set
+            sets = st.sets.filter { it.id in setIds }.map {
+                if (it.kind == SetKind.BLOCKLIST) it.copy(kind = SetKind.USER, url = null) else it
+            },
+            order = st.order.filter { it.id in setIds },
+            rules = rules,
+            groups = st.groups.filter { it.id in groupIds },
+            profiles = emptyList(),
+            activeProfile = null
+        )
+        return encodeExport(part)
     }
+
+    private fun encodeExport(part: FwState, lists: Map<Int, List<String>> = emptyMap()): String =
+        jsonPretty.encodeToString(ExportFile.serializer(), ExportFile(exported = System.currentTimeMillis(), state = part, lists = lists))
 
     /** A profile with its sets (in its order), their rules and inlined file lists. */
     fun exportProfile(profileId: Int): String {
@@ -357,23 +413,38 @@ class FirewallStore(
         val ids = p.sets.map { it.id }.toSet()
         val rules = st.rules.filter { it.setId in ids }
         val groupIds = rules.mapNotNull { (it.who as? Who.Group)?.id }.toSet()
-        val part = st.copy(sets = st.sets.filter { it.id in ids }, order = p.sets, rules = rules,
-            groups = st.groups.filter { it.id in groupIds }, profiles = listOf(p), activeProfile = p.id)
+        val part = st.copy(
+            sets = st.sets.filter { it.id in ids },
+            order = p.sets,
+            rules = rules,
+            groups = st.groups.filter { it.id in groupIds },
+            profiles = listOf(p),
+            activeProfile = p.id
+        )
         val lists = part.sets.filter { it.kind == SetKind.BLOCKLIST && it.url == null }.associate { it.id to readList(it.id) }
-        return jsonPretty.encodeToString(ExportFile.serializer(), ExportFile(exported = System.currentTimeMillis(), state = part, lists = lists))
+        return encodeExport(part, lists)
     }
 
     fun deleteRules(ids: Set<Int>) = update { st -> st.copy(rules = st.rules.filterNot { it.id in ids }) }
 
-    fun moveRules(ids: Set<Int>, setId: Int) = update { st -> st.copy(rules = st.rules.map { if (it.id in ids) it.copy(setId = setId) else it }) }
+    fun moveRules(ids: Set<Int>, setId: Int) = update { st ->
+        st.copy(rules = st.rules.map { if (it.id in ids) it.copy(setId = setId) else it })
+    }
 
     /** Domains/IPs of a set, one per line (hosts-style lists cannot hold app rules or allows). */
     fun exportPlain(setId: Int, hosts: Boolean): String {
         val st = _state.value
         val set = st.set(setId) ?: return ""
-        val items = if (set.kind == SetKind.BLOCKLIST) readList(setId).filterNot { it.startsWith("!") }.map { ListParser.displayOf(it) }
-        else st.rules.filter { it.setId == setId && it.who == Who.Global && it.action == Action.BLOCK &&
-                it.target.kind in setOf(TargetKind.DOMAIN, TargetKind.IP) }.map { it.target.value }
+        val items = if (set.kind == SetKind.BLOCKLIST) {
+            readList(setId).filterNot { it.startsWith("!") }.map { ListParser.displayOf(it) }
+        } else {
+            st.rules.filter {
+                it.setId == setId &&
+                    it.who == Who.Global &&
+                    it.action == Action.BLOCK &&
+                    it.target.kind in setOf(TargetKind.DOMAIN, TargetKind.IP)
+            }.map { it.target.value }
+        }
         return items.filterNot { hosts && (it.contains('*') || it.contains('/')) }
             .joinToString("\n", postfix = "\n") { if (hosts) "0.0.0.0 $it" else it }
     }
@@ -391,10 +462,25 @@ class FirewallStore(
         var summary = ImportSummary(0, 0, 0, 0)
 
         if (replace) {
-            val st = src.copy(nextId = maxOf(src.nextId, (src.sets.map { it.id } + src.rules.map { it.id } +
-                    src.groups.map { it.id } + src.profiles.map { it.id }).maxOrNull()?.plus(1) ?: 100))
-                .let { if (it.set(FwState.DEFAULT_SET) == null) it.copy(sets = listOf(RuleSet(FwState.DEFAULT_SET, "Default")) + it.sets,
-                    order = listOf(SetState(FwState.DEFAULT_SET, true)) + it.order) else it }
+            val st = src.copy(
+                nextId = maxOf(
+                    src.nextId,
+                    (
+                        src.sets.map { it.id } + src.rules.map { it.id } +
+                            src.groups.map { it.id } + src.profiles.map { it.id }
+                        ).maxOrNull()?.plus(1) ?: 100
+                )
+            )
+                .let {
+                    if (it.set(FwState.DEFAULT_SET) == null) {
+                        it.copy(
+                            sets = listOf(RuleSet(FwState.DEFAULT_SET, "Default")) + it.sets,
+                            order = listOf(SetState(FwState.DEFAULT_SET, true)) + it.order
+                        )
+                    } else {
+                        it
+                    }
+                }
             f.lists.forEach { (id, lines) -> writeList(id, lines) }
             synchronized(lock) { _state.value = st }
             scheduleCompile()
@@ -416,14 +502,20 @@ class FirewallStore(
                 r.copy(id = next++, setId = setMap.getValue(r.setId), who = who)
             }
             val order = src.order.filter { it.id in setMap }.map { SetState(setMap.getValue(it.id), it.enabled) } +
-                    sets.filter { s -> src.order.none { setMap[it.id] == s.id } }.map { SetState(it.id, true) }
+                sets.filter { s -> src.order.none { setMap[it.id] == s.id } }.map { SetState(it.id, true) }
             val profiles = src.profiles.map { p ->
                 Profile(next++, p.name, p.sets.filter { it.id in setMap }.map { SetState(setMap.getValue(it.id), it.enabled) })
             }
             f.lists.forEach { (id, lines) -> setMap[id]?.let { pendingLists[it] = lines } }
             summary = ImportSummary(sets.size, rules.size, groups.size, profiles.size)
-            cur.copy(sets = cur.sets + sets, order = cur.order + order, rules = cur.rules + rules,
-                groups = cur.groups + groups, profiles = cur.profiles + profiles, nextId = next)
+            cur.copy(
+                sets = cur.sets + sets,
+                order = cur.order + order,
+                rules = cur.rules + rules,
+                groups = cur.groups + groups,
+                profiles = cur.profiles + profiles,
+                nextId = next
+            )
         }
         pendingLists.forEach { (id, lines) -> writeList(id, lines) }
         // subscriptions are imported without their entries: fetch them now
@@ -458,7 +550,14 @@ class FirewallStore(
     companion object {
         private const val TAG = "FirewallStore"
         private const val MAX_LIST_LINES = 3_000_000
-        val json = Json { ignoreUnknownKeys = true; encodeDefaults = false; classDiscriminator = "type" }
-        val jsonPretty = Json(json) { prettyPrint = true; encodeDefaults = true }
+        val json = Json {
+            ignoreUnknownKeys = true
+            encodeDefaults = false
+            classDiscriminator = "type"
+        }
+        val jsonPretty = Json(json) {
+            prettyPrint = true
+            encodeDefaults = true
+        }
     }
 }

@@ -1,9 +1,8 @@
 package io.github.cinnamon415.packetwall.analysis
 
 import android.util.Log
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import java.io.File
+import java.io.IOException
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -11,9 +10,11 @@ import java.net.Socket
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.io.IOException
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * pcap-over-IP: a TCP server that sends a live pcapng stream to every client, e.g.
@@ -21,31 +22,47 @@ import java.util.concurrent.TimeUnit
  * Each client has its own bounded queue; a client that cannot keep up is disconnected.
  */
 class PcapServer(private val store: PacketStore) {
-    data class State(val running: Boolean = false, val port: Int = 0, val lan: Boolean = false, val clients: Int = 0, val error: String? = null)
+    data class State(
+        val running: Boolean = false,
+        val port: Int = 0,
+        val lan: Boolean = false,
+        val clients: Int = 0,
+        val error: String? = null
+    )
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state
     private var server: ServerSocket? = null
-    private val clients = java.util.concurrent.CopyOnWriteArrayList<Client>()
+    private val clients = CopyOnWriteArrayList<Client>()
 
     private inner class Client(val sock: Socket) : PacketStore.Sink {
         val q = LinkedBlockingQueue<ByteArray>(4096)
+
         @Volatile var alive = true
-        override fun onBlock(block: ByteArray) { if (alive && !q.offer(block)) close() }
+        override fun onBlock(block: ByteArray) {
+            if (alive && !q.offer(block)) close()
+        }
         fun run() {
             try {
                 val out = sock.getOutputStream().buffered(64 * 1024)
                 while (alive) {
-                    val b = q.poll(1, java.util.concurrent.TimeUnit.SECONDS) ?: run { out.flush(); null } ?: continue
+                    val b = q.poll(1, TimeUnit.SECONDS) ?: run {
+                        out.flush()
+                        null
+                    } ?: continue
                     out.write(b)
                     if (q.isEmpty()) out.flush()
                 }
-            } catch (e: Exception) { } finally { close() }
+            } catch (e: Exception) { } finally {
+                close()
+            }
         }
         fun close() {
             if (!alive) return
             alive = false
             store.removeSink(this)
-            try { sock.close() } catch (_: Exception) {}
+            try {
+                sock.close()
+            } catch (_: Exception) {}
             clients.remove(this)
             _state.value = _state.value.copy(clients = clients.size)
         }
@@ -60,7 +77,11 @@ class PcapServer(private val store: PacketStore) {
             _state.value = State(true, port, lan, 0)
             Thread({
                 while (!s.isClosed) {
-                    val sock = try { s.accept() } catch (e: Exception) { break }
+                    val sock = try {
+                        s.accept()
+                    } catch (e: Exception) {
+                        break
+                    }
                     sock.tcpNoDelay = true
                     val c = Client(sock)
                     clients.add(c)
@@ -77,7 +98,8 @@ class PcapServer(private val store: PacketStore) {
 
     @Synchronized
     fun stop() {
-        server?.close(); server = null
+        server?.close()
+        server = null
         clients.forEach { it.close() }
         _state.value = State()
     }
@@ -92,18 +114,13 @@ class PcapServer(private val store: PacketStore) {
  * slowing down the device's traffic.
  */
 class DiskRecorder(private val store: PacketStore, private val dir: File) : PacketStore.Sink {
-    data class State(
-        val running: Boolean = false,
-        val file: String? = null,
-        val bytes: Long = 0,
-        val files: Int = 0,
-        val dropped: Long = 0,
-    )
+    data class State(val running: Boolean = false, val file: String? = null, val bytes: Long = 0, val files: Int = 0, val dropped: Long = 0)
 
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state
 
     private val queue = LinkedBlockingQueue<ByteArray>(QUEUE_BLOCKS)
+
     @Volatile private var running = false
     private var writer: Thread? = null
 
@@ -203,7 +220,8 @@ class DiskRecorder(private val store: PacketStore, private val dir: File) : Pack
         const val TAG = "DiskRecorder"
         const val QUEUE_BLOCKS = 8192
 
-        fun isSectionHeader(b: ByteArray) =
-            b.size >= 4 && b[0] == 0x0A.toByte() && b[1] == 0x0D.toByte() && b[2] == 0x0D.toByte() && b[3] == 0x0A.toByte()
+        private val SHB_MAGIC = byteArrayOf(0x0A, 0x0D, 0x0D, 0x0A)
+
+        fun isSectionHeader(b: ByteArray) = b.size >= 4 && (0 until 4).all { b[it] == SHB_MAGIC[it] }
     }
 }

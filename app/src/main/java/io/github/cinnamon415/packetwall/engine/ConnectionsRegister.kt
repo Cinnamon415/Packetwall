@@ -1,5 +1,6 @@
 package io.github.cinnamon415.packetwall.engine
 
+import android.util.Log
 import io.github.cinnamon415.packetwall.engine.model.CaptureStats
 import io.github.cinnamon415.packetwall.engine.model.ConnectionDescriptor
 import io.github.cinnamon415.packetwall.engine.model.ConnectionUpdate
@@ -38,19 +39,28 @@ data class Conn(
     val fwRule: Int,
     /** Sent through the upstream proxy. */
     val proxied: Boolean = false,
-    val country: String = "",
+    val country: String = ""
 ) {
     val active get() = status < ConnectionDescriptor.CONN_STATUS_CLOSED
-    val l4 get() = when (ipproto) { 6 -> "TCP"; 17 -> "UDP"; 1, 58 -> "ICMP"; else -> "IP/$ipproto" }
+    val l4 get() = when (ipproto) {
+        6 -> "TCP"
+        17 -> "UDP"
+        1, 58 -> "ICMP"
+        else -> "IP/$ipproto"
+    }
     val protoLabel get() = l7proto.ifEmpty { l4 }
     val bytes get() = sentBytes + rcvdBytes
     val title get() = host?.takeIf { it.isNotEmpty() } ?: dstIp
 }
 
 data class Stats(
-    val bytesSent: Long = 0, val bytesRcvd: Long = 0,
-    val pktsSent: Int = 0, val pktsRcvd: Int = 0,
-    val activeConns: Int = 0, val totalConns: Int = 0, val dnsQueries: Int = 0,
+    val bytesSent: Long = 0,
+    val bytesRcvd: Long = 0,
+    val pktsSent: Int = 0,
+    val pktsRcvd: Int = 0,
+    val activeConns: Int = 0,
+    val totalConns: Int = 0,
+    val dnsQueries: Int = 0
 )
 
 /**
@@ -60,6 +70,7 @@ data class Stats(
 class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: Int = 20_000) {
     private val lock = Any()
     private val byId = LinkedHashMap<Int, ConnectionDescriptor>()
+
     @Volatile private var dirty = false
 
     private val _conns = MutableStateFlow<List<Conn>>(emptyList())
@@ -76,8 +87,11 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
 
     // Persistent log: closed connections are written to [db] when [keepDays] > 0
     @Volatile private var db: LogDb? = null
+
     @Volatile private var keepDays = 0
+
     @Volatile var blockedOnly = false
+
     @Volatile private var stored: List<Conn> = emptyList()
     private val saved = HashSet<Int>()
 
@@ -88,14 +102,20 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
         if (days > 0) {
             logDb.purge(System.currentTimeMillis() - days * 86_400_000L)
             stored = logDb.load(HISTORY_ROWS, apps)
-        } else stored = emptyList()
+        } else {
+            stored = emptyList()
+        }
         dirty = true
     }
 
     private fun persist(list: List<Conn>) {
         val d = db ?: return
         if (keepDays <= 0 || list.isEmpty()) return
-        try { d.insert(list) } catch (e: Exception) { android.util.Log.w("ConnectionsRegister", "log insert", e) }
+        try {
+            d.insert(list)
+        } catch (e: Exception) {
+            Log.w("ConnectionsRegister", "log insert", e)
+        }
     }
 
     init {
@@ -109,9 +129,25 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
 
     fun reset() {
         // keep what the previous session did not write yet
-        val left = synchronized(lock) { byId.values.filter { it.incr_id !in saved }.map { toConn(it) }.filter { !blockedOnly || it.blocked } }
-        if (left.isNotEmpty()) scope.launch { persist(left); db?.let { if (keepDays > 0) stored = it.load(HISTORY_ROWS, apps) }; dirty = true }
-        synchronized(lock) { byId.clear(); saved.clear() }
+        val left =
+            synchronized(lock) { byId.values.filter { it.incr_id !in saved }.map { toConn(it) }.filter { !blockedOnly || it.blocked } }
+        if (left.isNotEmpty()) {
+            scope.launch {
+                persist(left)
+                db?.let {
+                    if (keepDays >
+                        0
+                    ) {
+                        stored = it.load(HISTORY_ROWS, apps)
+                    }
+                }
+                dirty = true
+            }
+        }
+        synchronized(lock) {
+            byId.clear()
+            saved.clear()
+        }
         _stats.value = Stats()
         _history.value = emptyList()
         dirty = true
@@ -131,13 +167,22 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
 
     fun onStats(s: CaptureStats) {
         _history.value = (_history.value + Sample(System.currentTimeMillis(), s.bytes_sent, s.bytes_rcvd)).takeLast(HISTORY)
-        _stats.value = Stats(s.bytes_sent, s.bytes_rcvd, s.pkts_sent, s.pkts_rcvd,
-            s.active_conns, s.tot_conns, s.num_dns_queries)
+        _stats.value = Stats(
+            s.bytes_sent,
+            s.bytes_rcvd,
+            s.pkts_sent,
+            s.pkts_rcvd,
+            s.active_conns,
+            s.tot_conns,
+            s.num_dns_queries
+        )
     }
 
-    private fun toConn(c: ConnectionDescriptor) = Conn(c.incr_id, c.uid, apps.get(c.uid), c.ipver, c.ipproto, c.src_ip, c.src_port,
+    private fun toConn(c: ConnectionDescriptor) = Conn(
+        c.incr_id, c.uid, apps.get(c.uid), c.ipver, c.ipproto, c.src_ip, c.src_port,
         c.dst_ip, c.dst_port, c.l7proto ?: "", c.info, c.url, c.sent_bytes, c.rcvd_bytes,
-        c.sent_pkts, c.rcvd_pkts, c.blocked_pkts, c.first_seen, c.last_seen, c.status, c.is_blocked, c.fw_rule, c.proxied, c.country ?: "")
+        c.sent_pkts, c.rcvd_pkts, c.blocked_pkts, c.first_seen, c.last_seen, c.status, c.is_blocked, c.fw_rule, c.proxied, c.country ?: ""
+    )
 
     private fun publish() {
         dirty = false

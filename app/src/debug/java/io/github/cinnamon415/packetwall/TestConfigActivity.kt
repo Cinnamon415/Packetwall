@@ -13,7 +13,8 @@ import kotlinx.serialization.json.jsonObject
 
 /**
  * Debug builds only. Applies a test configuration sent by tools/e2e:
- *   am start -n <pkg>/io.github.cinnamon415.packetwall.TestConfigActivity --es fw <base64 export JSON> --es settings <base64 {"key": value}>
+ *   am start -n <pkg>/io.github.cinnamon415.packetwall.TestConfigActivity \
+ *       --es fw <base64 export JSON> --es settings <base64 {"key": value}>
  * The firewall state replaces the current one (import with replace); settings are written and reloaded.
  */
 class TestConfigActivity : Activity() {

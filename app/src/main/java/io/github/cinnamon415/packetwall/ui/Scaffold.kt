@@ -35,19 +35,29 @@ fun ScreenScaffold(
     onMenu: (() -> Unit)? = null,
     onBack: (() -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
-    content: @Composable ColumnScope.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        Text(
+                            title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             fontFamily = if (monoTitle) FontFamily.Monospace else null,
-                            style = if (monoTitle) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge)
-                        if (subtitle != null)
-                            Text(subtitle, style = MaterialTheme.typography.bodySmall, maxLines = 1,
-                                overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            style = if (monoTitle) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge
+                        )
+                        if (subtitle != null) {
+                            Text(
+                                subtitle,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 },
                 navigationIcon = {
@@ -61,9 +71,9 @@ fun ScreenScaffold(
                     }
                 },
                 actions = actions,
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
             )
-        },
+        }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad), content = content)
     }

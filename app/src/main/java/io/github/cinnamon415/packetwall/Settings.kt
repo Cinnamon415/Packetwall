@@ -53,7 +53,7 @@ class Settings(ctx: Context) {
         val record: Boolean = false,
         val recordMb: Int = 32,
         val recordMinutes: Int = 60,
-        val recordKeep: Int = 5,
+        val recordKeep: Int = 5
     )
 
     private val _values = MutableStateFlow(read())
@@ -85,11 +85,17 @@ class Settings(ctx: Context) {
         logBlockedOnly = prefs.getBoolean("log_blocked_only", false),
         stream = prefs.getBoolean("stream", false), streamPort = prefs.getInt("stream_port", 57012),
         streamLan = prefs.getBoolean("stream_lan", false), record = prefs.getBoolean("record", false),
-        recordMb = prefs.getInt("record_mb", 32), recordMinutes = prefs.getInt("record_min", 60), recordKeep = prefs.getInt("record_keep", 5),
+        recordMb = prefs.getInt(
+            "record_mb",
+            32
+        ),
+        recordMinutes = prefs.getInt("record_min", 60), recordKeep = prefs.getInt("record_keep", 5)
     )
 
     /** Re-reads the preferences (after they were written outside this class, e.g. by tests). */
-    fun reload() { _values.value = read() }
+    fun reload() {
+        _values.value = read()
+    }
 
     fun update(fn: (Values) -> Values) {
         val v = fn(_values.value)
@@ -106,7 +112,10 @@ class Settings(ctx: Context) {
             .putString("backup_uri", v.backupUri).putLong("last_backup", v.lastBackup)
             .putInt("log_days", v.logDays).putBoolean("lan_bypass", v.lanBypass).putBoolean("log_blocked_only", v.logBlockedOnly)
             .putBoolean("stream", v.stream).putInt("stream_port", v.streamPort).putBoolean("stream_lan", v.streamLan)
-            .putBoolean("record", v.record).putInt("record_mb", v.recordMb).putInt("record_min", v.recordMinutes).putInt("record_keep", v.recordKeep)
+            .putBoolean(
+                "record",
+                v.record
+            ).putInt("record_mb", v.recordMb).putInt("record_min", v.recordMinutes).putInt("record_keep", v.recordKeep)
             .apply()
         _values.value = v
     }
