@@ -376,4 +376,5 @@
     <string name="confirm_log_shorter">Хранить журнал %1$s? Более старые записи удалятся сразу.</string>
     <string name="confirm_geo_delete">Удалить базы GeoIP? Правила по странам и AS (%1$d) перестанут срабатывать, пока базы не скачаются снова.</string>
     <string name="confirm_trackers_delete">Удалить базу трекеров? Соединения больше не будут помечаться как трекеры.</string>
+    <string name="problem_too_large">Слишком большой файл</string>
 </resources>

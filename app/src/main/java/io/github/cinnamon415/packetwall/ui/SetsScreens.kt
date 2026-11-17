@@ -74,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import io.github.cinnamon415.packetwall.Limits
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.Problem
 import io.github.cinnamon415.packetwall.R
@@ -86,9 +87,11 @@ import io.github.cinnamon415.packetwall.fw.FwState
 import io.github.cinnamon415.packetwall.fw.RethinkReader
 import io.github.cinnamon415.packetwall.fw.RuleSet
 import io.github.cinnamon415.packetwall.fw.SetKind
+import io.github.cinnamon415.packetwall.readCapped
 import java.text.DateFormat
 import java.util.Date
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -327,10 +330,12 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
 
     LaunchedEffect(uri) {
         try {
-            bytes = withContext(Dispatchers.IO) { ctx.contentResolver.openInputStream(uri)!!.use { it.readBytes() } }
+            bytes = withContext(Dispatchers.IO) { ctx.contentResolver.openInputStream(uri)!!.readCapped(Limits.IMPORT_BYTES, "import") }
             detected = ForeignImport.detect(bytes!!)
-        } catch (e: Exception) {
-            error = Problem.of(e)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            error = Problem.of(e) // OutOfMemoryError included: a crash here would also stop the VPN
         }
     }
     val effective = if (format == ForeignImport.Format.AUTO) detected else format
@@ -355,8 +360,10 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
                     else -> ForeignImport.list(String(b, Charsets.UTF_8).lineSequence())
                 }
             }
-        } catch (e: Exception) {
-            error = Problem.of(e)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            error = Problem.of(e) // OutOfMemoryError included: a crash here would also stop the VPN
         }
     }
 
@@ -734,10 +741,12 @@ private fun ImportJsonDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
     LaunchedEffect(uri) {
         try {
             file = withContext(Dispatchers.IO) {
-                val text = ctx.contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }
+                val text = ctx.contentResolver.openInputStream(uri)!!.readCapped(Limits.IMPORT_BYTES, "import").toString(Charsets.UTF_8)
                 text to FirewallStore.json.decodeFromString(ExportFile.serializer(), text)
             }
-        } catch (e: Exception) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
             problem = Problem.of(e)
         }
     }

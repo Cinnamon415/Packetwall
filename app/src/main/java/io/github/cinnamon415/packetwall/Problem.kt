@@ -19,7 +19,7 @@ import kotlinx.serialization.SerializationException
 class HttpStatusException(val code: Int) : IOException("HTTP $code")
 
 /** Downloaded or imported data is not what was expected (empty, wrong format, corrupt). */
-class BadDataException(msg: String) : IOException(msg)
+open class BadDataException(msg: String) : IOException(msg)
 
 /**
  * A failure as the user sees it. Code turns exceptions into a [Problem] with [of]; the UI shows
@@ -37,6 +37,9 @@ sealed interface Problem {
     data class Http(val code: Int) : Problem
 
     data object BadData : Problem
+
+    /** Over the size limits (see Limits), or out of memory reading it. */
+    data object TooLarge : Problem
 
     data class PortInUse(val port: Int) : Problem
 
@@ -56,6 +59,7 @@ sealed interface Problem {
         Secure -> "tls"
         is Http -> "http:$code"
         BadData -> "bad-data"
+        TooLarge -> "too-large"
         is PortInUse -> "port:$port"
         FileAccess -> "file"
         NoLan -> "no-lan"
@@ -69,6 +73,7 @@ sealed interface Problem {
         Secure -> ctx.getString(R.string.problem_tls)
         is Http -> ctx.getString(if (code == 404) R.string.problem_http_404 else R.string.problem_http, code)
         BadData -> ctx.getString(R.string.problem_bad_data)
+        TooLarge -> ctx.getString(R.string.problem_too_large)
         is PortInUse -> ctx.getString(R.string.problem_port, port)
         FileAccess -> ctx.getString(R.string.problem_file)
         NoLan -> ctx.getString(R.string.problem_no_lan)
@@ -84,6 +89,7 @@ sealed interface Problem {
     companion object {
         fun of(e: Throwable, port: Int = 0): Problem = when (e) {
             is HttpStatusException -> Http(e.code)
+            is TooLargeException, is OutOfMemoryError -> TooLarge
             is PcapServer.NoLanException -> NoLan
             is BadDataException, is SerializationException, is ZipException -> BadData
             is ForeignImport.Unsupported -> Unsupported(e.reason)
@@ -103,6 +109,7 @@ sealed interface Problem {
             s == "timeout" -> Timeout
             s == "tls" -> Secure
             s == "bad-data" -> BadData
+            s == "too-large" -> TooLarge
             s == "file" -> FileAccess
             s == "no-lan" -> NoLan
             s.startsWith("http:") -> s.substring(5).toIntOrNull()?.let(::Http) ?: Other(s)

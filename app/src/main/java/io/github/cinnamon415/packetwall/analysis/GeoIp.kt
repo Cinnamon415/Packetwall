@@ -2,7 +2,9 @@ package io.github.cinnamon415.packetwall.analysis
 
 import android.util.Log
 import android.util.LruCache
+import io.github.cinnamon415.packetwall.CappedInputStream
 import io.github.cinnamon415.packetwall.HttpStatusException
+import io.github.cinnamon415.packetwall.Limits
 import io.github.cinnamon415.packetwall.Problem
 import java.io.File
 import java.net.InetAddress
@@ -78,7 +80,8 @@ class GeoIp(dir: File) {
             @Suppress("UNCHECKED_CAST")
             val rec = r.lookup(InetAddress.getByName(ip)) as? Map<String, Any?>
             ((rec?.get("country") as? Map<String, Any?>)?.get("iso_code") as? String) ?: ""
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // called from the capture thread through JNI: a broken database must never throw there
             ""
         }
         countryCache.put(ip, cc)
@@ -94,7 +97,7 @@ class GeoIp(dir: File) {
             val rec = r.lookup(InetAddress.getByName(ip)) as? Map<String, Any?>
             val n = (rec?.get("autonomous_system_number") as? Number)?.toLong() ?: 0L
             n to ((rec?.get("autonomous_system_organization") as? String) ?: "")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             0L to ""
         }
         asnCache.put(ip, v)
@@ -167,7 +170,9 @@ class GeoIp(dir: File) {
                 val tmp = File(geoDir, "${file.name}.tmp")
                 OkHttpClient().newCall(Request.Builder().url(url).header("User-Agent", "Packetwall").build()).execute().use { r ->
                     if (r.code != 200) throw HttpStatusException(r.code)
-                    GZIPInputStream(r.body!!.byteStream()).use { input -> tmp.outputStream().use { input.copyTo(it) } }
+                    CappedInputStream(GZIPInputStream(r.body!!.byteStream()), Limits.UNPACKED_BYTES, "GeoIP").use { input ->
+                        tmp.outputStream().use { input.copyTo(it) }
+                    }
                 }
                 MmdbReader(tmp) // validate
                 tmp.renameTo(file)

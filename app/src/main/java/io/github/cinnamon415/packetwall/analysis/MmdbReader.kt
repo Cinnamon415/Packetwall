@@ -1,5 +1,6 @@
 package io.github.cinnamon415.packetwall.analysis
 
+import io.github.cinnamon415.packetwall.BadDataException
 import java.io.File
 import java.io.RandomAccessFile
 import java.net.InetAddress
@@ -139,9 +140,15 @@ class MmdbReader(file: File) {
     }
 
     private class Decoder(val b: ByteBuffer, val base: Int) {
+        private companion object {
+            const val MAX_DEPTH = 32
+        }
+
         private fun u8(o: Int) = b.get(o).toInt() and 0xff
 
-        fun decode(off: Int): Pair<Any?, Int> {
+        /** [depth] bounds pointers and nesting: a hostile database cannot loop or overflow the stack. */
+        fun decode(off: Int, depth: Int = 0): Pair<Any?, Int> {
+            if (depth > MAX_DEPTH) throw BadDataException("MMDB nesting too deep")
             var o = off
             val ctrl = u8(o++)
             var type = ctrl shr 5
@@ -154,7 +161,7 @@ class MmdbReader(file: File) {
                     2 -> ((vv shl 24) or (u8(o) shl 16) or (u8(o + 1) shl 8) or u8(o + 2)) + 526336
                     else -> b.getInt(o)
                 }
-                return decode(base + p).first to (o + ss + 1)
+                return decode(base + p, depth + 1).first to (o + ss + 1)
             }
             if (type == 0) type = 7 + u8(o++) // extended
             var size = ctrl and 0x1f
@@ -189,8 +196,8 @@ class MmdbReader(file: File) {
                 7 -> {
                     val m = LinkedHashMap<String, Any?>()
                     repeat(size) {
-                        val (k, n1) = decode(o)
-                        val (v, n2) = decode(n1)
+                        val (k, n1) = decode(o, depth + 1)
+                        val (v, n2) = decode(n1, depth + 1)
                         m[k.toString()] = v
                         o = n2
                     }
@@ -204,7 +211,7 @@ class MmdbReader(file: File) {
                 11 -> {
                     val l = ArrayList<Any?>(size)
                     repeat(size) {
-                        val (v, n) = decode(o)
+                        val (v, n) = decode(o, depth + 1)
                         l.add(v)
                         o = n
                     }

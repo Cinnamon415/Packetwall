@@ -378,4 +378,5 @@
     <string name="confirm_log_shorter">Keep the log for %1$s? Older entries are deleted right away.</string>
     <string name="confirm_geo_delete">Delete the GeoIP databases? Country and AS rules (%1$d) stop matching until they are downloaded again.</string>
     <string name="confirm_trackers_delete">Delete the tracker database? Connections are no longer marked as trackers.</string>
+    <string name="problem_too_large">The file is too large</string>
 </resources>

@@ -4,7 +4,9 @@ import android.util.Log
 import android.util.LruCache
 import io.github.cinnamon415.packetwall.BadDataException
 import io.github.cinnamon415.packetwall.HttpStatusException
+import io.github.cinnamon415.packetwall.Limits
 import io.github.cinnamon415.packetwall.Problem
+import io.github.cinnamon415.packetwall.readCapped
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -94,7 +96,7 @@ class Trackers(dir: File) {
             val text = OkHttpClient().newCall(Request.Builder().url(URL).header("User-Agent", "Packetwall").build())
                 .execute().use { r ->
                     if (r.code != 200) throw HttpStatusException(r.code)
-                    r.body!!.string()
+                    r.body!!.byteStream().readCapped(Limits.TRACKERS_BYTES, "trackers").toString(Charsets.UTF_8)
                 }
             if (parse(text).isEmpty()) throw BadDataException("empty tracker database")
             val tmp = File(file.path + ".tmp")

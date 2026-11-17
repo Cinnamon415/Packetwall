@@ -1,6 +1,8 @@
 package io.github.cinnamon415.packetwall.fw
 
 import android.database.sqlite.SQLiteDatabase
+import io.github.cinnamon415.packetwall.CappedInputStream
+import io.github.cinnamon415.packetwall.Limits
 import java.io.File
 import java.io.InputStream
 import java.util.zip.ZipInputStream
@@ -14,7 +16,7 @@ object RethinkReader {
             while (true) {
                 val e = z.nextEntry ?: break
                 if (e.name.substringAfterLast('/') == "bravedns.db") {
-                    db.outputStream().use { z.copyTo(it) }
+                    db.outputStream().use { CappedInputStream(z, Limits.UNPACKED_BYTES, "RethinkDNS backup").copyTo(it) }
                     found = true
                     break
                 }

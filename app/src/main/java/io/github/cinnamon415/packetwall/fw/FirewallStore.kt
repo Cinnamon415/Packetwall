@@ -1,7 +1,9 @@
 package io.github.cinnamon415.packetwall.fw
 
 import android.util.Log
+import io.github.cinnamon415.packetwall.Limits
 import io.github.cinnamon415.packetwall.Problem
+import io.github.cinnamon415.packetwall.cappedLines
 import java.io.File
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -370,7 +372,7 @@ class FirewallStore(
     }
 
     private fun fetchAndParse(url: String): ListParser.Result = lists.open(url).use { r ->
-        ListParser.parse(r.lineSequence().take(MAX_LIST_LINES))
+        ListParser.parse(r.cappedLines(Limits.LIST_CHARS, Limits.LINE_CHARS, "list").take(MAX_LIST_LINES))
     }
 
     // ---------------------------------------------------------------- import / export
