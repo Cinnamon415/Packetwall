@@ -42,6 +42,8 @@ class Settings(ctx: Context) {
         val lastBackup: Long = 0,
         /** Connection log retention in days, 0 = current session only. */
         val logDays: Int = 0,
+        /** Private networks (LAN, adb over Wi-Fi…) are routed outside the VPN: not filtered, not logged. */
+        val lanBypass: Boolean = false,
         /** Persist only blocked connections (spec 6: "statistics and blocks only"). */
         val logBlockedOnly: Boolean = false,
         // Streaming to a PC (pcap-over-IP) and continuous recording to disk
@@ -79,11 +81,15 @@ class Settings(ctx: Context) {
         backupUri = prefs.getString("backup_uri", null) ?: "",
         lastBackup = prefs.getLong("last_backup", 0),
         logDays = prefs.getInt("log_days", 0),
+        lanBypass = prefs.getBoolean("lan_bypass", false),
         logBlockedOnly = prefs.getBoolean("log_blocked_only", false),
         stream = prefs.getBoolean("stream", false), streamPort = prefs.getInt("stream_port", 57012),
         streamLan = prefs.getBoolean("stream_lan", false), record = prefs.getBoolean("record", false),
         recordMb = prefs.getInt("record_mb", 32), recordMinutes = prefs.getInt("record_min", 60), recordKeep = prefs.getInt("record_keep", 5),
     )
+
+    /** Re-reads the preferences (after they were written outside this class, e.g. by tests). */
+    fun reload() { _values.value = read() }
 
     fun update(fn: (Values) -> Values) {
         val v = fn(_values.value)
@@ -98,7 +104,7 @@ class Settings(ctx: Context) {
             .putInt("up_udp", v.upUdp).putInt("up_down", v.upOnDown).putInt("up_type", v.upType).putBoolean("up_all", v.upAll)
             .putBoolean("lists_auto", v.listsAutoUpdate).putBoolean("lists_wifi", v.listsWifiOnly)
             .putString("backup_uri", v.backupUri).putLong("last_backup", v.lastBackup)
-            .putInt("log_days", v.logDays).putBoolean("log_blocked_only", v.logBlockedOnly)
+            .putInt("log_days", v.logDays).putBoolean("lan_bypass", v.lanBypass).putBoolean("log_blocked_only", v.logBlockedOnly)
             .putBoolean("stream", v.stream).putInt("stream_port", v.streamPort).putBoolean("stream_lan", v.streamLan)
             .putBoolean("record", v.record).putInt("record_mb", v.recordMb).putInt("record_min", v.recordMinutes).putInt("record_keep", v.recordKeep)
             .apply()

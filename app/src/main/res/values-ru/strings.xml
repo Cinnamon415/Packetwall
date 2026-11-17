@@ -301,4 +301,7 @@
     <string name="move_to_set">В набор</string>
     <string name="log_blocked_only">Сохранять только заблокированные</string>
     <string name="dns_blocked_answer">заблокировано → ответ подменён</string>
+    <string name="settings_network">Сеть</string>
+    <string name="lan_bypass">Локальная сеть мимо VPN</string>
+    <string name="lan_bypass_hint">10/8, 172.16/12, 192.168/16, link-local и multicast идут напрямую: без фильтрации и логов. Не ломает adb по Wi-Fi, трансляцию на ТВ и устройства в LAN.</string>
 </resources>

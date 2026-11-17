@@ -303,4 +303,7 @@
     <string name="move_to_set">Move to set</string>
     <string name="log_blocked_only">Save only blocked connections</string>
     <string name="dns_blocked_answer">blocked → answered locally</string>
+    <string name="settings_network">Network</string>
+    <string name="lan_bypass">Local network bypasses the VPN</string>
+    <string name="lan_bypass_hint">10/8, 172.16/12, 192.168/16, link-local and multicast go directly: not filtered or logged. Keeps adb over Wi-Fi, casting and LAN devices working.</string>
 </resources>

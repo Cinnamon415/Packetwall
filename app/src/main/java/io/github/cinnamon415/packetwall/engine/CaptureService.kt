@@ -168,12 +168,16 @@ class CaptureService : VpnService() {
             .setMtu(VPN_MTU)
             .setSession(getString(R.string.app_name))
             .addAddress(VPN_IP4, 30)
-            .addRoute("0.0.0.0", 1)
-            .addRoute("128.0.0.0", 1)
             .addDnsServer(VPN_DNS4)
             .addAddress(VPN_IP6, 128)
             .addRoute("2000::", 3)
-            .addRoute("fc00::", 7)
+        if (st.lanBypass) {
+            // everything except private networks; the VPN's own /30 (DNS 10.215.173.2) stays inside
+            Routes.subtract(Routes.parse("0.0.0.0/0"), Routes.LOCAL_V4).forEach { builder.addRoute(it.toString().substringBefore('/'), it.prefix) }
+            builder.addRoute("10.215.173.0", 30)
+        } else {
+            builder.addRoute("0.0.0.0", 1).addRoute("128.0.0.0", 1).addRoute("fc00::", 7)
+        }
         builder.setMetered(false)
         builder.setConfigureIntent(mainActivityIntent())
         // Packetwall's own traffic (DoH, list downloads) goes straight to the network

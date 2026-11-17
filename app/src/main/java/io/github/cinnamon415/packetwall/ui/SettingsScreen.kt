@@ -56,6 +56,12 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
             }
             Text(stringResource(R.string.settings_apply_hint), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+            ListSubheader(stringResource(R.string.settings_network))
+            RoundedGroup {
+                SwitchRow(stringResource(R.string.lan_bypass), stringResource(R.string.lan_bypass_hint), s.lanBypass) { v ->
+                    app.settings.update { it.copy(lanBypass = v) }
+                }
+            }
             ListSubheader(stringResource(R.string.upstream))
             UpstreamSettings(app, s)
             ListSubheader("DNS")

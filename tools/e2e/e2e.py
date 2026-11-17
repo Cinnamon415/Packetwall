@@ -13,7 +13,10 @@ import argparse, json, os, re, subprocess, sys, tempfile, time
 ADB = os.environ.get("ADB", os.path.expanduser("~/Android/Sdk/platform-tools/adb"))
 PKG = os.environ.get("PW_PKG", "io.github.cinnamon415.packetwall.debug")
 SVC = f"{PKG}/io.github.cinnamon415.packetwall.engine.CaptureService"
-HOST = "10.0.2.2"                       # the host, seen from the emulator
+HOST = os.environ.get("HOST", "10.0.2.2")    # the host as seen from the device (Waydroid: 192.168.240.1)
+ROOTED = False                                # adb root available (emulator) or not (Waydroid)
+RUN_AS = True                                 # run-as works (not in Waydroid's LXC container)
+ACTIVITY = f"{PKG}/io.github.cinnamon415.packetwall.MainActivity"
 PROXY_LOG = os.environ.get("PROXY_LOG", "")
 results = []
 
@@ -37,19 +40,26 @@ def put_file(rel, content):
     os.unlink(f.name)
 
 
+def vpn_up():
+    # the tun interface of Packetwall (dumpsys output differs between Android versions)
+    return "10.215.173.1" in sh("ip addr show tun0 2>/dev/null")
+
+
 def stop():
-    sh(f"am startservice -n {SVC} -a io.github.cinnamon415.packetwall.STOP")
+    if ROOTED: sh(f"am startservice -n {SVC} -a io.github.cinnamon415.packetwall.STOP")
+    else: sh(f"am start -n {ACTIVITY} -a io.github.cinnamon415.packetwall.TOGGLE_OFF")
     for _ in range(20):
-        if "Transports: VPN" not in sh("dumpsys connectivity | grep 'Transports: VPN'"):
+        if not vpn_up():
             return
         time.sleep(0.5)
 
 
 def start():
     sh(f"appops set {PKG} ACTIVATE_VPN allow")
-    sh(f"am start-foreground-service -n {SVC} -a io.github.cinnamon415.packetwall.START")
+    if ROOTED: sh(f"am start-foreground-service -n {SVC} -a io.github.cinnamon415.packetwall.START")
+    else: sh(f"am start -n {ACTIVITY} -a io.github.cinnamon415.packetwall.TOGGLE_ON")
     for _ in range(30):
-        if "Transports: VPN" in sh("dumpsys connectivity | grep 'Transports: VPN'"):
+        if vpn_up():
             time.sleep(2.5)       # rules compiled + loop started
             return
         time.sleep(0.5)
@@ -58,7 +68,7 @@ def start():
 
 SET = lambda i, n, **kw: {"id": i, "name": n, **kw}
 G = {"type": "global"}
-ROOT = {"type": "app", "pkg": "root"}
+ROOT = {"type": "app", "pkg": "root"}         # the app that the shell traffic belongs to (set in main)
 
 
 def rule(i, set_id, who, kind, value="", subs=False, action="BLOCK", **kw):
@@ -67,23 +77,34 @@ def rule(i, set_id, who, kind, value="", subs=False, action="BLOCK", **kw):
 
 def configure(rules=(), sets=None, order=None, settings=None, lists=None):
     stop()
-    sh(f"am force-stop {PKG}")
     sets = sets or [SET(1, "Default"), SET(2, "Low")]
     order = order or [{"id": s["id"], "enabled": True} for s in sets]
     state = {"sets": sets, "order": order, "rules": list(rules),
              "profiles": [{"id": 3, "name": "Main", "sets": order}], "activeProfile": 3, "nextId": 10000}
-    put_file("files/firewall.json", json.dumps(state))
-    for set_id, lines in (lists or {}).items():
-        put_file(f"files/lists/{set_id}.txt", "\n".join(lines) + "\n")
-    base = {"dns_mode": 0, "up": False, "stream": False, "record": False, "capture_packets": True, "log_days": 0}
+    # adb over the network (Waydroid, phones over Wi-Fi) needs the LAN outside the VPN
+    base = {"dns_mode": 0, "up": False, "stream": False, "record": False, "capture_packets": True, "log_days": 0,
+            "lan_bypass": not ROOTED}
     base.update(settings or {})
-    xml = ["<?xml version='1.0' encoding='utf-8' standalone='yes' ?>", "<map>"]
-    for k, v in base.items():
-        if isinstance(v, bool): xml.append(f'    <boolean name="{k}" value="{str(v).lower()}" />')
-        elif isinstance(v, int): xml.append(f'    <int name="{k}" value="{v}" />')
-        else: xml.append(f'    <string name="{k}">{v}</string>')
-    xml.append("</map>")
-    put_file("shared_prefs/settings.xml", "\n".join(xml) + "\n")
+    if RUN_AS:
+        sh(f"am force-stop {PKG}")
+        put_file("files/firewall.json", json.dumps(state))
+        for set_id, lines in (lists or {}).items():
+            put_file(f"files/lists/{set_id}.txt", "\n".join(lines) + "\n")
+        xml = ["<?xml version='1.0' encoding='utf-8' standalone='yes' ?>", "<map>"]
+        for k, v in base.items():
+            if isinstance(v, bool): xml.append(f'    <boolean name="{k}" value="{str(v).lower()}" />')
+            elif isinstance(v, int): xml.append(f'    <int name="{k}" value="{v}" />')
+            else: xml.append(f'    <string name="{k}">{v}</string>')
+        xml.append("</map>")
+        put_file("shared_prefs/settings.xml", "\n".join(xml) + "\n")
+    else:
+        # debug-only TestConfigActivity: the app applies the configuration itself
+        import base64
+        export = {"format": "packetwall-rules", "formatVersion": 1, "state": state,
+                  "lists": {str(k): v for k, v in (lists or {}).items()}}
+        b64 = lambda o: base64.b64encode(json.dumps(o).encode()).decode()
+        sh(f"am start -W -n {PKG}/io.github.cinnamon415.packetwall.TestConfigActivity --es settings {b64(base)} --es fw {b64(export)}")
+        time.sleep(1.5)
     start()
 
 
@@ -111,6 +132,10 @@ def dns_spoofed(reply):
 def check(name, cond, detail=""):
     results.append((name, bool(cond), detail))
     print(f"{'PASS' if cond else 'FAIL'}  {name}  {detail}", flush=True)
+
+
+def skip(name, why):
+    print(f"SKIP  {name}  {why}", flush=True)
 
 
 def ok(r): return r[0].startswith("HTTP/1.")
@@ -236,7 +261,7 @@ def s_route_rule():
 def s_geo():
     has = "country.mmdb" in sh(f"run-as {PKG} ls files/geo")
     if not has:
-        check("country/ASN rules (GeoIP databases present)", False, "download them in Settings → GeoIP first")
+        skip("country/ASN rules", "GeoIP databases not downloaded on this device (Settings → GeoIP)")
         return
     configure([rule(10, 1, ROOT, "COUNTRY", "ru", reject=True), rule(11, 1, ROOT, "ASN", "AS13335", reject=True)],
               settings={"dns_mode": 1, "doh_url": "https://1.1.1.1/dns-query"})
@@ -284,9 +309,17 @@ def main():
     ap.add_argument("--apk")
     ap.add_argument("only", nargs="*")
     a = ap.parse_args()
-    adb("root"); time.sleep(1); adb("wait-for-device")
+    global ROOTED
+    adb("root"); time.sleep(3); adb("wait-for-device")
+    uid = sh("id -u").strip()
+    ROOTED = uid == "0"
+    ROOT["pkg"] = "root" if ROOTED else "com.android.shell"
     if a.apk:
         print(adb("install", "-r", a.apk).strip())
+    global RUN_AS
+    probe = sh(f"run-as {PKG} id 2>&1")
+    RUN_AS = "uid=" in probe
+    print(f"device shell uid {uid}, rooted={ROOTED}, run-as={RUN_AS}, host={HOST}", flush=True)
     adb("logcat", "-c")
     for s in SCENARIOS:
         if a.only and s.__name__[2:] not in a.only:
