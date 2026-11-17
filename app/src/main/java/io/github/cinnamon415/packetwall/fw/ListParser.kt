@@ -23,6 +23,7 @@ object ListParser {
     /** An AdBlock network rule split into its parts. */
     private class Adb(val entry: String, val apps: List<String>?, val important: Boolean)
 
+    private val whitespace = Regex("\\s+")
     private val domainRe = Regex("^(\\*\\*?\\.)?([a-z0-9_*]([a-z0-9_*-]*[a-z0-9_*])?\\.)+[a-z0-9_*-]{2,}$")
     private val ipv4Re = Regex("^\\d{1,3}(\\.\\d{1,3}){3}(/\\d{1,2})?$")
     private val ipv6Re = Regex("^[0-9a-f:]+:[0-9a-f:.]*(/\\d{1,3})?$")
@@ -101,7 +102,7 @@ object ListParser {
             return if (isDomain(d)) d else null
         }
 
-        val parts = l.split(Regex("\\s+"))
+        val parts = l.split(whitespace)
         // hosts: "0.0.0.0 a.com b.com"
         if (parts.size >= 2 && (parts[0] in hostsIps || isIp(parts[0]))) {
             val names = parts.drop(1).filter { it !in hostsIgnore }

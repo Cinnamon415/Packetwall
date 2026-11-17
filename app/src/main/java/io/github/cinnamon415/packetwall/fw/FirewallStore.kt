@@ -329,22 +329,54 @@ class FirewallStore(
     fun updateList(id: Int) = scope.launch { download(id) }
 
     /** For the scheduled worker: updates every subscription and waits. Returns the number of failures. */
+    /** Downloads every subscription, then compiles once (not once per list). */
     suspend fun updateAllNow(): Int {
         var failed = 0
-        _state.value.blocklists.filter { it.url != null }.forEach { s ->
-            download(s.id)
-            if (_state.value.set(s.id)?.error != null) failed++
+        holdCompile.incrementAndGet()
+        try {
+            _state.value.blocklists.filter { it.url != null }.forEach { s ->
+                download(s.id)
+                if (_state.value.set(s.id)?.error != null) failed++
+            }
+        } finally {
+            if (holdCompile.decrementAndGet() == 0 && compileWanted.getAndSet(false)) scheduleCompile(0)
         }
         return failed
     }
+
+    private val holdCompile = java.util.concurrent.atomic.AtomicInteger()
+    private val compileWanted = java.util.concurrent.atomic.AtomicBoolean()
 
     private suspend fun download(id: Int) {
         val set = _state.value.set(id) ?: return
         val url = set.url ?: return
         _updating.value = _updating.value + id
         try {
-            val res = downloadMutex.withLock { withContext(io) { fetchAndParse(url) } }
-            writeList(id, res.entries)
+            val known = Validators(set.etag, set.lastModified).takeIf {
+                listFile(id).exists() &&
+                    (it.etag != null || it.lastModified != null)
+            }
+            val fetched = downloadMutex.withLock { withContext(io) { fetchAndParse(url, known) } }
+            if (fetched == null) {
+                // 304: the list did not change, nothing to rewrite or recompile
+                update { st ->
+                    st.copy(
+                        sets = st.sets.map {
+                            if (it.id ==
+                                id
+                            ) {
+                                it.copy(updated = System.currentTimeMillis(), error = null)
+                            } else {
+                                it
+                            }
+                        }
+                    )
+                }
+                return
+            }
+            val (res, validators) = fetched
+            val hash = res.entries.hashCode()
+            if (hash != set.contentHash || !listFile(id).exists()) withContext(io) { writeList(id, res.entries) }
             update { st ->
                 st.copy(
                     sets = st.sets.map {
@@ -353,7 +385,10 @@ class FirewallStore(
                                 entries = res.entries.size,
                                 skipped = res.skipped,
                                 updated = System.currentTimeMillis(),
-                                error = null
+                                error = null,
+                                etag = validators?.etag,
+                                lastModified = validators?.lastModified,
+                                contentHash = hash
                             )
                         } else {
                             it
@@ -371,8 +406,12 @@ class FirewallStore(
         }
     }
 
-    private fun fetchAndParse(url: String): ListParser.Result = lists.open(url).use { r ->
-        ListParser.parse(r.cappedLines(Limits.LIST_CHARS, Limits.LINE_CHARS, "list").take(MAX_LIST_LINES))
+    /** null when the server answered 304 Not Modified. */
+    private fun fetchAndParse(url: String, known: Validators?): Pair<ListParser.Result, Validators?>? {
+        val f = lists.openIfChanged(url, known) ?: return null
+        return f.reader.use { r ->
+            ListParser.parse(r.cappedLines(Limits.LIST_CHARS, Limits.LINE_CHARS, "list").take(MAX_LIST_LINES))
+        } to f.validators
     }
 
     // ---------------------------------------------------------------- import / export
@@ -584,6 +623,10 @@ class FirewallStore(
     // ---------------------------------------------------------------- compile
 
     fun scheduleCompile(delayMs: Long = 250) {
+        if (holdCompile.get() > 0) {
+            compileWanted.set(true) // a batch update compiles once at its end
+            return
+        }
         synchronized(lock) {
             compileJob?.cancel()
             compileJob = scope.launch {

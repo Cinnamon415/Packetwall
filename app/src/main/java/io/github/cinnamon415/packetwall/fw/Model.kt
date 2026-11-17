@@ -79,7 +79,12 @@ data class RuleSet(
     val updated: Long = 0,
     val entries: Int = 0,
     val skipped: Int = 0,
-    val error: String? = null
+    val error: String? = null,
+    /** HTTP validators of the last download, for conditional requests (304 = unchanged). */
+    val etag: String? = null,
+    val lastModified: String? = null,
+    /** Hash of the normalized entries: an unchanged download does not rewrite the file. */
+    val contentHash: Int = 0
 )
 
 @Serializable

@@ -218,4 +218,42 @@ class FirewallStoreTest {
         assertTrue(dst.state.value.rules.none { (it.who as? Who.Group)?.id == other })
         assertTrue(dst.state.value.rules.none { it.target.value == "g.example" })
     }
+
+    @Test fun batchUpdateCompilesOnceAndNotModifiedListsAreLeftAlone() = runTest {
+        var loads = 0
+        var calls = 0
+        val source = object : ListSource {
+            override fun open(url: String) = "||ads.$url^\n".reader().buffered()
+
+            override fun openIfChanged(url: String, known: Validators?): Fetched? {
+                calls++
+                if (known?.etag == "v1") return null // 304
+                return Fetched(open(url), Validators("v1", null))
+            }
+        }
+        val s = FirewallStore(
+            dir = tmp.root,
+            uidOf = { uids[it] },
+            loader = {
+                loads++
+                0
+            },
+            defaultSetName = "Default",
+            defaultProfileName = "Main",
+            lists = source,
+            io = UnconfinedTestDispatcher(testScheduler),
+            scope = TestScope(UnconfinedTestDispatcher(testScheduler))
+        )
+        val ids = listOf("a.example", "b.example", "c.example").map { s.addBlocklist(it, it) }
+        advanceUntilIdle()
+        assertTrue(ids.all { s.state.value.set(it)?.etag == "v1" })
+        val stamp = s.listFile(ids[0]).lastModified()
+        loads = 0
+        calls = 0
+        s.updateAllNow()
+        advanceUntilIdle()
+        assertEquals(3, calls)
+        assertEquals("three unchanged lists: no reload at all", 0, loads)
+        assertEquals(stamp, s.listFile(ids[0]).lastModified())
+    }
 }

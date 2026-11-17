@@ -55,7 +55,8 @@ class Trackers(dir: File) {
     val info: StateFlow<Info> = _info
 
     init {
-        load()
+        // parsing the whole database takes a while: not on the main thread at every app start
+        Thread({ load() }, "TrackersLoad").start()
     }
 
     private fun load() {

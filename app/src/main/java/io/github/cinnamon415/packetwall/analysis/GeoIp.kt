@@ -41,10 +41,15 @@ class GeoIp(dir: File) {
     val info: StateFlow<Info> = _info
 
     /** Called after a database changes (rules with ASN targets must be recompiled). */
-    var onChanged: (() -> Unit)? = null
+    @Volatile var onChanged: (() -> Unit)? = null
 
     init {
-        open()
+        // opening the databases scans them: not on the main thread at every app start. Rules
+        // compiled before this finished get recompiled through onChanged.
+        Thread({
+            open()
+            onChanged?.invoke()
+        }, "GeoIpLoad").start()
     }
 
     private fun load(f: File): MmdbReader? = try {
