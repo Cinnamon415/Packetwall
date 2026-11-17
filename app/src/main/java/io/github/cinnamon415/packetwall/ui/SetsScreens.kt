@@ -1,7 +1,6 @@
 package io.github.cinnamon415.packetwall.ui
 
 import android.net.Uri
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateDpAsState
@@ -458,34 +457,8 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
     var importJsonUri by remember { mutableStateOf<Uri?>(null) }
     var importListUri by remember { mutableStateOf<Uri?>(null) }
 
-    val doneMsg = stringResource(R.string.exported)
-    val exportJson = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val ok = runCatching {
-                    withContext(Dispatchers.IO) {
-                        ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(app.firewall.exportJson()) }
-                    }
-                }.isSuccess
-                Toast.makeText(ctx, if (ok) doneMsg else "Error", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
+    val export = rememberFileExport("application/json")
     val openJson = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { importJsonUri = it }
-    var exportProfileId by remember { mutableStateOf<Int?>(null) }
-    val exportProfile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        val id = exportProfileId
-        if (uri != null && id != null) {
-            scope.launch {
-                val ok = runCatching {
-                    withContext(Dispatchers.IO) {
-                        ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(app.firewall.exportProfile(id)) }
-                    }
-                }.isSuccess
-                Toast.makeText(ctx, if (ok) doneMsg else "Error", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
     val openList = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { importListUri = it }
 
     ScreenScaffold(title = stringResource(R.string.nav_sets), onMenu = openDrawer, actions = {
@@ -502,7 +475,7 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
             HorizontalDivider()
             DropdownMenuItem({ Text(stringResource(R.string.export_json)) }, {
                 menu = false
-                exportJson.launch("packetwall-rules.json")
+                export.launchText("packetwall-rules.json") { app.firewall.exportJson() }
             })
             DropdownMenuItem({ Text(stringResource(R.string.import_json)) }, {
                 menu = false
@@ -542,8 +515,7 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                             })
                             DropdownMenuItem({ Text(stringResource(R.string.export)) }, {
                                 profileMenu = null
-                                exportProfileId = p.id
-                                exportProfile.launch("packetwall-profile-${p.name.replace(Regex("[^A-Za-z0-9._-]+"), "_")}.json")
+                                export.launchText("packetwall-profile-${safeFileName(p.name)}.json") { app.firewall.exportProfile(p.id) }
                             })
                             DropdownMenuItem(
                                 { Text(stringResource(R.string.delete)) },
@@ -694,21 +666,8 @@ private fun SetDialog(app: PacketwallApp, s: RuleSet, st: FwState, onDismiss: ()
     val scope = rememberCoroutineScope()
     var name by remember { mutableStateOf(s.name) }
     var confirm by remember { mutableStateOf(false) }
-    val doneMsg = stringResource(R.string.exported)
-    val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val text = pendingExport ?: return@launch
-                runCatching {
-                    withContext(Dispatchers.IO) {
-                        ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(text) }
-                    }
-                }
-                Toast.makeText(ctx, doneMsg, Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-    val safe = s.name.replace(Regex("[^A-Za-z0-9._-]+"), "_")
+    val export = rememberFileExport("*/*")
+    val safe = safeFileName(s.name)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(s.name) },
@@ -718,16 +677,13 @@ private fun SetDialog(app: PacketwallApp, s: RuleSet, st: FwState, onDismiss: ()
                 FieldLabel(stringResource(R.string.export))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton({
-                        pendingExport = app.firewall.exportJson(s.id)
-                        export.launch("$safe.json")
+                        export.launchText("$safe.json") { app.firewall.exportJson(s.id) }
                     }) { Text("JSON") }
                     TextButton({
-                        pendingExport = app.firewall.exportPlain(s.id, hosts = true)
-                        export.launch("$safe.hosts")
+                        export.launchText("$safe.hosts") { app.firewall.exportPlain(s.id, hosts = true) }
                     }) { Text("hosts") }
                     TextButton({
-                        pendingExport = app.firewall.exportPlain(s.id, hosts = false)
-                        export.launch("$safe.txt")
+                        export.launchText("$safe.txt") { app.firewall.exportPlain(s.id, hosts = false) }
                     }) { Text(stringResource(R.string.domains)) }
                 }
                 if (s.id != FwState.DEFAULT_SET) {
@@ -751,8 +707,6 @@ private fun SetDialog(app: PacketwallApp, s: RuleSet, st: FwState, onDismiss: ()
         }
     }
 }
-
-private var pendingExport: String? = null
 
 @Composable
 private fun ImportJsonDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit) {

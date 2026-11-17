@@ -1,9 +1,6 @@
 package io.github.cinnamon415.packetwall.ui
 
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -60,6 +57,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.engine.AppInfo
@@ -72,7 +70,6 @@ import io.github.cinnamon415.packetwall.fw.Target
 import io.github.cinnamon415.packetwall.fw.TargetKind
 import io.github.cinnamon415.packetwall.fw.Who
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -89,60 +86,58 @@ private fun SearchField(q: String, onChange: (String) -> Unit) {
 
 // ------------------------------------------------------------------ Apps
 
+/** Global rules matching the screen's filters; newest first or by kind and value. Pure. */
+fun globalRules(all: List<Rule>, search: String, setId: Int?, kind: TargetKind?, portsOnly: Boolean, newestFirst: Boolean): List<Rule> {
+    val needle = search.trim().lowercase()
+    val shown = all.filter { r ->
+        r.who == Who.Global &&
+            (setId == null || r.setId == setId) &&
+            (kind == null || r.target.kind == kind) &&
+            (!portsOnly || r.port != 0 || r.proto != Proto.ANY) &&
+            (needle.isEmpty() || r.target.value.contains(needle))
+    }
+    return if (newestFirst) {
+        shown.sortedByDescending {
+            it.created
+        }
+    } else {
+        shown.sortedWith(compareBy({ it.target.kind }, { it.target.value }))
+    }
+}
+
 @Composable
 fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -> Unit, onOpenGroup: (Int) -> Unit) {
     val st by app.firewall.state.collectAsState()
-    val all by produceState<List<AppInfo>?>(null) { value = withContext(Dispatchers.IO) { app.apps.installed() } }
-    var q by rememberSaveable { mutableStateOf("") }
-    var showSystem by rememberSaveable { mutableStateOf(false) }
-    var onlyWithRules by rememberSaveable { mutableStateOf(false) }
-    var setFilter by rememberSaveable { mutableStateOf<Int?>(null) }
+    val vm = appViewModel(app) { a, saved -> AppsViewModel(a, saved) }
+    val q by vm.query.collectAsStateWithLifecycle()
+    val view by vm.list.collectAsStateWithLifecycle()
+    val list = view.apps ?: emptyList()
+    val counts = view.ruleCounts
+    val groupCounts = view.groupRuleCounts
+    val traffic = view.traffic
     var menu by remember { mutableStateOf(false) }
     var newGroup by remember { mutableStateOf(false) }
-    var sort by rememberSaveable { mutableStateOf(0) } // 0 rules, 1 name, 2 traffic
-    val conns by app.connections.conns.collectAsState()
-    val traffic = remember(conns) { conns.groupBy { it.app.packageName }.mapValues { (_, l) -> l.sumOf { it.bytes } } }
 
-    val counts = remember(st, setFilter) {
-        st.rules.filter { setFilter == null || it.setId == setFilter }
-            .mapNotNull { (it.who as? Who.App)?.pkg }.groupingBy { it }.eachCount()
-    }
-    val groupCounts = remember(st, setFilter) {
-        st.rules.filter { setFilter == null || it.setId == setFilter }
-            .mapNotNull { (it.who as? Who.Group)?.id }.groupingBy { it }.eachCount()
-    }
-    val needle = q.trim().lowercase()
-    val list = (all ?: emptyList()).filter { a ->
-        (showSystem || !a.isSystem || counts.containsKey(a.packageName)) &&
-            (!onlyWithRules || counts.containsKey(a.packageName)) &&
-            (needle.isEmpty() || a.name.lowercase().contains(needle) || a.packageName.contains(needle))
-    }.sortedWith(
-        when (sort) {
-            1 -> compareBy { it.name.lowercase() }
-            2 -> compareByDescending<AppInfo> { traffic[it.packageName] ?: 0L }.thenBy { it.name.lowercase() }
-            else -> compareByDescending<AppInfo> { counts[it.packageName] ?: 0 }.thenBy { it.name.lowercase() }
-        }
-    )
-
-    ScreenScaffold(title = stringResource(R.string.nav_apps), subtitle = all?.let { "${list.size}" }, onMenu = openDrawer, actions = {
+    ScreenScaffold(title = stringResource(R.string.nav_apps), subtitle = view.apps?.let { "${it.size}" }, onMenu = openDrawer, actions = {
         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
         DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem(
                 { Text(stringResource(R.string.show_system)) },
-                { showSystem = !showSystem },
-                trailingIcon = { Checkbox(showSystem, null) }
+                { vm.setQuery { it.copy(showSystem = !it.showSystem) } },
+                trailingIcon = { Checkbox(q.showSystem, null) }
             )
             DropdownMenuItem(
                 { Text(stringResource(R.string.only_with_rules)) },
-                { onlyWithRules = !onlyWithRules },
-                trailingIcon = { Checkbox(onlyWithRules, null) }
+                { vm.setQuery { it.copy(onlyWithRules = !it.onlyWithRules) } },
+                trailingIcon = { Checkbox(q.onlyWithRules, null) }
             )
             HorizontalDivider()
-            listOf(R.string.sort_rules, R.string.sort_name, R.string.sort_traffic).forEachIndexed { i, s ->
-                DropdownMenuItem({ Text(stringResource(s)) }, {
-                    sort = i
+            val sorts = listOf(R.string.sort_rules, R.string.sort_name, R.string.sort_traffic)
+            AppSort.entries.zip(sorts).forEach { (sort, label) ->
+                DropdownMenuItem({ Text(stringResource(label)) }, {
+                    vm.setQuery { it.copy(sort = sort) }
                     menu = false
-                }, trailingIcon = { if (sort == i) Text("✓") })
+                }, trailingIcon = { if (q.sort == sort) Text("✓") })
             }
             HorizontalDivider()
             DropdownMenuItem({ Text(stringResource(R.string.group_new)) }, {
@@ -151,16 +146,16 @@ fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -
             })
         }
     }) {
-        SearchField(q) { q = it }
+        SearchField(vm.search, vm::updateSearch)
         Spacer(Modifier.height(6.dp))
-        SetChips(st, setFilter, { setFilter = it })
+        SetChips(st, q.setId, { id -> vm.setQuery { it.copy(setId = id) } })
         HorizontalDivider(Modifier.padding(top = 6.dp))
-        if (all == null) {
+        if (view.apps == null) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.loading)) }
             return@ScreenScaffold
         }
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-            if (st.groups.isNotEmpty() && needle.isEmpty()) {
+            if (st.groups.isNotEmpty() && vm.search.isBlank()) {
                 item { ListSubheader(stringResource(R.string.groups)) }
                 items(st.groups, key = { "g${it.id}" }) { g ->
                     Row(
@@ -479,14 +474,9 @@ fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     var selection by remember { mutableStateOf(setOf<Int>()) }
 
-    val needle = q.trim().lowercase()
-    val rules = st.rules.filter { r ->
-        r.who == Who.Global &&
-            (setFilter == null || r.setId == setFilter) &&
-            (kind == null || r.target.kind == kind) &&
-            (!portsOnly || r.port != 0 || r.proto != Proto.ANY) &&
-            (needle.isEmpty() || r.target.value.contains(needle))
-    }.let { l -> if (sortNew) l.sortedByDescending { it.created } else l.sortedWith(compareBy({ it.target.kind }, { it.target.value })) }
+    val rules = remember(st.rules, q, setFilter, kind, portsOnly, sortNew) {
+        globalRules(st.rules, q, setFilter, kind, portsOnly, sortNew)
+    }
 
     BackHandler(selection.isNotEmpty()) { selection = emptySet() }
     ScreenScaffold(
@@ -606,21 +596,7 @@ private fun RowScope.SelectionActions(app: PacketwallApp, st: FwState, selection
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var moveMenu by remember { mutableStateOf(false) }
-    val doneMsg = stringResource(R.string.exported)
-    val export = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val text = app.firewall.exportRules(selection)
-                withContext(Dispatchers.IO) {
-                    ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { it.write(text) }
-                }
-                Toast.makeText(ctx, doneMsg, Toast.LENGTH_SHORT).show()
-                onDone()
-            }
-        }
-    }
+    val export = rememberFileExport("application/json") { ok -> if (ok) onDone() }
     Box {
         TextButton({ moveMenu = true }) { Text(stringResource(R.string.move_to_set)) }
         DropdownMenu(moveMenu, { moveMenu = false }) {
@@ -634,7 +610,7 @@ private fun RowScope.SelectionActions(app: PacketwallApp, st: FwState, selection
         }
     }
     IconButton({
-        export.launch("packetwall-rules-${selection.size}.json")
+        export.launchText("packetwall-rules-${selection.size}.json") { app.firewall.exportRules(selection) }
     }) { Icon(painterResource(R.drawable.ic_save), stringResource(R.string.export)) }
     IconButton({
         app.firewall.deleteRules(selection)

@@ -1,8 +1,6 @@
 package io.github.cinnamon415.packetwall.ui
 
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -43,12 +41,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,10 +57,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.Settings
-import io.github.cinnamon415.packetwall.analysis.ConnFilter
 import io.github.cinnamon415.packetwall.analysis.Dissector
 import io.github.cinnamon415.packetwall.engine.CaptureState
 import io.github.cinnamon415.packetwall.engine.Conn
@@ -82,88 +78,68 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, onOpenConn: (Int) -> Unit) {
-    val conns by app.connections.conns.collectAsState()
+    val vm = appViewModel(app) { a, saved -> LogsViewModel(a.connections.conns, saved) }
     val fw by app.firewall.state.collectAsState()
-    var filter by rememberSaveable { mutableStateOf("") }
-    var status by rememberSaveable { mutableIntStateOf(0) } // 0 all, 1 blocked, 2 allowed
-    var compact by rememberSaveable { mutableStateOf(false) }
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    val shownState by vm.shown.collectAsStateWithLifecycle()
+    val shown = shownState.list
+    val check by vm.filterCheck.collectAsStateWithLifecycle()
+    val status by vm.status.collectAsState()
+    val tab by vm.tab.collectAsState()
+    val compact by vm.compact.collectAsState()
     var quick by remember { mutableStateOf<Conn?>(null) }
     val ctx = LocalContext.current
 
-    val compiled = remember(filter) { runCatching { ConnFilter.compile(filter) } }
-    val pred = compiled.getOrNull() ?: { true }
-    val list = conns.filter { c -> (status == 0 || (status == 1) == c.blocked) && pred(c) }
-    val shown = when (tab) {
-        1 -> list.filter { it.l7proto == "DNS" }
-        2 -> list.filter { !it.url.isNullOrEmpty() }
-        else -> list
-    }
-
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
-    val doneMsg = stringResource(R.string.exported)
-    val csvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val ok = runCatching {
-                    withContext(Dispatchers.IO) {
-                        ctx.contentResolver.openOutputStream(uri, "wt")!!.bufferedWriter().use { w -> writeCsv(w, shown, app) }
-                    }
-                }.isSuccess
-                Toast.makeText(ctx, if (ok) doneMsg else "Error", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-    val pcapLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val ok = runCatching {
-                    withContext(Dispatchers.IO) {
-                        val pkts = shown.flatMap { app.packets.packetsOf(it) }.sortedBy { it.seq }
-                        ctx.contentResolver.openOutputStream(uri, "wt")!!.use { app.packets.writePcapng(it, pkts) }
-                    }
-                }.isSuccess
-                Toast.makeText(ctx, if (ok) doneMsg else "Error", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
+    val csvExport = rememberFileExport("text/csv")
+    val pcapExport = rememberFileExport("application/octet-stream")
     val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-    ScreenScaffold(title = stringResource(R.string.nav_logs), subtitle = "${shown.size} / ${conns.size}", onMenu = openDrawer, actions = {
-        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
-        DropdownMenu(menu, { menu = false }) {
-            DropdownMenuItem({ Text(stringResource(R.string.export_csv)) }, {
-                menu = false
-                csvLauncher.launch("packetwall-log-$stamp.csv")
-            })
-            DropdownMenuItem({ Text(stringResource(R.string.export_pcapng_filtered)) }, {
-                menu = false
-                pcapLauncher.launch("packetwall-filtered-$stamp.pcapng")
-            })
+    ScreenScaffold(
+        title = stringResource(
+            R.string.nav_logs
+        ),
+        subtitle = "${shown.size} / ${shownState.total}",
+        onMenu = openDrawer,
+        actions = {
+            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
+            DropdownMenu(menu, { menu = false }) {
+                DropdownMenuItem({ Text(stringResource(R.string.export_csv)) }, {
+                    menu = false
+                    csvExport.launch("packetwall-log-$stamp.csv") { out -> out.bufferedWriter().use { w -> writeCsv(w, shown, app) } }
+                })
+                DropdownMenuItem({ Text(stringResource(R.string.export_pcapng_filtered)) }, {
+                    menu = false
+                    pcapExport.launch("packetwall-filtered-$stamp.pcapng") { out ->
+                        app.packets.writePcapng(out, shown.flatMap { app.packets.packetsOf(it) }.sortedBy { it.seq })
+                    }
+                })
+            }
         }
-    }) {
+    ) {
         Column(Modifier.padding(horizontal = 12.dp)) {
             OutlinedTextField(
-                filter, { filter = it }, Modifier.fillMaxWidth(), singleLine = true,
+                vm.filter, vm::updateFilter, Modifier.fillMaxWidth(), singleLine = true,
                 leadingIcon = { Icon(painterResource(R.drawable.ic_filter), null) },
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
-                isError = compiled.isFailure,
-                supportingText = (compiled.exceptionOrNull() as? ConnFilter.ParseError)?.let { e -> { Text(e.message ?: "") } },
+                isError = !check.valid,
+                supportingText = check.message?.let { m -> { Text(m) } },
                 placeholder = { Text(stringResource(R.string.logs_filter_hint), fontFamily = FontFamily.Monospace) }
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(R.string.chip_all, R.string.chip_blocked, R.string.chip_allowed).forEachIndexed { i, s ->
-                    FilterChip(status == i, { status = i }, { Text(stringResource(s)) })
+                val chips = listOf(R.string.chip_all, R.string.chip_blocked, R.string.chip_allowed)
+                StatusFilter.entries.zip(chips).forEach { (f, label) ->
+                    FilterChip(status == f, { vm.setStatus(f) }, { Text(stringResource(label)) })
                 }
-                FilterChip(compact, { compact = !compact }, { Icon(painterResource(R.drawable.ic_density), null) })
+                FilterChip(compact, vm::toggleCompact, { Icon(painterResource(R.drawable.ic_density), null) })
             }
         }
-        PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
-            listOf(R.string.tab_conns, R.string.tab_dns, R.string.tab_http, R.string.tab_captures).forEachIndexed { i, s ->
-                Tab(tab == i, { tab = i }, text = { Text(stringResource(s), maxLines = 1) })
+        PrimaryScrollableTabRow(selectedTabIndex = tab.ordinal, edgePadding = 0.dp) {
+            val labels = listOf(R.string.tab_conns, R.string.tab_dns, R.string.tab_http, R.string.tab_captures)
+            LogTab.entries.zip(labels).forEach { (t, label) ->
+                Tab(tab == t, { vm.setTab(t) }, text = { Text(stringResource(label), maxLines = 1) })
             }
         }
-        if (tab == 3) {
+        if (tab == LogTab.CAPTURES) {
             CapturesTab(app)
             return@ScreenScaffold
         }
@@ -178,8 +154,8 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
             LazyColumn {
                 items(shown, key = { it.id }) { c ->
                     when (tab) {
-                        1 -> DnsRow(app, c, onLongClick = { quick = c }) { onOpenConn(c.id) }
-                        2 -> HttpRow(c, onLongClick = { quick = c }) { onOpenConn(c.id) }
+                        LogTab.DNS -> DnsRow(app, c, onLongClick = { quick = c }) { onOpenConn(c.id) }
+                        LogTab.HTTP -> HttpRow(c, onLongClick = { quick = c }) { onOpenConn(c.id) }
                         else -> ConnRow(c, compact, app.trackers.trackingOf(c.host)?.name, onLongClick = { quick = c }) { onOpenConn(c.id) }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -338,36 +314,12 @@ private fun CapturesTab(app: PacketwallApp) {
     val info by app.packets.info.collectAsState()
     val settings by app.settings.values.collectAsState()
     var files by remember { mutableStateOf(capturesDir(app).listFiles()?.sortedByDescending { it.lastModified() } ?: emptyList()) }
-    var exporting by remember { mutableStateOf<File?>(null) }
-    val doneMsg = stringResource(R.string.exported)
     val saveMsg = stringResource(R.string.capture_saved)
     fun refresh() {
         files = capturesDir(app).listFiles()?.sortedByDescending { it.lastModified() } ?: emptyList()
     }
 
-    val exportBuffer = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-        if (uri != null) {
-            scope.launch {
-                runCatching {
-                    withContext(Dispatchers.IO) { ctx.contentResolver.openOutputStream(uri, "wt")!!.use { app.packets.writePcapng(it) } }
-                }
-                Toast.makeText(ctx, doneMsg, Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-    val exportFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
-        val f = exporting
-        if (uri != null && f != null) {
-            scope.launch {
-                runCatching {
-                    withContext(Dispatchers.IO) {
-                        ctx.contentResolver.openOutputStream(uri, "wt")!!.use { o -> f.inputStream().use { it.copyTo(o) } }
-                    }
-                }
-                Toast.makeText(ctx, doneMsg, Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
+    val export = rememberFileExport("application/octet-stream")
     val stamp = { SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date()) }
 
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -397,7 +349,9 @@ private fun CapturesTab(app: PacketwallApp) {
                                 Toast.makeText(ctx, saveMsg, Toast.LENGTH_SHORT).show()
                             }
                         }) { Text(stringResource(R.string.save_capture)) }
-                        OutlinedButton(enabled = info.packets > 0, onClick = { exportBuffer.launch("packetwall-${stamp()}.pcapng") }) {
+                        OutlinedButton(enabled = info.packets > 0, onClick = {
+                            export.launch("packetwall-${stamp()}.pcapng") { app.packets.writePcapng(it) }
+                        }) {
                             Text(stringResource(R.string.export))
                         }
                     }
@@ -415,8 +369,7 @@ private fun CapturesTab(app: PacketwallApp) {
                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                         Row(
                             Modifier.fillMaxWidth().clickable {
-                                exporting = f
-                                exportFile.launch(f.name)
+                                export.launch(f.name) { out -> f.inputStream().use { it.copyTo(out) } }
                             }.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {

@@ -1,8 +1,6 @@
 package io.github.cinnamon415.packetwall.ui
 
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,7 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -42,9 +39,7 @@ import androidx.compose.ui.unit.dp
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.analysis.Trackers
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,22 +76,12 @@ fun ConnectionScreen(
                 Text("›", style = MaterialTheme.typography.headlineSmall)
             }
             if (c != null) {
-                val scope = rememberCoroutineScope()
-                val pcapng = ActivityResultContracts.CreateDocument("application/octet-stream")
-                val exportLauncher = rememberLauncherForActivityResult(pcapng) { uri ->
-                    if (uri != null) {
-                        scope.launch {
-                            val ok = runCatching {
-                                withContext(Dispatchers.IO) {
-                                    val packets = app.packets.packetsOf(c)
-                                    ctx.contentResolver.openOutputStream(uri, "wt")!!.use { app.packets.writePcapng(it, packets) }
-                                }
-                            }.isSuccess
-                            Toast.makeText(ctx, if (ok) R.string.exported else R.string.export_failed, Toast.LENGTH_SHORT).show()
-                        }
+                val export = rememberFileExport("application/octet-stream")
+                IconButton(onClick = {
+                    export.launch("conn-${c.id}-${c.title.take(40)}.pcapng") { out ->
+                        app.packets.writePcapng(out, app.packets.packetsOf(c))
                     }
-                }
-                IconButton(onClick = { exportLauncher.launch("conn-${c.id}-${c.title.take(40)}.pcapng") }) {
+                }) {
                     Icon(painterResource(R.drawable.ic_save), stringResource(R.string.export_pcapng))
                 }
             }

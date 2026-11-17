@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.engine.ConnectionsRegister
@@ -44,30 +45,17 @@ import kotlin.math.max
 
 @Composable
 fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
-    val conns by app.connections.conns.collectAsState()
     val stats by app.connections.stats.collectAsState()
     val history by app.connections.history.collectAsState()
     val up = LocalExtraColors.current.up
     val down = LocalExtraColors.current.down
 
-    val byApp = remember(conns) {
-        conns.groupBy { it.uid }.map { (_, l) -> Triple(l.first().app, l.sumOf { it.sentBytes }, l.sumOf { it.rcvdBytes }) }
-            .sortedByDescending { it.second + it.third }.take(8)
-    }
-    val byHost = remember(conns) {
-        conns.filter { !it.host.isNullOrEmpty() && it.l7proto != "DNS" }.groupBy { it.host!! }
-            .map { (h, l) -> Triple(h, l.size, l.sumOf { it.bytes }) }.sortedByDescending { it.third }.take(8)
-    }
-    val byProto = remember(conns) { conns.groupingBy { it.protoLabel }.eachCount().entries.sortedByDescending { it.value }.take(8) }
-    val trackersByApp = remember(conns) {
-        conns.filter { app.trackers.trackingOf(it.host) != null }.groupBy { it.uid }
-            .map { (_, l) -> Triple(l.first().app, l.size, l.mapNotNull { app.trackers.trackingOf(it.host)?.name }.distinct()) }
-            .sortedByDescending { it.second }.take(8)
-    }
-    val blockedByApp = remember(conns) {
-        conns.filter { it.blocked && it.fwRule != 0 }.groupBy { it.uid }.map { (_, l) -> l.first().app to l.size }
-            .sortedByDescending { it.second }.take(8)
-    }
+    val summary by appViewModel(app) { a, _ -> DashboardViewModel(a) }.summary.collectAsStateWithLifecycle()
+    val byApp = summary.byApp
+    val byHost = summary.byHost
+    val byProto = summary.byProto
+    val trackersByApp = summary.trackersByApp
+    val blockedByApp = summary.blockedByApp
 
     ScreenScaffold(title = stringResource(R.string.nav_stats), onMenu = openDrawer) {
         Column(
@@ -93,7 +81,7 @@ fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
             if (byApp.isNotEmpty()) {
                 SectionHeader(stringResource(R.string.top_apps), null, null)
                 RoundedGroup {
-                    val maxB = max(1L, byApp.maxOf { it.second + it.third })
+                    val maxB = max(1L, byApp.maxOf { it.total })
                     byApp.forEachIndexed { i, (a, s, r) ->
                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                         Row(

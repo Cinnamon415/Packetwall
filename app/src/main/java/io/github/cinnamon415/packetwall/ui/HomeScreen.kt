@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.engine.CaptureService
@@ -61,7 +62,7 @@ fun HomeScreen(
     onOpenStats: () -> Unit,
     onOpenConn: (Int) -> Unit
 ) {
-    val conns by app.connections.conns.collectAsState()
+    val summary by appViewModel(app) { a, _ -> DashboardViewModel(a) }.summary.collectAsStateWithLifecycle()
     val stats by app.connections.stats.collectAsState()
     val on = state is CaptureState.Running
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -150,8 +151,7 @@ fun HomeScreen(
             }
 
             // Tiles 2x2
-            // only decisions of the rules (not the internal Private DNS drops)
-            val blocked = conns.count { it.blocked && it.fwRule != 0 }
+            val blocked = summary.blockedCount
             val alpha = if (on) 1f else 0.5f
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Tile(
@@ -201,7 +201,7 @@ fun HomeScreen(
 
             // Recent blocks (max 5)
             SectionHeader(stringResource(R.string.recent_blocks), stringResource(R.string.all), onOpenLogs)
-            val recent = conns.filter { it.blocked && it.fwRule != 0 }.take(5)
+            val recent = summary.recentBlocked.take(5)
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 if (recent.isEmpty()) {
                     Text(
@@ -241,8 +241,7 @@ fun HomeScreen(
             }
 
             // Top apps by traffic
-            val top = conns.groupBy { it.uid }.map { (_, l) -> l.first().app to l.sumOf { it.bytes } }
-                .sortedByDescending { it.second }.take(5)
+            val top = summary.byApp.take(5).map { it.app to it.total }
             if (top.isNotEmpty()) {
                 SectionHeader(stringResource(R.string.nav_stats), null, null)
                 val max = top.first().second.coerceAtLeast(1)
