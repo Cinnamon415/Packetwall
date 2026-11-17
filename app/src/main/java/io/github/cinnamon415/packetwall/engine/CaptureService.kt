@@ -20,6 +20,8 @@ import androidx.core.content.ContextCompat
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.Settings
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The VPN service: starts and stops the native packet loop ([NativeBridge]) together with the
@@ -29,34 +31,57 @@ import io.github.cinnamon415.packetwall.Settings
 class CaptureService : VpnService() {
     private val app get() = application as PacketwallApp
     private val handler = Handler(Looper.getMainLooper())
-    private var pfd: ParcelFileDescriptor? = null
-    private var loopThread: Thread? = null
-    private var bridge: NativeBridge? = null
-    private var dohProxy: DnsProxy? = null
-    private var upstream: UpstreamMonitor? = null
-    private var networks: NetworkTracker? = null
+
+    // Start and stop run one after another on this thread (compiling, resolving the proxy and
+    // establishing the VPN take time and must not block the main thread or race each other).
+    private val control = Executors.newSingleThreadExecutor { Thread(it, "CaptureControl") }
+    private val pendingStarts = AtomicInteger()
+
+    @Volatile private var lastStartId = 0
+
+    @Volatile private var session = 0
+
+    @Volatile private var pfd: ParcelFileDescriptor? = null
+
+    @Volatile private var loopThread: Thread? = null
+
+    @Volatile private var bridge: NativeBridge? = null
+
+    @Volatile private var dohProxy: DnsProxy? = null
+
+    @Volatile private var upstream: UpstreamMonitor? = null
+
+    @Volatile private var networks: NetworkTracker? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         if (intent?.action == ACTION_STOP) {
-            stopCapture()
+            control.execute { stopCapture() }
             return START_NOT_STICKY
         }
+        // within 5 s of startForegroundService(): here, not on the control thread, which may be busy
         startForegroundCompat()
-        if (loopThread?.isAlive != true) startCapture()
+        pendingStarts.incrementAndGet()
+        control.execute {
+            pendingStarts.decrementAndGet()
+            if (loopThread?.isAlive != true) startCapture()
+        }
         return START_STICKY
     }
 
     override fun onRevoke() {
         // another VPN took over, or the user revoked the permission
-        stopCapture()
+        control.execute { stopCapture() }
         super.onRevoke()
     }
 
     override fun onDestroy() {
-        stopCapture()
+        control.execute { stopCapture() }
+        control.shutdown()
         super.onDestroy()
     }
 
+    /** Control thread only. */
     private fun startCapture() {
         // Makes this app the system's current VPN again when the user consented before (the
         // package was updated, or started from the tile or widget); an Intent means no consent.
@@ -112,6 +137,7 @@ class CaptureService : VpnService() {
             NativeBridge.setUpstreamState(true, false)
             NativeBridge.setUdpRelay("", 0)
         }
+        val mySession = ++session
         loopThread = Thread({
             try {
                 b.run(fd.fd)
@@ -119,7 +145,8 @@ class CaptureService : VpnService() {
                 Log.e(TAG, "packet loop crashed", e)
             }
             Log.i(TAG, "packet loop exited")
-            handler.post { cleanup() }
+            // the loop ended by itself (not through stopCapture, which cleans up synchronously)
+            control.execute { if (session == mySession && pfd != null) cleanup() }
         }, "PacketLoop").also { it.start() }
     }
 
@@ -172,7 +199,7 @@ class CaptureService : VpnService() {
         }
     }
 
-    /** Releases everything started by [startCapture]; runs on the main thread once the loop exited. */
+    /** Releases everything started by [startCapture]. Control thread only, after the loop exited. */
     private fun cleanup() {
         networks?.stop()
         networks = null
@@ -192,15 +219,26 @@ class CaptureService : VpnService() {
         loopThread = null
         bridge = null
         CaptureStatus.state.value = CaptureState.Stopped
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        // a start that came in meanwhile keeps the service (and its notification) alive
+        if (pendingStarts.get() == 0) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelfResult(lastStartId)
+        }
     }
 
+    /** Control thread only: waits for the loop to end, so a following start never sees it alive. */
     private fun stopCapture() {
-        if (loopThread?.isAlive == true) {
-            NativeBridge.stopPacketLoop() // cleanup follows when the loop exits
-        } else if (CaptureStatus.running || pfd != null) {
+        val t = loopThread
+        if (t?.isAlive == true) {
+            session++ // the loop's own cleanup callback is now stale
+            NativeBridge.stopPacketLoop()
+            t.join(LOOP_STOP_TIMEOUT_MS)
+            if (t.isAlive) Log.w(TAG, "packet loop did not stop in time")
+        }
+        if (pfd != null || bridge != null || CaptureStatus.running) {
             cleanup()
+        } else if (pendingStarts.get() == 0) {
+            stopSelfResult(lastStartId) // nothing was running: do not leave an idle service behind
         }
     }
 
@@ -222,6 +260,7 @@ class CaptureService : VpnService() {
         const val ACTION_START = "io.github.cinnamon415.packetwall.START"
         const val ACTION_STOP = "io.github.cinnamon415.packetwall.STOP"
         private const val DNS_DOH = 1
+        private const val LOOP_STOP_TIMEOUT_MS = 5000L
 
         fun start(ctx: Context) {
             ContextCompat.startForegroundService(ctx, Intent(ctx, CaptureService::class.java).setAction(ACTION_START))

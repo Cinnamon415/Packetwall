@@ -537,15 +537,39 @@ class FirewallStore(
         }
     }
 
-    fun compileNow() {
+    /**
+     * Compiles the rules and loads them into the engine. Compiles run one at a time (they share the
+     * output file); when neither the compiled rules nor the list files changed, the engine keeps
+     * what it has instead of reloading every list. Call off the main thread.
+     */
+    fun compileNow(force: Boolean = false) = synchronized(compileLock) {
         try {
             val st = _state.value
             RulesCompiler.compile(st, uidOf, ::listFile, compiled, asnPrefixes)
+            val fp = fingerprint()
+            if (!force && fp == lastFingerprint && _loaded.value >= 0) return@synchronized
             _loaded.value = loader.load(compiled.absolutePath)
+            lastFingerprint = fp
         } catch (e: Throwable) {
             Log.e(TAG, "compile failed", e)
             _loaded.value = -1
+            lastFingerprint = null
         }
+    }
+
+    private val compileLock = Any()
+    private var lastFingerprint: String? = null
+
+    /** The compiled file's content plus size and time of every list it names. */
+    private fun fingerprint(): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        val text = compiled.readBytes()
+        md.update(text)
+        text.toString(Charsets.UTF_8).lineSequence().filter { it.startsWith("L\t") }.forEach { line ->
+            val f = File(line.substringAfterLast('\t'))
+            md.update("${f.length()}:${f.lastModified()}".toByteArray())
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
     }
 
     companion object {

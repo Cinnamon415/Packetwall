@@ -5,12 +5,24 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Process
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 data class AppInfo(val uid: Int, val packageName: String, val name: String, val isSystem: Boolean)
 
 /** Maps Linux uids to apps. Thread-safe: queried from the capture thread and the UI. */
 class AppsResolver(private val ctx: Context) {
     private val cache = ConcurrentHashMap<Int, AppInfo>()
+    private val _changes = MutableStateFlow(0)
+
+    /** Bumped when apps are installed, updated or removed (see [onPackagesChanged]). */
+    val changes: StateFlow<Int> = _changes
+
+    /** A package was added, replaced or removed: uids and names may differ now. */
+    fun onPackagesChanged() {
+        cache.clear()
+        _changes.value++
+    }
 
     fun get(uid: Int): AppInfo = cache.getOrPut(uid) { resolve(uid) }
 

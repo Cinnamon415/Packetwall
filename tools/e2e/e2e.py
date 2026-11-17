@@ -193,6 +193,27 @@ def s_toggle_guard():
     check("other apps cannot turn protection off", vpn_up())
 
 
+def s_rapid_toggle():
+    # off and on again right away (tile double tap): protection must end up on and filtering
+    configure([rule(10, 1, G, "DOMAIN", "example.org", True)])
+    for _ in range(3):
+        if ROOTED:
+            sh(f"am startservice -n {SVC} -a io.github.cinnamon415.packetwall.STOP; "
+               f"am start-foreground-service -n {SVC} -a io.github.cinnamon415.packetwall.START")
+        else:
+            sh(f"am start -n {TESTCONF} --es protection off; am start -n {TESTCONF} --es protection on")
+        time.sleep(0.3)
+    up = False
+    for _ in range(30):
+        if vpn_up():
+            up = True
+            break
+        time.sleep(0.5)
+    time.sleep(2.5)
+    check("rapid off/on: protection ends up on", up)
+    check("rapid off/on: still filtering", refused(http("example.org")))
+
+
 def s_domain_rules():
     configure([rule(10, 1, G, "DOMAIN", "example.org", True), rule(11, 1, G, "DOMAIN", "www.example.org", False, "ALLOW")])
     r = http("example.org")
@@ -362,7 +383,7 @@ def s_stress():
     check("stress: still filtering", refused(http("example.org")) and allowed("www.wikipedia.org"))
 
 
-SCENARIOS = [s_baseline, s_toggle_guard, s_domain_rules, s_app_rules, s_set_priority, s_ip_port_reject, s_blocklist, s_disabled_set,
+SCENARIOS = [s_baseline, s_toggle_guard, s_rapid_toggle, s_domain_rules, s_app_rules, s_set_priority, s_ip_port_reject, s_blocklist, s_disabled_set,
              s_doh, s_upstream_socks, s_upstream_http, s_kill_switch, s_route_rule, s_geo, s_streaming, s_stream_lan, s_stress]
 
 

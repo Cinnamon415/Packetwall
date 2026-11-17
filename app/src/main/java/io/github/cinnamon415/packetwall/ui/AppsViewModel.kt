@@ -108,7 +108,10 @@ class AppsViewModel(app: PacketwallApp, private val saved: SavedStateHandle) : S
     }.flowOn(Dispatchers.Default).whileShown(AppList())
 
     init {
-        viewModelScope.launch { installed.value = withContext(Dispatchers.IO) { app.apps.installed() } }
+        // reload on every install / update / removal
+        viewModelScope.launch {
+            app.apps.changes.collect { installed.value = withContext(Dispatchers.IO) { app.apps.installed() } }
+        }
     }
 
     private companion object {

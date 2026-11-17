@@ -1,11 +1,16 @@
 package io.github.cinnamon415.packetwall
 
 import android.app.Application
+import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.service.quicksettings.TileService
+import androidx.core.content.ContextCompat
 import io.github.cinnamon415.packetwall.analysis.ConnFilter
 import io.github.cinnamon415.packetwall.analysis.DiskRecorder
 import io.github.cinnamon415.packetwall.analysis.GeoIp
@@ -120,6 +125,7 @@ class PacketwallApp : Application() {
             asnPrefixes = geo::asnPrefixes
         )
         geo.onChanged = { firewall.scheduleCompile() }
+        watchPackages()
         firewall.scheduleCompile(0)
         watchStatus()
         // (re)schedule periodic jobs whenever their settings change
@@ -141,6 +147,27 @@ class PacketwallApp : Application() {
                 )
             }.distinctUntilChanged().collect { (_, _, running) -> applySinks(running) }
         }
+    }
+
+    /**
+     * App rules are compiled to uids: an app installed (or reinstalled with a new uid) after the
+     * last compile would not be filtered. Recompile on every package change.
+     */
+    private fun watchPackages() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addAction(Intent.ACTION_PACKAGE_FULLY_REMOVED)
+            addDataScheme("package")
+        }
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                apps.onPackagesChanged()
+                firewall.scheduleCompile(1000)
+            }
+        }
+        // system broadcasts only; NOT_EXPORTED keeps other apps from triggering it
+        ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     /** Keeps the quick settings tile and the widget in sync with the protection state and profile. */
