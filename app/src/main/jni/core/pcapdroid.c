@@ -874,8 +874,16 @@ static void process_payload(pcapdroid_t *pd, pkt_context_t *pctx) {
 
 /* ******************************************************* */
 
-static void process_dns_reply(pd_conn_t *data, pcapdroid_t *pd, const struct zdtun_pkt *pkt) {
+static void process_dns_reply(pd_conn_t *data, pcapdroid_t *pd, const struct zdtun_pkt *pkt,
+                              const zdtun_5tuple_t *conn_tuple) {
     const char *query = (const char*) data->ndpi_flow->host_server_name;
+
+    // Packetwall: only answers of the VPN's own resolver (the one the user chose) name IP addresses.
+    // An app asking its own DNS server could otherwise give a blocked IP an allowed name and pass
+    // domain allow rules (the cache labels later connections to that IP).
+    if(pd->vpn_capture && !(pd->vpn.ipv4.enabled && (conn_tuple->ipver == 4) &&
+                            (conn_tuple->dst_ip.ip4 == pd->vpn.ipv4.internal_dns)))
+        return;
 
     if((!query[0]) || !strchr(query, '.') || (pkt->l7_len < sizeof(dns_packet_t)))
         return;
@@ -968,7 +976,7 @@ static void perform_dpi(pcapdroid_t *pd, pkt_context_t *pctx) {
     }
 
     if(!is_tx && (data->l7proto == NDPI_PROTOCOL_DNS))
-        process_dns_reply(data, pd, pkt);
+        process_dns_reply(data, pd, pkt, pctx->tuple);
 
     if(giveup || ((data->l7proto != NDPI_PROTOCOL_UNKNOWN) &&
             (n_proto.state >= NDPI_STATE_MONITORING)))
