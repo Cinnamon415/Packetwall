@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Packetwall</string>
+    <string name="app_name" translatable="false">Packetwall</string>
     <string name="notif_channel_status">Firewall status</string>
     <string name="notif_running">Packetwall is filtering traffic</string>
     <string name="action_stop">Stop</string>
@@ -22,14 +22,12 @@
     <string name="tile_received">Received</string>
     <string name="tile_active">Active</string>
     <string name="recent_blocks">Recent blocks</string>
-    <string name="recent_conns">Recent connections</string>
     <string name="all">All</string>
     <string name="no_blocks">Nothing blocked yet</string>
-    <string name="logs_filter_hint">app == \"T-Bank\" &amp;&amp; blocked</string>
+    <string name="logs_filter_hint" translatable="false">app == \"T-Bank\" &amp;&amp; blocked</string>
     <string name="chip_all">All</string>
     <string name="chip_blocked">Blocked</string>
     <string name="chip_allowed">Allowed</string>
-    <string name="chip_new">New</string>
     <string name="tab_conns">Connections</string>
     <string name="tab_dns">DNS</string>
     <string name="tab_http">HTTP</string>
@@ -37,7 +35,6 @@
     <string name="st_active">Active</string>
     <string name="st_closed">Closed</string>
     <string name="st_blocked">Blocked</string>
-    <string name="st_error">Error</string>
     <string name="empty_logs_off">Turn protection on to see connections</string>
     <string name="empty_logs">No connections yet</string>
     <string name="coming_in">Coming in milestone %1$s</string>
@@ -100,7 +97,6 @@
     <string name="import_json_done">Imported: %1$d sets, %2$d rules, %3$d groups, %4$d profiles</string>
     <string name="import_merge">Add as new sets (lowest priority)</string>
     <string name="import_replace">Replace the whole configuration</string>
-    <string name="import_report">Converted %1$d entries, skipped %2$d lines.</string>
     <string name="kind_countries">Countries</string>
     <string name="kind_hosts">Hosts</string>
     <string name="kind_ip">IP · CIDR</string>

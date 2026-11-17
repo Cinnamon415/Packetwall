@@ -29,8 +29,9 @@ import androidx.compose.ui.unit.sp
 import androidx.core.graphics.drawable.toBitmap
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.engine.AppInfo
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -101,8 +102,10 @@ fun formatBytes(b: Long): String = when {
     else -> "$b ${Units.b}"
 }
 
-private val timeFmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-fun formatTime(ms: Long): String = timeFmt.format(Date(ms))
+private val timeFmt = DateTimeFormatter.ofPattern("HH:mm:ss")
+
+/** Local wall-clock time of [ms] (thread-safe). */
+fun formatTime(ms: Long): String = timeFmt.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
 
 fun formatDuration(ms: Long): String {
     val s = ms / 1000

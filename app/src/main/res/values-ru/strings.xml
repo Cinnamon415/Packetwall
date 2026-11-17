@@ -21,13 +21,11 @@
     <string name="tile_received">Получено</string>
     <string name="tile_active">Активных</string>
     <string name="recent_blocks">Последние блокировки</string>
-    <string name="recent_conns">Последние соединения</string>
     <string name="all">Все</string>
     <string name="no_blocks">Пока ничего не заблокировано</string>
     <string name="chip_all">Все</string>
     <string name="chip_blocked">Заблок.</string>
     <string name="chip_allowed">Разреш.</string>
-    <string name="chip_new">Новые</string>
     <string name="tab_conns">Соединения</string>
     <string name="tab_dns">DNS</string>
     <string name="tab_http">HTTP</string>
@@ -35,7 +33,6 @@
     <string name="st_active">Активно</string>
     <string name="st_closed">Закрыто</string>
     <string name="st_blocked">Заблок.</string>
-    <string name="st_error">Ошибка</string>
     <string name="empty_logs_off">Включите защиту, чтобы видеть соединения</string>
     <string name="empty_logs">Соединений пока нет</string>
     <string name="coming_in">Будет в этапе %1$s</string>
@@ -98,7 +95,6 @@
     <string name="import_json_done">Импортировано: наборов %1$d, правил %2$d, групп %3$d, профилей %4$d</string>
     <string name="import_merge">Добавить новыми наборами (низший приоритет)</string>
     <string name="import_replace">Заменить всю конфигурацию</string>
-    <string name="import_report">Сконвертировано записей: %1$d, пропущено строк: %2$d.</string>
     <string name="kind_countries">Страны</string>
     <string name="kind_hosts">Хосты</string>
     <string name="kind_ip">IP · CIDR</string>

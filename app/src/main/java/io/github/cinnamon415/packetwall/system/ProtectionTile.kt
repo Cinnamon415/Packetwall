@@ -1,5 +1,6 @@
 package io.github.cinnamon415.packetwall.system
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.VpnService
@@ -35,6 +36,8 @@ class ProtectionTile : TileService() {
         refresh(!running)
     }
 
+    // the Intent overload is only used below API 34, where the PendingIntent one does not exist
+    @SuppressLint("StartActivityAndCollapseDeprecated")
     private fun openApp(action: String) {
         val i = Intent(this, MainActivity::class.java).setAction(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (Build.VERSION.SDK_INT >= 34) {
