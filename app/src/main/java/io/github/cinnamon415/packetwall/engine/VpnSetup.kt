@@ -23,6 +23,13 @@ object VpnSetup {
     }
 
     /**
+     * IPv6 routes: everything (also NAT64 prefixes such as 64:ff9b::/96, which would otherwise leave
+     * the VPN), or everything except link-local, unique-local and multicast with the LAN bypass.
+     */
+    fun ipv6Routes(lanBypass: Boolean): List<Routes6.Cidr> =
+        if (lanBypass) Routes6.subtract(Routes6.parse("::/0"), Routes6.LOCAL_V6) else listOf(Routes6.parse("::/0"))
+
+    /**
      * Configures [b]. [excludedApps] send their traffic directly (Packetwall itself, the upstream
      * proxy app). Only the IPv4 VPN DNS is set: every query reaches the engine and goes to the
      * resolver the user chose, never to a hidden fallback.
@@ -33,9 +40,8 @@ object VpnSetup {
             .addAddress(IP4, 30)
             .addDnsServer(DNS4)
             .addAddress(IP6, 128)
-            .addRoute("2000::", 3)
         ipv4Routes(lanBypass).forEach { b.addRoute(it.toString().substringBefore('/'), it.prefix) }
-        if (!lanBypass) b.addRoute("fc00::", 7)
+        ipv6Routes(lanBypass).forEach { b.addRoute(it.address(), it.prefix) }
         b.setMetered(false)
         for (pkg in excludedApps) {
             try {

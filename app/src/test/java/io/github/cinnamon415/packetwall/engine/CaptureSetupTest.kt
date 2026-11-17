@@ -38,4 +38,17 @@ class CaptureSetupTest {
         assertFalse(covered("192.168.1.10"))
         assertFalse(covered("10.215.173.5"))
     }
+
+    @Test fun ipv6RoutesCoverNat64AndKeepTheLanOutside() {
+        assertEquals(listOf(Routes6.parse("::/0")), VpnSetup.ipv6Routes(false))
+        val bypass = VpnSetup.ipv6Routes(true)
+        fun covered(ip: String) = bypass.any { it.contains(Routes6.parse("$ip/128")) }
+        assertTrue("NAT64 goes through the VPN", covered("64:ff9b::808:808"))
+        assertTrue(covered("2a00:1450:4001::200e"))
+        assertTrue(covered("::ffff:1.2.3.4"))
+        assertFalse(covered("fe80::1"))
+        assertFalse(covered("fd12:3456::1"))
+        assertFalse(covered("ff02::fb"))
+        assertTrue("a handful of routes", bypass.size < 40)
+    }
 }
