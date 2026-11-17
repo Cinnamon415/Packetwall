@@ -1602,6 +1602,14 @@ Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setUdpRelay(JNIEnv *en
 
 /* ******************************************************* */
 
+// Packetwall: native log level (release builds: warnings only, so host names stay out of logcat)
+JNIEXPORT void JNICALL
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setLogLevel(JNIEnv *env, jclass clazz, jint level) {
+    set_log_level(level);
+}
+
+/* ******************************************************* */
+
 // Packetwall: new address of the upstream proxy (its host was re-resolved while running)
 JNIEXPORT void JNICALL
 Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setUpstreamAddress(JNIEnv *env, jclass clazz, jstring ip, jint port) {

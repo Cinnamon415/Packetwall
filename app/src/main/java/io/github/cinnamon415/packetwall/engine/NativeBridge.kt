@@ -164,8 +164,12 @@ class NativeBridge(private val vpn: VpnService, private val app: PacketwallApp, 
 
         init {
             System.loadLibrary("capture")
+            // the native debug log names every host: release builds log warnings and errors only
+            setLogLevel(if (BuildConfig.DEBUG) Log.DEBUG else Log.WARN)
             initPlatformInfo(BuildConfig.VERSION_NAME, "${Build.MANUFACTURER} ${Build.MODEL}", "Android ${Build.VERSION.RELEASE}")
         }
+
+        @JvmStatic external fun setLogLevel(level: Int)
 
         @JvmStatic external fun initPlatformInfo(appver: String, device: String, os: String)
 

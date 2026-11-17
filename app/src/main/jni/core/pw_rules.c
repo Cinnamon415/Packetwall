@@ -22,6 +22,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <pthread.h>
 #include <arpa/inet.h>
 #include "pw_rules.h"
@@ -41,12 +44,22 @@
 #define F_ROUTE_UP     0x20
 
 #define MAX_LABELS 64
-#define MAX_CANDIDATES 256
+#define MAX_HOST 256
+
+/*
+ * Lookup structures (all built at load time, read-only afterwards):
+ *   literal  - hash: exact domain pattern -> chain of rules ("example.com", with or without subdomains)
+ *   suffix   - hash: "x" of the patterns "*.x" (exactly one more label) and "**.x" (one or more)
+ *   ipidx    - IP/CIDR/ASN rules sorted by (ipver, prefix, masked address): binary search per prefix
+ *   linear   - everything else (other globs, countries, "all"): usually a handful of rules
+ * so evaluating a connection costs O(labels + prefix lengths * log n + linear) instead of O(rules).
+ */
 
 typedef struct {
     int32_t ref;
     int32_t uid;
     uint32_t str;       // offset into the string pool (domain pattern / country)
+    uint32_t key;       // offset of the hash key (the pattern, or its suffix after "*." / "**.")
     int32_t next;       // hash chain
     int32_t score;
     uint16_t set;
@@ -57,8 +70,15 @@ typedef struct {
     uint8_t proto;
     uint8_t ipver;
     uint8_t prefix;
+    uint8_t extra;      // suffix rules: 1 = exactly one more label, 2 = one or more
     zdtun_ip_t ip;
 } rule_t;
+
+typedef struct {
+    uint32_t *slots;    // rule index + 1, 0 = empty
+    uint32_t cap;       // power of 2
+    uint32_t used;
+} htable_t;
 
 struct pw_engine {
     rule_t *rules;
@@ -67,22 +87,45 @@ struct pw_engine {
     char *pool;
     uint32_t pool_len, pool_cap;
 
-    // open addressing: literal domain -> first rule index + 1
-    uint32_t *table;
-    uint32_t table_cap;   // power of 2
-    uint32_t table_used;
+    uint32_t seed;
+    htable_t literal;
+    htable_t suffix;
 
-    // rules that need a linear scan (wildcards, IPs, countries, all)
+    int32_t *ipidx;     // rule indexes, sorted after loading
+    int num_ip, ip_cap;
+    uint8_t prefixes[2][129];   // [v4/v6][len]: 1 if some rule uses that prefix length
+
     int32_t *linear;
     int num_linear, linear_cap;
+
+    int max_set;
 };
 
 /* ******************************************************* */
 
-static uint32_t fnv1a(const char *s) {
-    uint32_t h = 2166136261u;
+static uint32_t random_seed(void) {
+    uint32_t seed = 0;
+    int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if(fd >= 0) {
+        if(read(fd, &seed, sizeof(seed)) != sizeof(seed))
+            seed = 0;
+        close(fd);
+    }
+    if(!seed)
+        seed = (uint32_t) time(NULL) ^ (uint32_t)(uintptr_t) &seed;
+    return seed;
+}
+
+// FNV-1a over the key, then a seeded murmur3 finalizer: lists cannot be crafted to collide
+static uint32_t key_hash(const pw_engine_t *e, const char *s) {
+    uint32_t h = 2166136261u ^ e->seed;
     for(; *s; s++)
         h = (h ^ (uint8_t)*s) * 16777619u;
+    h ^= h >> 16;
+    h *= 0x85ebca6bu;
+    h ^= h >> 13;
+    h *= 0xc2b2ae35u;
+    h ^= h >> 16;
     return h;
 }
 
@@ -106,54 +149,49 @@ static uint32_t pool_add(pw_engine_t *e, const char *s) {
     return off;
 }
 
-static bool table_grow(pw_engine_t *e);
-
-static int32_t* table_slot(pw_engine_t *e, const char *key, bool create) {
-    if(create && ((e->table_used + 1) * 4 >= e->table_cap * 3)) {
-        if(!table_grow(e))
-            return NULL;
-    }
-    if(!e->table_cap)
-        return NULL;
-
-    uint32_t mask = e->table_cap - 1;
-    uint32_t i = fnv1a(key) & mask;
-
-    while(e->table[i]) {
-        rule_t *r = &e->rules[e->table[i] - 1];
-        if(strcmp(e->pool + r->str, key) == 0)
-            return (int32_t*) &e->table[i];
-        i = (i + 1) & mask;
-    }
-
-    return create ? (int32_t*) &e->table[i] : NULL;
-}
-
-static bool table_grow(pw_engine_t *e) {
-    uint32_t old_cap = e->table_cap;
-    uint32_t *old = e->table;
-    uint32_t cap = old_cap ? old_cap * 2 : 1024;
-
-    e->table = calloc(cap, sizeof(uint32_t));
-    if(!e->table) {
-        e->table = old;
+static bool table_grow(pw_engine_t *e, htable_t *t) {
+    uint32_t cap = t->cap ? t->cap * 2 : 1024;
+    uint32_t *slots = calloc(cap, sizeof(uint32_t));
+    if(!slots)
         return false;
-    }
-    e->table_cap = cap;
-    e->table_used = 0;
 
-    for(uint32_t i = 0; i < old_cap; i++) {
-        if(old[i]) {
-            const char *key = e->pool + e->rules[old[i] - 1].str;
-            uint32_t j = fnv1a(key) & (cap - 1);
-            while(e->table[j])
+    for(uint32_t i = 0; i < t->cap; i++) {
+        if(t->slots[i]) {
+            uint32_t j = key_hash(e, e->pool + e->rules[t->slots[i] - 1].key) & (cap - 1);
+            while(slots[j])
                 j = (j + 1) & (cap - 1);
-            e->table[j] = old[i];
-            e->table_used++;
+            slots[j] = t->slots[i];
         }
     }
-    free(old);
+    free(t->slots);
+    t->slots = slots;
+    t->cap = cap;
     return true;
+}
+
+// slot holding the chain head for key, or NULL (create: an empty slot to fill)
+static uint32_t* table_slot(const pw_engine_t *e, htable_t *t, const char *key, bool create) {
+    if(create && ((t->used + 1) * 4 >= t->cap * 3)) {
+        if(!table_grow((pw_engine_t*) e, t))
+            return NULL;
+    }
+    if(!t->cap)
+        return NULL;
+
+    uint32_t mask = t->cap - 1;
+    uint32_t i = key_hash(e, key) & mask;
+
+    while(t->slots[i]) {
+        if(strcmp(e->pool + e->rules[t->slots[i] - 1].key, key) == 0)
+            return &t->slots[i];
+        i = (i + 1) & mask;
+    }
+    return create ? &t->slots[i] : NULL;
+}
+
+static int32_t table_head(const pw_engine_t *e, const htable_t *t, const char *key) {
+    uint32_t *slot = table_slot(e, (htable_t*) t, key, false);
+    return slot ? (int32_t) *slot - 1 : -1;
 }
 
 /* ******************************************************* */
@@ -198,27 +236,15 @@ static bool glob_label(const char *p, int plen, const char *s, int slen) {
     return pi == plen;
 }
 
-static bool match_labels(const char **pl, const int *plen, int pn,
-                         const char **hl, const int *hlen, int hn) {
-    if(pn == 0)
-        return hn == 0;
-
-    if((plen[0] == 2) && (pl[0][0] == '*') && (pl[0][1] == '*')) {
-        // '**' = one or more labels
-        for(int k = 1; k <= hn; k++) {
-            if(match_labels(pl + 1, plen + 1, pn - 1, hl + k, hlen + k, hn - k))
-                return true;
-        }
-        return false;
-    }
-
-    if(hn == 0)
-        return false;
-    if(!glob_label(pl[0], plen[0], hl[0], hlen[0]))
-        return false;
-    return match_labels(pl + 1, plen + 1, pn - 1, hl + 1, hlen + 1, hn - 1);
+static bool is_deep(const char *l, int len) {
+    return (len == 2) && (l[0] == '*') && (l[1] == '*');
 }
 
+/*
+ * Label-wise pattern match by dynamic programming (no backtracking, so hostile patterns like
+ * "**.**.**...." cannot blow up): ok[i][j] = pattern labels i.. match host labels j.. .
+ * '**' matches one or more labels. With subdomains the pattern may match any suffix of the host.
+ */
 bool pw_match_domain(const char *pattern, const char *host, bool subdomains) {
     const char *pl[MAX_LABELS], *hl[MAX_LABELS];
     int plen[MAX_LABELS], hlen[MAX_LABELS];
@@ -228,14 +254,29 @@ bool pw_match_domain(const char *pattern, const char *host, bool subdomains) {
     if((pn <= 0) || (hn <= 0))
         return false;
 
-    if(match_labels(pl, plen, pn, hl, hlen, hn))
-        return true;
+    // two rows are enough: row i depends only on row i + 1
+    bool next[MAX_LABELS + 1], cur[MAX_LABELS + 1];
+    for(int j = 0; j <= hn; j++)
+        next[j] = (j == hn);   // empty pattern matches only the end of the host
 
-    if(subdomains) {
-        for(int k = 1; k < hn; k++) {
-            if(match_labels(pl, plen, pn, hl + k, hlen + k, hn - k))
-                return true;
+    for(int i = pn - 1; i >= 0; i--) {
+        bool deep = is_deep(pl[i], plen[i]);
+        cur[hn] = false;
+        for(int j = hn - 1; j >= 0; j--) {
+            if(deep)
+                cur[j] = next[j + 1] || cur[j + 1];
+            else
+                cur[j] = next[j + 1] && glob_label(pl[i], plen[i], hl[j], hlen[j]);
         }
+        memcpy(next, cur, sizeof(bool) * (hn + 1));
+    }
+
+    if(next[0])
+        return true;
+    if(subdomains) {
+        for(int k = 1; k < hn; k++)
+            if(next[k])
+                return true;
     }
     return false;
 }
@@ -309,26 +350,51 @@ static int parse_cidr(const char *s, zdtun_ip_t *ip, uint8_t *ipver, uint8_t *pr
     return 0;
 }
 
-static bool ip_in_cidr(const rule_t *r, uint8_t ipver, const zdtun_ip_t *ip) {
-    if(r->ipver != ipver)
-        return false;
+/* ******************************************************* */
 
-    const uint8_t *a = (const uint8_t*) &r->ip;
-    const uint8_t *b = (const uint8_t*) ip;
-    int bits = r->prefix;
-    int bytes = bits / 8;
-
-    if(memcmp(a, b, bytes) != 0)
-        return false;
-    if(bits % 8) {
-        uint8_t mask = (uint8_t)(0xFF << (8 - (bits % 8)));
-        if((a[bytes] & mask) != (b[bytes] & mask))
+static bool push_index(int32_t **arr, int *n, int *cap, int32_t v) {
+    if(*n >= *cap) {
+        int c = *cap ? *cap * 2 : 64;
+        int32_t *a = realloc(*arr, c * sizeof(int32_t));
+        if(!a)
             return false;
+        *arr = a;
+        *cap = c;
     }
+    (*arr)[(*n)++] = v;
     return true;
 }
 
-/* ******************************************************* */
+// "*.x" / "**.x" with a literal x: index by x. Returns the suffix offset in value, or -1.
+static int suffix_pattern(const char *value, uint8_t *extra) {
+    int skip;
+    if(strncmp(value, "**.", 3) == 0) {
+        skip = 3;
+        *extra = 2;
+    } else if(strncmp(value, "*.", 2) == 0) {
+        skip = 2;
+        *extra = 1;
+    } else
+        return -1;
+    if(!value[skip] || strchr(value + skip, '*'))
+        return -1;
+    return skip;
+}
+
+static int chain(pw_engine_t *e, htable_t *t, int idx, const char *key) {
+    uint32_t *slot = table_slot(e, t, key, true);
+    if(!slot)
+        return -1;
+    if(*slot == 0) {
+        t->used++;
+        *slot = idx + 1;
+    } else {
+        // prepend to the chain of rules with the same key
+        e->rules[idx].next = (int32_t) *slot - 1;
+        *slot = idx + 1;
+    }
+    return 0;
+}
 
 static int add_rule(pw_engine_t *e, rule_t *r, const char *value) {
     if(e->num_rules >= e->rules_cap) {
@@ -341,7 +407,9 @@ static int add_rule(pw_engine_t *e, rule_t *r, const char *value) {
     }
 
     r->next = -1;
-    bool linear = true;
+    if(r->who > 2)
+        return 1;   // 0 = global, 1 = group, 2 = app
+    enum { LINEAR, LITERAL, SUFFIX, IPIDX } where = LINEAR;
 
     switch(r->kind) {
         case KIND_ALL:
@@ -357,55 +425,96 @@ static int add_rule(pw_engine_t *e, rule_t *r, const char *value) {
             if(parse_cidr(value, &r->ip, &r->ipver, &r->prefix) < 0)
                 return 1; // skip
             r->score = final_score(300 + (r->prefix * 100) / ((r->ipver == 4) ? 32 : 128), r->proto, r->port);
+            where = IPIDX;
             break;
         case KIND_ASN:
             if(parse_cidr(value, &r->ip, &r->ipver, &r->prefix) < 0)
                 return 1;
             r->score = final_score(200, r->proto, r->port);
+            where = IPIDX;
             break;
         case KIND_DOMAIN: {
-            if(!value[0])
+            if(!value[0] || (strlen(value) >= MAX_HOST))
                 return 1;
             if(strchr(value, '*'))
                 r->flags |= F_WILD;
             r->str = pool_add(e, value);
             if(r->str == UINT32_MAX)
                 return -1;
+            r->key = r->str;
             r->score = final_score(domain_score(value, r->flags & F_SUBS), r->proto, r->port);
-            linear = (r->flags & F_WILD);
+            if(!(r->flags & F_WILD))
+                where = LITERAL;
+            else {
+                int skip = suffix_pattern(value, &r->extra);
+                if(skip > 0) {
+                    r->key = r->str + skip;
+                    if(r->flags & F_SUBS)
+                        r->extra = 2;   // "*.x" plus its subdomains = one or more labels
+                    where = SUFFIX;
+                }
+            }
             break;
         }
         default:
             return 1;
     }
 
+    // ip rules: keep the masked address, so equal prefixes compare equal
+    if(where == IPIDX) {
+        uint8_t *a = (uint8_t*) &r->ip;
+        int bytes = (r->ipver == 4) ? 4 : 16;
+        for(int i = 0; i < bytes; i++) {
+            int bits = r->prefix - i * 8;
+            uint8_t mask = (bits >= 8) ? 0xFF : (bits <= 0) ? 0 : (uint8_t)(0xFF << (8 - bits));
+            a[i] &= mask;
+        }
+        e->prefixes[r->ipver == 6][r->prefix] = 1;
+    }
+
     int idx = e->num_rules++;
     e->rules[idx] = *r;
+    if(r->set > e->max_set)
+        e->max_set = r->set;
 
-    if(linear) {
-        if(e->num_linear >= e->linear_cap) {
-            int cap = e->linear_cap ? e->linear_cap * 2 : 64;
-            int32_t *n = realloc(e->linear, cap * sizeof(int32_t));
-            if(!n)
-                return -1;
-            e->linear = n;
-            e->linear_cap = cap;
-        }
-        e->linear[e->num_linear++] = idx;
-    } else {
-        int32_t *slot = table_slot(e, value, true);
-        if(!slot)
-            return -1;
-        if(*slot == 0) {
-            e->table_used++;
-            *slot = idx + 1;
-        } else {
-            // prepend to the chain of rules with the same pattern
-            e->rules[idx].next = *slot - 1;
-            *slot = idx + 1;
-        }
+    switch(where) {
+        case LITERAL:
+            return chain(e, &e->literal, idx, value);
+        case SUFFIX:
+            return chain(e, &e->suffix, idx, e->pool + e->rules[idx].key);
+        case IPIDX:
+            return push_index(&e->ipidx, &e->num_ip, &e->ip_cap, idx) ? 0 : -1;
+        default:
+            return push_index(&e->linear, &e->num_linear, &e->linear_cap, idx) ? 0 : -1;
     }
-    return 0;
+}
+
+static const pw_engine_t *g_sort_engine;   // qsort has no context argument; loads are serialized
+
+static int ip_key_cmp(const rule_t *a, uint8_t ipver, uint8_t prefix, const zdtun_ip_t *ip) {
+    if(a->ipver != ipver)
+        return (a->ipver < ipver) ? -1 : 1;
+    if(a->prefix != prefix)
+        return (a->prefix < prefix) ? -1 : 1;
+    return memcmp(&a->ip, ip, (ipver == 4) ? 4 : 16);
+}
+
+static int ip_rule_cmp(const void *x, const void *y) {
+    const rule_t *a = &g_sort_engine->rules[*(const int32_t*)x];
+    const rule_t *b = &g_sort_engine->rules[*(const int32_t*)y];
+    return ip_key_cmp(a, b->ipver, b->prefix, &b->ip);
+}
+
+static pthread_mutex_t g_sort_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void finish_index(pw_engine_t *e) {
+    if(e->num_ip > 1) {
+        pthread_mutex_lock(&g_sort_lock);
+        g_sort_engine = e;
+        qsort(e->ipidx, e->num_ip, sizeof(int32_t), ip_rule_cmp);
+        g_sort_engine = NULL;
+        pthread_mutex_unlock(&g_sort_lock);
+    }
 }
 
 static char* trim(char *s) {
@@ -478,6 +587,7 @@ pw_engine_t* pw_engine_load(const char *path, char *err, int errlen) {
         fclose(f);
         return NULL;
     }
+    e->seed = random_seed();
 
     char line[1024];
     int lineno = 0;
@@ -528,7 +638,9 @@ pw_engine_t* pw_engine_load(const char *path, char *err, int errlen) {
     }
 
     fclose(f);
-    log_i("pw: loaded %d rules (%d indexed, %d linear)", e->num_rules, e->table_used, e->num_linear);
+    finish_index(e);
+    log_i("pw: loaded %d rules (%u literal, %u suffix, %d ip, %d linear)", e->num_rules, e->literal.used,
+          e->suffix.used, e->num_ip, e->num_linear);
     return e;
 
 oom:
@@ -543,7 +655,9 @@ void pw_engine_destroy(pw_engine_t *e) {
         return;
     free(e->rules);
     free(e->pool);
-    free(e->table);
+    free(e->literal.slots);
+    free(e->suffix.slots);
+    free(e->ipidx);
     free(e->linear);
     free(e);
 }
@@ -553,16 +667,6 @@ int pw_engine_num_rules(const pw_engine_t *e) {
 }
 
 /* ******************************************************* */
-
-typedef struct {
-    int32_t idx[MAX_CANDIDATES];
-    int n;
-} candidates_t;
-
-static void add_candidate(candidates_t *c, int32_t idx) {
-    if(c->n < MAX_CANDIDATES)
-        c->idx[c->n++] = idx;
-}
 
 static bool refine_ok(const rule_t *r, const pw_query_t *q) {
     if(r->proto && (r->proto != q->proto))
@@ -576,24 +680,8 @@ static bool who_ok(const rule_t *r, const pw_query_t *q) {
     if(r->who == 0)
         return true;
     if(q->dns_query)
-        return true;   // evaluated separately, see pw_engine_eval
+        return true;   // evaluated separately, see consider()
     return r->uid == q->uid;
-}
-
-static bool target_ok(const pw_engine_t *e, const rule_t *r, const pw_query_t *q) {
-    switch(r->kind) {
-        case KIND_ALL:
-            return true;
-        case KIND_COUNTRY:
-            return q->country && q->country[0] && (strcasecmp(e->pool + r->str, q->country) == 0);
-        case KIND_IP:
-        case KIND_ASN:
-            return q->ip && ip_in_cidr(r, q->ipver, q->ip);
-        case KIND_DOMAIN:
-            return q->host && q->host[0] &&
-                   pw_match_domain(e->pool + r->str, q->host, r->flags & F_SUBS);
-    }
-    return false;
 }
 
 // true if a beats b
@@ -618,89 +706,156 @@ static pw_verdict_t verdict(const rule_t *r) {
     return v;
 }
 
+// The best matching rule per (set, who), kept while scanning: no cap on how many rules match.
+typedef struct {
+    const pw_engine_t *e;
+    const pw_query_t *q;
+    const rule_t *(*best)[3];   // [set][who]
+    bool app_allows_name;       // dns query: some app/group allows the name
+} scan_t;
+
+static void consider(scan_t *s, int32_t idx) {
+    const rule_t *r = &s->e->rules[idx];
+    if(!refine_ok(r, s->q) || !who_ok(r, s->q))
+        return;
+    if(s->q->dns_query && (r->who != 0)) {
+        // The query comes from netd on behalf of some app. Do not block at DNS level if any
+        // app/group allows this name: the connection itself will be checked with the real uid.
+        if(!(r->flags & F_BLOCK) && (r->kind == KIND_DOMAIN))
+            s->app_allows_name = true;
+        return;
+    }
+    const rule_t **slot = &s->best[r->set][r->who];
+    if(better(r, *slot))
+        *slot = r;
+}
+
+static void scan_ip(scan_t *s) {
+    const pw_engine_t *e = s->e;
+    const pw_query_t *q = s->q;
+    if(!q->ip || !e->num_ip || ((q->ipver != 4) && (q->ipver != 6)))
+        return;
+
+    int v6 = (q->ipver == 6);
+    int maxlen = v6 ? 128 : 32;
+    for(int len = 0; len <= maxlen; len++) {
+        if(!e->prefixes[v6][len])
+            continue;
+        zdtun_ip_t m = {0};
+        memcpy(&m, q->ip, v6 ? 16 : 4);
+        uint8_t *a = (uint8_t*) &m;
+        for(int i = 0; i < (v6 ? 16 : 4); i++) {
+            int bits = len - i * 8;
+            a[i] &= (bits >= 8) ? 0xFF : (bits <= 0) ? 0 : (uint8_t)(0xFF << (8 - bits));
+        }
+        // lower bound of (ipver, len, m)
+        int lo = 0, hi = e->num_ip;
+        while(lo < hi) {
+            int mid = (lo + hi) / 2;
+            if(ip_key_cmp(&e->rules[e->ipidx[mid]], q->ipver, (uint8_t) len, &m) < 0)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        for(int k = lo; k < e->num_ip; k++) {
+            if(ip_key_cmp(&e->rules[e->ipidx[k]], q->ipver, (uint8_t) len, &m) != 0)
+                break;
+            consider(s, e->ipidx[k]);
+        }
+    }
+}
+
+static bool target_ok(const pw_engine_t *e, const rule_t *r, const pw_query_t *q, const char *host) {
+    switch(r->kind) {
+        case KIND_ALL:
+            return true;
+        case KIND_COUNTRY:
+            return q->country && q->country[0] && (strcasecmp(e->pool + r->str, q->country) == 0);
+        case KIND_DOMAIN:
+            return host && pw_match_domain(e->pool + r->str, host, r->flags & F_SUBS);
+    }
+    return false;
+}
+
 pw_verdict_t pw_engine_eval(const pw_engine_t *e, const pw_query_t *q) {
     pw_verdict_t none = {0};
     if(!e || !e->num_rules)
         return none;
 
-    candidates_t c;
-    c.n = 0;
+    // per-set table, reused across calls (only the capture thread evaluates; the host test is single-threaded)
+    static const rule_t *(*best)[3] = NULL;
+    static int best_cap = 0;
+    if(e->max_set + 1 > best_cap) {
+        int cap = e->max_set + 1;
+        void *b = realloc(best, cap * sizeof(*best));
+        if(!b)
+            return none;
+        best = b;
+        best_cap = cap;
+    }
+    memset(best, 0, (e->max_set + 1) * sizeof(*best));
+    scan_t s = { .e = e, .q = q, .best = best };
 
-    // literal domains: the host itself and every parent domain
-    if(q->host && q->host[0] && e->table_cap) {
-        char host[256];
-        strncpy(host, q->host, sizeof(host) - 1);
-        host[sizeof(host) - 1] = '\0';
-        to_lower(host);
+    // lowercase, without one trailing dot ("example.com." is the same name)
+    char host_buf[MAX_HOST];
+    const char *host = NULL;
+    if(q->host && q->host[0]) {
+        strncpy(host_buf, q->host, sizeof(host_buf) - 1);
+        host_buf[sizeof(host_buf) - 1] = '\0';
+        to_lower(host_buf);
+        size_t n = strlen(host_buf);
+        if(n && (host_buf[n - 1] == '.'))
+            host_buf[n - 1] = '\0';
+        if(host_buf[0])
+            host = host_buf;
+    }
 
+    if(host) {
+        // walk the host and its parent domains; extra = labels removed from the front
         const char *h = host;
-        bool exact = true;
+        int extra = 0;
         while(h && *h) {
-            int32_t *slot = table_slot((pw_engine_t*) e, h, false);
-            if(slot) {
-                for(int32_t i = *slot - 1; i >= 0; i = e->rules[i].next) {
-                    const rule_t *r = &e->rules[i];
-                    if((exact || (r->flags & F_SUBS)) && refine_ok(r, q) && who_ok(r, q))
-                        add_candidate(&c, i);
+            for(int32_t i = table_head(e, &e->literal, h); i >= 0; i = e->rules[i].next) {
+                if((extra == 0) || (e->rules[i].flags & F_SUBS))
+                    consider(&s, i);
+            }
+            if(extra > 0) {
+                for(int32_t i = table_head(e, &e->suffix, h); i >= 0; i = e->rules[i].next) {
+                    if((e->rules[i].extra == 2) || (extra == 1))
+                        consider(&s, i);
                 }
             }
             h = strchr(h, '.');
             if(h)
                 h++;
-            exact = false;
+            extra++;
         }
     }
+
+    scan_ip(&s);
 
     for(int k = 0; k < e->num_linear; k++) {
         const rule_t *r = &e->rules[e->linear[k]];
-        if(refine_ok(r, q) && who_ok(r, q) && target_ok(e, r, q))
-            add_candidate(&c, e->linear[k]);
+        if(refine_ok(r, q) && who_ok(r, q) && target_ok(e, r, q, host))
+            consider(&s, e->linear[k]);
     }
 
-    if(c.n == 0)
+    if(q->dns_query && s.app_allows_name)
         return none;
 
-    if(q->dns_query) {
-        // The query comes from netd on behalf of some app. Do not block at DNS level if any
-        // app/group allows this name: the connection itself will be checked with the real uid.
-        for(int k = 0; k < c.n; k++) {
-            const rule_t *r = &e->rules[c.idx[k]];
-            if((r->who != 0) && !(r->flags & F_BLOCK) && (r->kind == KIND_DOMAIN))
-                return none;
-        }
-    }
-
-    // sets are numbered by priority; find the max set id among candidates
-    int max_set = 0;
-    for(int k = 0; k < c.n; k++)
-        if(e->rules[c.idx[k]].set > max_set)
-            max_set = e->rules[c.idx[k]].set;
-
+    // sets are numbered by priority (0 = highest)
     const rule_t *global_allow = NULL;
+    for(int set = 0; set <= e->max_set; set++) {
+        if(best[set][2])
+            return verdict(best[set][2]);   // app
+        if(best[set][1])
+            return verdict(best[set][1]);   // app group
 
-    for(int set = 0; set <= max_set; set++) {
-        const rule_t *best[3] = {NULL, NULL, NULL};
-
-        for(int k = 0; k < c.n; k++) {
-            const rule_t *r = &e->rules[c.idx[k]];
-            if(r->set != set)
-                continue;
-            if(q->dns_query && (r->who != 0))
-                continue;
-            if(better(r, best[r->who]))
-                best[r->who] = r;
-        }
-
-        if(best[2])
-            return verdict(best[2]);   // app
-        if(best[1])
-            return verdict(best[1]);   // app group
-
-        if(!global_allow && best[0]) {
-            if(best[0]->flags & F_BLOCK)
-                return verdict(best[0]);
+        if(!global_allow && best[set][0]) {
+            if(best[set][0]->flags & F_BLOCK)
+                return verdict(best[set][0]);
             // global allow: only app rules in lower sets can still block
-            global_allow = best[0];
+            global_allow = best[set][0];
         }
     }
 
