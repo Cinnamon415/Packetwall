@@ -37,6 +37,12 @@ New exported functions, all in `jni_impl.c`:
 | `setUpstreamHttp(http)` | The upstream is an HTTP CONNECT proxy instead of SOCKS5 |
 | `setUpstreamScope(all)` | Proxy everything, or only allow rules with route "upstream" |
 | `setUdpRelay(ip, port)` | SOCKS5 UDP ASSOCIATE relay address; `""` removes it |
+| `setUpstreamAddress(ip, port)` | The proxy's resolved address; `0.0.0.0` = unknown, proxied flows are blocked (0.7) |
+| `setLogLevel(level)` | Native log level; release builds use WARN, so host names do not reach logcat (0.7) |
+
+Changed callbacks (0.7): `getSocks5ProxyAuth` is replaced by `getSocks5ProxyUser` and
+`getSocks5ProxyPass`, each read into its own 256-byte field, so long logins and passwords are no
+longer cut at 64 bytes.
 
 ## `core/pcapdroid.c`, `core/pcapdroid.h`
 
@@ -55,6 +61,14 @@ New exported functions, all in `jni_impl.c`:
   - the UDP relay: `udp_relay_ip`, `udp_relay_port`, `udp_relay_ipver`, and `udp_relay_dirty`,
     which the capture thread applies.
 - **Stats.** The stats sent to Java carry `fw_rule` and the proxied bit.
+
+- **Upstream address (0.7).** `upstream_lock` (a mutex) guards the proxy ip/port/version that
+  `setUpstreamAddress` changes while the capture thread reads them. `upstream_unknown()` is true
+  while the address is 0.0.0.0: the capture thread then blocks new proxied flows instead of
+  connecting to 0.0.0.0, which would reach localhost (fail closed).
+- **DNS cache (0.7).** `process_dns_reply()` takes the connection tuple and fills the IP → name cache
+  only from replies of the VPN's own resolver (`internal_dns`), so an app cannot plant names for
+  addresses with its own DNS server.
 
 ## `core/capture_vpn.c`
 
@@ -107,3 +121,15 @@ updating the submodule.
 ## nDPI
 
 Unchanged.
+
+## `core/pw_rules.c` (0.7 rewrite)
+
+Packetwall's own rule engine (not from PCAPdroid):
+- literal hash plus a suffix index for `*.x` and `**.x`; IP/CIDR and ASN prefixes sorted per prefix
+  length for binary search; only other globs are scanned linearly, with a linear-time matcher;
+- the best rule per (set, who) is kept while scanning, with no cap on matching candidates;
+- seeded FNV hash with a murmur finalizer (no hash flooding with chosen names);
+- a trailing dot is stripped from host names.
+The host test `app/src/main/jni/tests/pw_rules/run.sh` (ASan) covers these, including the `**` and
+200k-rule cases.
+

@@ -126,3 +126,16 @@ Ordered by risk: first what lets traffic or data leak or get lost, then speed, t
   - kill switch with an unresolvable host;
   - IPv6 route.
 - Release build. Commits per section.
+
+## Status (2026-11-18)
+
+Done: sections 1–3 and 4, except:
+- profile switching from the Quick Settings tile: a tile has one tap, which toggles protection;
+  profiles switch from Home and Global rules instead;
+- the profile in "why blocked": a connection keeps the rule that decided it, not the profile active
+  then, so showing today's profile there would mislead;
+- day separators in the log: rows from earlier days show the date instead;
+- S-L1 (the local DoH resolver is reachable by other apps on the device): Android hides other apps'
+  sockets in /proc/net, so the resolver cannot tell the engine from another app. It only answers
+  DNS, the same answers the VPN gives every app.
+
