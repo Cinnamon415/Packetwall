@@ -182,7 +182,7 @@ fun ActionDot(action: Action) {
     Box(Modifier.size(28.dp).clip(CircleShape).background(c.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
         Icon(
             painterResource(if (action == Action.BLOCK) R.drawable.ic_block else R.drawable.ic_check),
-            null,
+            stringResource(if (action == Action.BLOCK) R.string.action_block else R.string.action_allow),
             tint = c,
             modifier = Modifier.size(16.dp)
         )

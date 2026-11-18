@@ -24,8 +24,8 @@
     <string name="all">Все</string>
     <string name="no_blocks">Пока ничего не заблокировано</string>
     <string name="chip_all">Все</string>
-    <string name="chip_blocked">Заблок.</string>
-    <string name="chip_allowed">Разреш.</string>
+    <string name="chip_blocked">Заблокированные</string>
+    <string name="chip_allowed">Разрешённые</string>
     <string name="tab_conns">Соединения</string>
     <string name="tab_dns">DNS</string>
     <string name="tab_http">HTTP</string>
@@ -42,7 +42,7 @@
     <string name="kv_protocol">Протокол</string>
     <string name="kv_status">Статус</string>
     <string name="kv_app">Приложение</string>
-    <string name="kv_package">Пакет</string>
+    <string name="kv_package">Имя пакета</string>
     <string name="kv_source">Источник</string>
     <string name="kv_destination">Назначение</string>
     <string name="kv_host">Хост</string>
@@ -112,11 +112,11 @@
     <string name="profile_summary">включено %1$d из %2$d наборов</string>
     <string name="profiles">Профили</string>
     <string name="prop_subdomains">+ поддомены</string>
-    <string name="reject_label">Reject (RST, быстрый отказ) вместо drop</string>
+    <string name="reject_label">Отклонять (RST, быстрый отказ) вместо тихого сброса</string>
     <string name="rename">Переименовать</string>
-    <string name="rule_add">Правило</string>
+    <string name="rule_add">Добавить правило</string>
     <string name="rule_added">Правило добавлено</string>
-    <string name="rule_edit">Правило</string>
+    <string name="rule_edit">Изменить правило</string>
     <string name="rule_for">Для: %1$s</string>
     <string name="rule_new">Новое правило</string>
     <string name="rule_set">Набор</string>
@@ -124,7 +124,7 @@
     <string name="save">Сохранить</string>
     <string name="search">Поиск</string>
     <string name="set_blocklist_line">Блок-лист · записей: %1$d</string>
-    <string name="set_default">Default</string>
+    <string name="set_default">Основной</string>
     <string name="set_new">Новый набор</string>
     <string name="sets_hint">Долгое нажатие и перетаскивание меняет порядок.</string>
     <string name="sets_order">Наборы по приоритету</string>
@@ -196,7 +196,7 @@
     <string name="dns_doh_hint">Запросы шифруются; заблокированные имена отвечаются локально</string>
     <string name="doh_custom">Свой адрес DoH</string>
     <string name="doh_stats">Запросов %1$d · ошибок %2$d · в среднем %3$d мс</string>
-    <string name="upstream">Upstream</string>
+    <string name="upstream">Внешний прокси (upstream)</string>
     <string name="upstream_socks">Пускать трафик через SOCKS5-прокси</string>
     <string name="upstream_hint">Цепочка с sing-box, v2rayNG, FlClash… (режим «только прокси»)</string>
     <string name="upstream_up">Прокси доступен</string>
@@ -211,7 +211,7 @@
     <string name="upstream_udp_block">Блокировать (приложения перейдут на TCP)</string>
     <string name="upstream_udp_direct">Напрямую</string>
     <string name="upstream_on_down">Если прокси недоступен</string>
-    <string name="kill_switch">Kill switch</string>
+    <string name="kill_switch">Аварийная блокировка (kill switch)</string>
     <string name="go_direct">Напрямую</string>
     <string name="check">Проверить</string>
     <string name="upstream_notes">TCP идёт через прокси; правила, журнал и пакеты применяются до него. UDP через прокси — только для SOCKS5. При «Весь трафик» DNS тоже идёт через прокси (DNS-over-HTTPS к серверу из раздела DNS), а с аварийной блокировкой он блокируется, пока прокси недоступен.</string>
@@ -250,7 +250,7 @@
     <string name="import_auto">Авто: %1$s</string>
     <string name="import_plan">Правил: %1$d · записей списка: %2$d · пропущено: %3$d</string>
     <string name="import_lowest">Импортированное попадает в новые наборы с низшим приоритетом.</string>
-    <string name="import_done_sets">Импортировано в новых наборов: %1$d</string>
+    <string name="import_done_sets">Создано новых наборов: %1$d</string>
     <string name="kv_tracker">Трекер</string>
     <string name="cat_ads">реклама</string>
     <string name="cat_analytics">аналитика</string>
@@ -265,7 +265,7 @@
     <string name="tls_client">Client Hello</string>
     <string name="tls_server">Сервер</string>
     <string name="tls_offered">Предложены</string>
-    <string name="tls_ciphers">Шифронаборов</string>
+    <string name="tls_ciphers">Наборы шифров</string>
     <string name="tls_version">Версия</string>
     <string name="tls_cipher">Шифр</string>
     <string name="tls_subject">Субъект</string>
@@ -280,7 +280,7 @@
     <string name="record_title">Непрерывная запись</string>
     <string name="record_size">Размер файла</string>
     <string name="record_age">Новый файл через</string>
-    <string name="record_keep">Хранить файлов</string>
+    <string name="record_keep">Сколько файлов хранить</string>
     <string name="export_csv">Экспорт показанного в CSV</string>
     <string name="export_pcapng_filtered">Экспорт пакетов показанных соединений (pcapng)</string>
     <string name="upstream_udp_proxy">Через прокси (UDP ASSOCIATE)</string>
@@ -584,4 +584,14 @@
     <string name="reason_internal">служебная блокировка Packetwall, без правила</string>
     <string name="conn_newer">Более новое соединение</string>
     <string name="conn_older">Более старое соединение</string>
+    <string name="app_unknown">Неизвестно (−1)</string>
+    <string name="app_android_system">Система Android</string>
+    <string name="app_phone">Телефон (радио)</string>
+    <string name="app_dns_tether">DNS режима модема</string>
+    <string name="per_second">%1$s/с</string>
+    <string name="speed_max">макс. %1$s</string>
+    <string name="compact_view">Компактный вид</string>
+    <string name="move_up">Переместить выше</string>
+    <string name="move_down">Переместить ниже</string>
+    <string name="kind_all_traffic">Весь трафик</string>
 </resources>

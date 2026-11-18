@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Process
+import io.github.cinnamon415.packetwall.R
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -89,12 +90,12 @@ class AppsResolver(private val ctx: Context) {
     private fun special(uid: Int): AppInfo? = SPECIAL[uid]?.let { pkg -> AppInfo(uid, pkg, specialName(uid), true) }
 
     private fun specialName(uid: Int): String = when (uid) {
-        -1 -> "Unknown (−1)"
+        -1 -> ctx.getString(R.string.app_unknown)
         0 -> "root"
-        Process.SYSTEM_UID -> "Android System"
-        1001 -> "Phone (radio)"
+        Process.SYSTEM_UID -> ctx.getString(R.string.app_android_system)
+        1001 -> ctx.getString(R.string.app_phone)
         1051 -> "netd (DNS)"
-        1052 -> "DNS tether"
+        1052 -> ctx.getString(R.string.app_dns_tether)
         else -> "uid $uid"
     }
 

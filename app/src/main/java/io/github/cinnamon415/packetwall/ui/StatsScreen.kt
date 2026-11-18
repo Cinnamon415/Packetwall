@@ -243,12 +243,18 @@ fun SpeedChart(h: List<ConnectionsRegister.Sample>, up: Color, down: Color, heig
     Column(Modifier.padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Dot(up)
-            Text(" ↑ ${formatBytes((cur?.second ?: 0f).toLong())}/s   ", style = MaterialTheme.typography.bodySmall)
+            Text(
+                " ↑ " + stringResource(R.string.per_second, formatBytes((cur?.second ?: 0f).toLong())) + "   ",
+                style = MaterialTheme.typography.bodySmall
+            )
             Dot(down)
-            Text(" ↓ ${formatBytes((cur?.third ?: 0f).toLong())}/s", style = MaterialTheme.typography.bodySmall)
+            Text(
+                " ↓ " + stringResource(R.string.per_second, formatBytes((cur?.third ?: 0f).toLong())),
+                style = MaterialTheme.typography.bodySmall
+            )
             Spacer(Modifier.weight(1f))
             Text(
-                "max ${formatBytes(peak.toLong())}/s",
+                stringResource(R.string.speed_max, stringResource(R.string.per_second, formatBytes(peak.toLong()))),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

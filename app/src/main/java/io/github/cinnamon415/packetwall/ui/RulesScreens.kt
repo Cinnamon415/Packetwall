@@ -65,6 +65,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -132,7 +133,7 @@ fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -
     var newGroup by remember { mutableStateOf(false) }
 
     ScreenScaffold(title = stringResource(R.string.nav_apps), subtitle = view.apps?.let { "${it.size}" }, onMenu = openDrawer, actions = {
-        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
+        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.more)) }
         DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem(
                 { Text(stringResource(R.string.show_system)) },
@@ -251,11 +252,12 @@ fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -
 
 @Composable
 fun Chevron() {
+    // decoration: the row itself is the button
     Text(
         "›",
         color = MaterialTheme.colorScheme.outline,
         style = MaterialTheme.typography.titleLarge,
-        modifier = Modifier.padding(start = 8.dp)
+        modifier = Modifier.padding(start = 8.dp).clearAndSetSemantics {}
     )
 }
 
@@ -624,7 +626,7 @@ fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                 SelectionActions(app, st, selection) { selection = emptySet() }
                 return@ScreenScaffold
             }
-            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
+            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.more)) }
             DropdownMenu(menu, { menu = false }) {
                 DropdownMenuItem(
                     { Text(stringResource(R.string.sort_name)) },
@@ -659,7 +661,7 @@ fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                         TargetKind.IP to R.string.kind_ip,
                         TargetKind.ASN to R.string.kind_asn,
                         TargetKind.COUNTRY to R.string.kind_countries,
-                        TargetKind.ALL to R.string.target_all
+                        TargetKind.ALL to R.string.kind_all_traffic
                     ).forEach { (k, s) ->
                         FilterChip(kind == k, { kind = if (kind == k) null else k }, { Text(stringResource(s)) })
                     }

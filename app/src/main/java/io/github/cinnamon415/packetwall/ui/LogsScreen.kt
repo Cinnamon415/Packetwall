@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -121,7 +123,7 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
         subtitle = if (tab == LogTab.CAPTURES) null else "${shown.size} / ${shownState.total}",
         onMenu = openDrawer,
         actions = {
-            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
+            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.more)) }
             DropdownMenu(menu, { menu = false }) {
                 DropdownMenuItem({ Text(stringResource(R.string.export_csv)) }, {
                     menu = false
@@ -148,12 +150,14 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
                     placeholder = { Text(stringResource(R.string.logs_filter_hint), fontFamily = FontFamily.Monospace) },
                     trailingIcon = { FilterHelpButton { vm.updateFilter(it) } }
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     val chips = listOf(R.string.chip_all, R.string.chip_blocked, R.string.chip_allowed)
                     StatusFilter.entries.zip(chips).forEach { (f, label) ->
                         FilterChip(status == f, { vm.setStatus(f) }, { Text(stringResource(label)) })
                     }
-                    FilterChip(compact, vm::toggleCompact, { Icon(painterResource(R.drawable.ic_density), null) })
+                    FilterChip(compact, vm::toggleCompact, {
+                        Icon(painterResource(R.drawable.ic_density), stringResource(R.string.compact_view))
+                    })
                 }
             }
         }

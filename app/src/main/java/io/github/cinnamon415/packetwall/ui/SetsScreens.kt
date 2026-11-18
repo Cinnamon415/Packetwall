@@ -71,6 +71,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -495,7 +498,7 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
     val openJson = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { importJsonUri = it }
 
     ScreenScaffold(title = stringResource(R.string.nav_sets), onMenu = openDrawer, actions = {
-        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
+        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.more)) }
         DropdownMenu(menu, { menu = false }) {
             DropdownMenuItem({ Text(stringResource(R.string.export_json)) }, {
                 menu = false
@@ -526,7 +529,7 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            IconButton({ profileMenu = p.id }) { Icon(Icons.Filled.MoreVert, null) }
+                            IconButton({ profileMenu = p.id }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.more)) }
                         }
                         DropdownMenu(profileMenu == p.id, { profileMenu = null }) {
                             DropdownMenuItem({ Text(stringResource(R.string.rename)) }, {
@@ -638,6 +641,8 @@ private fun ReorderableSets(app: PacketwallApp, st: FwState, onEdit: (RuleSet) -
                 }
             }
         ) {
+            val moveUp = stringResource(R.string.move_up)
+            val moveDown = stringResource(R.string.move_down)
             sets.forEachIndexed { i, s ->
                 val dragging = i == dragIndex
                 val elevation by animateDpAsState(if (dragging) 8.dp else 0.dp, label = "drag")
@@ -649,6 +654,19 @@ private fun ReorderableSets(app: PacketwallApp, st: FwState, onEdit: (RuleSet) -
                         .background(if (dragging) MaterialTheme.colorScheme.surfaceContainerHighest else Color.Transparent)
                         .drawBehind { if (i > 0 && !dragging) drawLine(divider, Offset(0f, 0f), Offset(size.width, 0f), 1.dp.toPx()) }
                         .clickable { onEdit(s) }
+                        .semantics {
+                            // TalkBack and switch access cannot drag: move with actions instead
+                            customActions = listOfNotNull(
+                                if (i > 0) CustomAccessibilityAction(moveUp) { app.firewall.moveSet(i, i - 1).let { true } } else null,
+                                if (i <
+                                    sets.lastIndex
+                                ) {
+                                    CustomAccessibilityAction(moveDown) { app.firewall.moveSet(i, i + 1).let { true } }
+                                } else {
+                                    null
+                                }
+                            )
+                        }
                         .padding(start = 4.dp, end = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
