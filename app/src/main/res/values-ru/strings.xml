@@ -461,4 +461,20 @@
     <string name="nothing_found">Ничего не найдено</string>
     <string name="group_add_n">Добавить %1$d</string>
     <string name="system_apps">Системные</string>
+    <string name="nav_search">Поиск</string>
+    <string name="search_all">Всё</string>
+    <string name="search_rules">Правила</string>
+    <string name="search_lists">Списки</string>
+    <string name="search_apps">Приложения</string>
+    <string name="search_conns">Соединения</string>
+    <string name="search_hint">Введите приложение, домен или IP-адрес. Покажу все правила для него и где они лежат (чьё правило, в каком наборе, в каких профилях), списки, в которых он есть, и соединения.</string>
+    <string name="search_in_set">набор %1$s</string>
+    <string name="search_set_off">набор выключен</string>
+    <string name="search_no_profile">ни в одном профиле</string>
+    <plurals name="search_profiles"><item quantity="one">профиль %s</item><item quantity="few">профили %s</item><item quantity="many">профили %s</item><item quantity="other">профили %s</item></plurals>
+    <plurals name="search_entries"><item quantity="one">%1$d запись: %2$s</item><item quantity="few">%1$d записи: %2$s</item><item quantity="many">%1$d записей: %2$s</item><item quantity="other">%1$d записи: %2$s</item></plurals>
+    <plurals name="rules_n"><item quantity="one">%d правило</item><item quantity="few">%d правила</item><item quantity="many">%d правил</item><item quantity="other">%d правила</item></plurals>
+    <string name="search_blocked">заблокировано</string>
+    <string name="search_allowed">разрешено</string>
+    <string name="search_off_now">сейчас выключен</string>
 </resources>

@@ -31,6 +31,8 @@ sealed interface Dest {
 
     @Serializable data object Files : Dest
 
+    @Serializable data object Search : Dest
+
     /** The capture file open in [OpenedFile]. */
     @Serializable data object FileView : Dest
 
@@ -41,10 +43,11 @@ sealed interface Dest {
 
     @Serializable data class Packet(val connId: Int, val seq: Long, val file: Boolean = false) : Dest
 
-    @Serializable data class GroupRules(val id: Int) : Dest
+    /** [tab]: 0 members, 1 rules. */
+    @Serializable data class GroupRules(val id: Int, val tab: Int = 0) : Dest
 
     /** One blocklist: entries, search and the user's edits. */
-    @Serializable data class ListEntries(val id: Int) : Dest
+    @Serializable data class ListEntries(val id: Int, val query: String = "") : Dest
 }
 
 /** The back stack. Survives configuration changes and process death (see [rememberNavigator]). */

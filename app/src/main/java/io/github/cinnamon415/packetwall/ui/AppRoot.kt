@@ -157,10 +157,28 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                             is Dest.AppRules -> WhoRulesScreen(app, Who.App(d.pkg), onBack = {
                                 nav.pop()
                             }, onOpenGroup = { nav.push(Dest.GroupRules(it)) })
-                            is Dest.GroupRules -> WhoRulesScreen(app, Who.Group(d.id), onBack = { nav.pop() })
+                            is Dest.GroupRules -> WhoRulesScreen(app, Who.Group(d.id), onBack = { nav.pop() }, initialTab = d.tab)
                             Dest.Global -> GlobalScreen(app, openDrawer)
                             Dest.Blocklists -> BlocklistsScreen(app, openDrawer, onOpenList = { nav.push(Dest.ListEntries(it)) })
-                            is Dest.ListEntries -> ListScreen(app, d.id, onBack = { nav.pop() })
+                            is Dest.ListEntries -> ListScreen(app, d.id, onBack = { nav.pop() }, initialQuery = d.query)
+                            Dest.Search -> SearchScreen(
+                                app,
+                                openDrawer,
+                                SearchNav(
+                                    who = { w ->
+                                        nav.push(
+                                            when (w) {
+                                                is Who.App -> Dest.AppRules(w.pkg)
+                                                is Who.Group -> Dest.GroupRules(w.id, tab = 1)
+                                                Who.Global -> Dest.Global
+                                            }
+                                        )
+                                    },
+                                    list = { id, q -> nav.push(Dest.ListEntries(id, q)) },
+                                    app = { nav.push(Dest.AppRules(it)) },
+                                    conn = { nav.push(Dest.Connection(it)) }
+                                )
+                            )
                             Dest.Sets -> SetsScreen(app, openDrawer)
                             Dest.Settings -> SettingsScreen(app, openDrawer)
                             Dest.About -> AboutScreen(openDrawer)
@@ -182,6 +200,7 @@ private fun DrawerContent(current: Dest, state: CaptureState, onSelect: (Dest) -
         DrawerEntry(Dest.Files, R.string.nav_files, R.drawable.ic_file)
     )
     val fw = listOf(
+        DrawerEntry(Dest.Search, R.string.nav_search, R.drawable.ic_search),
         DrawerEntry(Dest.Apps, R.string.nav_apps, R.drawable.ic_apps),
         DrawerEntry(Dest.Global, R.string.nav_global, R.drawable.ic_rules),
         DrawerEntry(Dest.Blocklists, R.string.nav_blocklists, R.drawable.ic_filter),

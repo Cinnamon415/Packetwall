@@ -88,7 +88,7 @@ private fun EntryText(
 /** One list: its entries with search, and the user's edits that survive updates. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ListScreen(app: PacketwallApp, id: Int, onBack: () -> Unit) {
+fun ListScreen(app: PacketwallApp, id: Int, onBack: () -> Unit, initialQuery: String = "") {
     val st by app.firewall.state.collectAsState()
     val set = st.set(id)
     if (set == null) {
@@ -96,7 +96,7 @@ fun ListScreen(app: PacketwallApp, id: Int, onBack: () -> Unit) {
         return
     }
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    var query by rememberSaveable { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf(initialQuery) }
     var settings by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     var confirmReset by remember { mutableStateOf(false) }

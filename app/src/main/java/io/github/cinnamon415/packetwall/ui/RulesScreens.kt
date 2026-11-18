@@ -274,7 +274,7 @@ fun ListSubheader(text: String) {
 /** Rules of one app (or app group) in every set. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit, onOpenGroup: (Int) -> Unit = {}) {
+fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit, onOpenGroup: (Int) -> Unit = {}, initialTab: Int = 0) {
     val undo = LocalUndo.current
     val ruleDeletedMsg = stringResource(R.string.undo_rule_deleted)
     val groupDeletedMsg = stringResource(R.string.undo_group_deleted)
@@ -286,7 +286,7 @@ fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit, onOpenGroup
     var rename by remember { mutableStateOf(false) }
     var picker by rememberSaveable { mutableStateOf(false) }
     // a group opens on its members: that is what a new group needs first
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(initialTab) }
     var selection by remember { mutableStateOf(setOf<Int>()) }
 
     if (who is Who.Group && group == null) {

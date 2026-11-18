@@ -83,6 +83,24 @@ class FirewallStore(
     init {
         // One writer, always the latest state: saves can never land out of order.
         scope.launch { _state.drop(1).conflate().collect { save(it) } }
+        scope.launch { removeOrphanLists() }
+    }
+
+    /**
+     * Deletes list files of sets that no longer exist (left by older versions, crashes or
+     * removed sets). Temporary files of a download in progress are kept for a minute.
+     */
+    fun removeOrphanLists(): Int {
+        val ids = _state.value.sets.map { it.id }.toHashSet()
+        val recent = System.currentTimeMillis() - 60_000
+        var n = 0
+        listsDir.listFiles()?.forEach { f ->
+            if (!f.isFile) return@forEach
+            val id = f.name.substringBefore('.').toIntOrNull() ?: return@forEach
+            if (id in ids || (f.name.endsWith(".tmp") && f.lastModified() > recent)) return@forEach
+            if (f.delete()) n++
+        }
+        return n
     }
 
     /** Applies a change, persists it and schedules a recompile. */

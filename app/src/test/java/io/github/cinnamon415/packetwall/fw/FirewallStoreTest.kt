@@ -275,4 +275,20 @@ class FirewallStoreTest {
         s.compileNow()
         assertTrue(lastCompiled.contains("$id.txt"))
     }
+
+    @Test fun orphanListFilesAreRemoved() = runTest {
+        val s = store()
+        advanceUntilIdle()
+        val id = s.addBlocklist("L", null)
+        advanceUntilIdle()
+        val lists = File(tmp.root, "lists")
+        File(lists, "$id.txt").writeText("a.com\n")
+        File(lists, "999.txt").writeText("old.com\n")
+        File(lists, "999.edited.txt").writeText("old.com\n")
+        File(lists, "notes").writeText("kept: not a list file")
+        assertEquals(2, s.removeOrphanLists())
+        assertTrue(File(lists, "$id.txt").exists())
+        assertFalse(File(lists, "999.txt").exists())
+        assertTrue(File(lists, "notes").exists())
+    }
 }

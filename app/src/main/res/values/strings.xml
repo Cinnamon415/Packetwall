@@ -463,4 +463,20 @@
     <string name="nothing_found">Nothing found</string>
     <string name="group_add_n">Add %1$d</string>
     <string name="system_apps">System</string>
+    <string name="nav_search">Search</string>
+    <string name="search_all">All</string>
+    <string name="search_rules">Rules</string>
+    <string name="search_lists">Lists</string>
+    <string name="search_apps">Apps</string>
+    <string name="search_conns">Connections</string>
+    <string name="search_hint">Type an app, a domain or an IP address. You will see every rule for it and where it lives (whose, which set, which profiles), the lists that contain it and the connections.</string>
+    <string name="search_in_set">set %1$s</string>
+    <string name="search_set_off">set is off</string>
+    <string name="search_no_profile">in no profile</string>
+    <plurals name="search_profiles"><item quantity="one">profile %s</item><item quantity="other">profiles %s</item></plurals>
+    <plurals name="search_entries"><item quantity="one">%1$d entry: %2$s</item><item quantity="other">%1$d entries: %2$s</item></plurals>
+    <plurals name="rules_n"><item quantity="one">%d rule</item><item quantity="other">%d rules</item></plurals>
+    <string name="search_blocked">blocked</string>
+    <string name="search_allowed">allowed</string>
+    <string name="search_off_now">off now</string>
 </resources>
