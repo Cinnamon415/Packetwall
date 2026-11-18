@@ -81,7 +81,13 @@ class MmdbReader(file: File) {
     }
 
     /** The data record for an address, or null. */
-    fun lookup(addr: InetAddress): Any? {
+    fun lookup(addr: InetAddress): Any? = recordOffset(addr)?.let { decodeAt(it) }
+
+    /**
+     * Offset of the data record for an address, or null. Many addresses share one record (a
+     * country database has a few hundred), so callers can cache decoded values by this offset.
+     */
+    fun recordOffset(addr: InetAddress): Int? {
         val bytes = addr.address
         var node = if (bytes.size == 4 && ipVersion == 6) ipv4Start else 0
         val bits = bytes.size * 8
@@ -92,7 +98,7 @@ class MmdbReader(file: File) {
             i++
         }
         if (node <= nodeCount) return null // == nodeCount: not found
-        return Decoder(buf, dataStart).decode(dataOffset(node)).first
+        return dataOffset(node)
     }
 
     /** Offset of the data record a search-tree value points to. */

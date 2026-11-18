@@ -331,7 +331,7 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
     LaunchedEffect(uri) {
         try {
             bytes = withContext(Dispatchers.IO) { ctx.contentResolver.openInputStream(uri)!!.readCapped(Limits.IMPORT_BYTES, "import") }
-            detected = ForeignImport.detect(bytes!!)
+            detected = withContext(Dispatchers.Default) { ForeignImport.detect(bytes!!) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {

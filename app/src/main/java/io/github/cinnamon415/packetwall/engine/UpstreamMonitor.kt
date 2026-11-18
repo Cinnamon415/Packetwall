@@ -73,6 +73,7 @@ class UpstreamMonitor(private val host: String, initialIp: String?, private val 
     private fun loop() {
         var assoc: UdpAssociation? = null
         var failures = 0
+        var upStreak = 0
         try {
             while (!Thread.currentThread().isInterrupted) {
                 if (ip == null || failures >= RERESOLVE_AFTER) {
@@ -107,7 +108,9 @@ class UpstreamMonitor(private val host: String, initialIp: String?, private val 
                 CaptureStatus.udpRelayUp.value = relayAlive
                 val d = upstreamDecision(reachable, relayWanted, relayAlive, s)
                 NativeBridge.setUpstreamState(d.active, d.blockUdp)
-                Thread.sleep(if (!reachable || (relayWanted && !relayAlive)) 3_000 else 10_000)
+                // down or missing relay: check often; up: back off to a minute (each probe wakes the radio)
+                upStreak = if (reachable && !(relayWanted && !relayAlive)) upStreak + 1 else 0
+                Thread.sleep(if (upStreak == 0) 3_000 else minOf(60_000L, 10_000L shl minOf(upStreak - 1, 3)))
             }
         } catch (_: InterruptedException) {
         } finally {

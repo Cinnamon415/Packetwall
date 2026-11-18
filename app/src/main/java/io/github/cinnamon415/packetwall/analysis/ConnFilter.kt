@@ -52,17 +52,17 @@ object ConnFilter {
                     else -> false
                 }
             }
-            val sv = (v as? String ?: "").lowercase()
-            val x = value.lowercase()
+            val sv = v as? String ?: ""
+            val x = value
             return when (op) {
-                "==" -> sv == x
-                "!=" -> sv != x
-                "~" -> sv.contains(x)
-                "!~" -> !sv.contains(x)
-                "<" -> sv < x
-                "<=" -> sv <= x
-                ">" -> sv > x
-                ">=" -> sv >= x
+                "==" -> sv.equals(x, ignoreCase = true)
+                "!=" -> !sv.equals(x, ignoreCase = true)
+                "~" -> sv.contains(x, ignoreCase = true)
+                "!~" -> !sv.contains(x, ignoreCase = true)
+                "<" -> sv.compareTo(x, ignoreCase = true) < 0
+                "<=" -> sv.compareTo(x, ignoreCase = true) <= 0
+                ">" -> sv.compareTo(x, ignoreCase = true) > 0
+                ">=" -> sv.compareTo(x, ignoreCase = true) >= 0
                 else -> false
             }
         }

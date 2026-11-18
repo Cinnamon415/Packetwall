@@ -73,18 +73,29 @@ class GeoIp(dir: File) {
         country = load(countryFile)
         asnDb = load(asnFile)
         countryCache.evictAll()
+        codeByRecord.clear()
         asnCache.evictAll()
         _info.value = Info(dbInfo(country, countryFile), dbInfo(asnDb, asnFile))
     }
 
     /** ISO country code ("" if unknown). Called from the capture thread for every new connection. */
+    private val codeByRecord = java.util.concurrent.ConcurrentHashMap<Int, String>()
+
     fun country(ip: String): String {
         val r = country ?: return ""
         countryCache.get(ip)?.let { return it }
         val cc = try {
-            @Suppress("UNCHECKED_CAST")
-            val rec = r.lookup(InetAddress.getByName(ip)) as? Map<String, Any?>
-            ((rec?.get("country") as? Map<String, Any?>)?.get("iso_code") as? String) ?: ""
+            // decode each country record once (a few hundred), not for every new address
+            val off = r.recordOffset(InetAddress.getByName(ip))
+            if (off == null) {
+                ""
+            } else {
+                codeByRecord.getOrPut(off) {
+                    @Suppress("UNCHECKED_CAST")
+                    val rec = r.decodeAt(off) as? Map<String, Any?>
+                    ((rec?.get("country") as? Map<String, Any?>)?.get("iso_code") as? String) ?: ""
+                }
+            }
         } catch (e: Throwable) {
             // called from the capture thread through JNI: a broken database must never throw there
             ""

@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,12 +70,24 @@ import kotlinx.coroutines.withContext
 /** One row of the packets list. */
 class PktRow(val p: PacketStore.Pkt, val s: Dissector.Summary, val relSeq: Long?, val relAck: Long?, val dt: Long)
 
-/** Packets of a connection, refreshed while the view is visible. */
+/**
+ * Packets of a connection, refreshed while the view is visible: re-dissected only when the
+ * connection got new packets, and no more polling once it is closed.
+ */
 @Composable
 fun rememberConnPackets(app: PacketwallApp, c: Conn): List<PktRow>? {
+    val latest by rememberUpdatedState(c)
     val rows by produceState<List<PktRow>?>(null, c.id) {
+        var seen: Pair<Int, Long>? = null
         while (true) {
-            value = withContext(Dispatchers.Default) { buildRows(app.packets.packetsOf(c)) }
+            val conn = latest
+            val pkts = withContext(Dispatchers.Default) { app.packets.packetsOf(conn) }
+            val now = pkts.size to (pkts.lastOrNull()?.seq ?: -1L)
+            if (now != seen) {
+                seen = now
+                value = withContext(Dispatchers.Default) { buildRows(pkts) }
+            }
+            if (!conn.active) break
             delay(800)
         }
     }
@@ -139,6 +152,7 @@ fun PacketsTab(app: PacketwallApp, c: Conn, onOpenPacket: (Long) -> Unit) {
 /** Bars: height = size (log), color = direction, ✕ = dropped. Drag to select a range, tap to reset. */
 @Composable
 private fun Timeline(rows: List<PktRow>, span: Long, range: Pair<Float, Float>?, onRange: (Pair<Float, Float>?) -> Unit) {
+    val currentOnRange by rememberUpdatedState(onRange) // the gestures below are set up once
     val up = LocalExtraColors.current.up
     val down = LocalExtraColors.current.down
     val drop = MaterialTheme.colorScheme.error
@@ -154,18 +168,18 @@ private fun Timeline(rows: List<PktRow>, span: Long, range: Pair<Float, Float>?,
     ) {
         Canvas(
             Modifier.fillMaxWidth().height(76.dp).padding(horizontal = 8.dp, vertical = 6.dp)
-                .pointerInput(rows.size) {
+                .pointerInput(Unit) {
                     detectHorizontalDragGestures(
                         onDragStart = { o ->
                             dragStart = (o.x / size.width).coerceIn(0f, 1f)
-                            onRange(dragStart to dragStart)
+                            currentOnRange(dragStart to dragStart)
                         }
                     ) { change, _ ->
                         val x = (change.position.x / size.width).coerceIn(0f, 1f)
-                        onRange(minOf(dragStart, x) to maxOf(dragStart, x))
+                        currentOnRange(minOf(dragStart, x) to maxOf(dragStart, x))
                     }
                 }
-                .pointerInput(Unit) { detectTapGestures { onRange(null) } }
+                .pointerInput(Unit) { detectTapGestures { currentOnRange(null) } }
         ) {
             val mid = size.height / 2
             drawLine(axis, Offset(0f, mid), Offset(size.width, mid), 1f)
