@@ -41,10 +41,10 @@ class ConnStatsTest {
         assertEquals(listOf("TLS" to 4, "DNS" to 1), s.byProto)
         assertEquals(listOf("com.b"), s.trackersByApp.map { it.app.packageName })
         assertEquals(listOf("Ads Co", "Tracker Inc"), s.trackersByApp.single().names)
-        // only rule decisions count as blocks
-        assertEquals(1, s.blockedCount)
-        assertEquals(listOf(5), s.recentBlocked.map { it.id })
-        assertEquals(listOf("com.b" to 1), s.blockedByApp.map { it.app.packageName to it.count })
+        // every block counts, with or without a rule: the same number as the log's Blocked chip
+        assertEquals(2, s.blockedCount)
+        assertEquals(listOf(5, 1), s.recentBlocked.map { it.id })
+        assertEquals(listOf("com.b" to 2), s.blockedByApp.map { it.app.packageName to it.count })
     }
 
     @Test fun topLimitsEveryList() {

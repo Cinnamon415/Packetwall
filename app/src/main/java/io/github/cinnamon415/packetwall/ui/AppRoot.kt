@@ -106,7 +106,10 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                                 state,
                                 onToggleProtection,
                                 openDrawer,
-                                onOpenLogs = { nav.root(Dest.Logs) },
+                                onOpenLogs = { r ->
+                                    LogsLink.request.value = r
+                                    nav.root(Dest.Logs)
+                                },
                                 onOpenStats = { nav.root(Dest.Stats) },
                                 onOpenConn = { nav.push(Dest.Connection(it)) }
                             )
@@ -146,7 +149,10 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                                 onOpenConn = { nav.push(Dest.Connection(it, file = true)) },
                                 onOpenPacket = { conn, seq -> nav.push(Dest.Packet(conn, seq, file = true)) }
                             )
-                            Dest.Stats -> StatsScreen(app, openDrawer)
+                            Dest.Stats -> StatsScreen(app, openDrawer) { r ->
+                                LogsLink.request.value = r
+                                nav.push(Dest.Logs)
+                            }
                             Dest.Apps -> AppsScreen(
                                 app,
                                 openDrawer,

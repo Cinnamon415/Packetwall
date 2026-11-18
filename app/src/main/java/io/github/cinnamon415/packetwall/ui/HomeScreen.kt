@@ -1,7 +1,9 @@
 package io.github.cinnamon415.packetwall.ui
 
+import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -48,22 +51,33 @@ import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.engine.CaptureService
 import io.github.cinnamon415.packetwall.engine.CaptureState
 import io.github.cinnamon415.packetwall.engine.CaptureStatus
+import io.github.cinnamon415.packetwall.engine.Conn
 import io.github.cinnamon415.packetwall.ui.theme.LocalExtraColors
 import java.net.URI
 import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     app: PacketwallApp,
     state: CaptureState,
     onToggle: (Boolean) -> Unit,
     openDrawer: () -> Unit,
-    onOpenLogs: () -> Unit,
+    onOpenLogs: (LogsLink.Request) -> Unit,
     onOpenStats: () -> Unit,
     onOpenConn: (Int) -> Unit
 ) {
     val summary by appViewModel(app) { a, _ -> DashboardViewModel(a) }.summary.collectAsStateWithLifecycle()
     val stats by app.connections.stats.collectAsState()
+    val fw by app.firewall.state.collectAsState()
+    var quick by remember { mutableStateOf<Conn?>(null) }
+    val ctx = LocalContext.current
+    quick?.let { c ->
+        QuickRuleSheet(c, app, fw, onDismiss = { quick = null }) { msg ->
+            quick = null
+            Toast.makeText(ctx, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
     val on = state is CaptureState.Running
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(on) {
@@ -78,7 +92,9 @@ fun HomeScreen(
         onMenu = openDrawer,
         actions = {
             IconButton(onClick = onOpenStats) { Icon(painterResource(R.drawable.ic_chart), stringResource(R.string.nav_stats)) }
-            IconButton(onClick = onOpenLogs) { Icon(painterResource(R.drawable.ic_logs), stringResource(R.string.nav_logs)) }
+            IconButton(onClick = { onOpenLogs(LogsLink.Request(StatusFilter.ALL, "")) }) {
+                Icon(painterResource(R.drawable.ic_logs), stringResource(R.string.nav_logs))
+            }
         }
     ) {
         Column(
@@ -95,9 +111,9 @@ fun HomeScreen(
                     Modifier.weight(1f),
                     R.drawable.ic_logs,
                     stringResource(R.string.tile_requests),
-                    "${stats.totalConns}",
+                    "${summary.total}",
                     alpha,
-                    onClick = onOpenLogs
+                    onClick = { onOpenLogs(LogsLink.Request(StatusFilter.ALL, "")) }
                 )
                 Tile(
                     Modifier.weight(1f),
@@ -106,7 +122,7 @@ fun HomeScreen(
                     "$blocked",
                     alpha,
                     color = MaterialTheme.colorScheme.error,
-                    onClick = onOpenLogs
+                    onClick = { onOpenLogs(LogsLink.Request(StatusFilter.BLOCKED, "")) }
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -122,9 +138,9 @@ fun HomeScreen(
                     Modifier.weight(1f),
                     R.drawable.ic_wall,
                     stringResource(R.string.tile_active),
-                    "${stats.activeConns}",
+                    "${summary.active}",
                     alpha,
-                    onClick = onOpenLogs
+                    onClick = { onOpenLogs(LogsLink.Request(StatusFilter.ALL, "active")) }
                 )
             }
 
@@ -137,7 +153,9 @@ fun HomeScreen(
             }
 
             // Recent blocks (max 5)
-            SectionHeader(stringResource(R.string.recent_blocks), stringResource(R.string.all), onOpenLogs)
+            SectionHeader(stringResource(R.string.recent_blocks), stringResource(R.string.all)) {
+                onOpenLogs(LogsLink.Request(StatusFilter.BLOCKED, ""))
+            }
             val recent = summary.recentBlocked.take(5)
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 if (recent.isEmpty()) {
@@ -152,7 +170,10 @@ fun HomeScreen(
                         recent.forEachIndexed { i, c ->
                             if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                             Row(
-                                Modifier.fillMaxWidth().clickable { onOpenConn(c.id) }.padding(horizontal = 10.dp, vertical = 6.dp),
+                                Modifier.fillMaxWidth().combinedClickable(onLongClick = { quick = c }) {
+                                    LogsLink.ids = recent.map { it.id }
+                                    onOpenConn(c.id)
+                                }.padding(start = 10.dp, top = 2.dp, bottom = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 AppIcon(c.app, 28.dp)
@@ -166,11 +187,13 @@ fun HomeScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        "${c.app.name} · ${formatTime(c.firstSeen)}",
+                                        "${c.app.name} · ${formatWhen(c.firstSeen)}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
+                                // quick allow (spec: recent blocks with a quick allow)
+                                TextButton({ quick = c }) { Text(stringResource(R.string.action_allow)) }
                             }
                         }
                     }

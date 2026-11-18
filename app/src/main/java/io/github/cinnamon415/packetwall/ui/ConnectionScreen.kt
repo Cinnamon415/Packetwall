@@ -34,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import io.github.cinnamon415.packetwall.PacketwallApp
@@ -56,6 +58,9 @@ fun ConnectionScreen(
     val conns by source.conns.collectAsState()
     val idx = conns.indexOfFirst { it.id == id }
     val c = conns.getOrNull(idx)
+    // the arrows follow the list the connection was opened from (the log filter), else the whole log
+    val order = remember(conns, id) { LogsLink.ids?.takeIf { id in it } ?: conns.map { it.id } }
+    val pos = order.indexOf(id)
     var tab by rememberSaveable { mutableIntStateOf(initialTab) }
     val fw by app.firewall.state.collectAsState()
     var quick by remember { mutableStateOf(false) }
@@ -67,12 +72,19 @@ fun ConnectionScreen(
         onBack = onBack,
         actions = {
             // neighbours in the log order (newest first): ‹ newer, › older
-            IconButton(onClick = { conns.getOrNull(idx - 1)?.let { onNeighbor(it.id, tab) } }, enabled = idx > 0) {
+            val newer = stringResource(R.string.conn_newer)
+            val older = stringResource(R.string.conn_older)
+            IconButton(
+                onClick = { order.getOrNull(pos - 1)?.let { onNeighbor(it, tab) } },
+                enabled = pos > 0,
+                modifier = Modifier.semantics { contentDescription = newer }
+            ) {
                 Text("‹", style = MaterialTheme.typography.headlineSmall)
             }
             IconButton(
-                onClick = { conns.getOrNull(idx + 1)?.let { onNeighbor(it.id, tab) } },
-                enabled = idx >= 0 && idx < conns.lastIndex
+                onClick = { order.getOrNull(pos + 1)?.let { onNeighbor(it, tab) } },
+                enabled = pos >= 0 && pos < order.lastIndex,
+                modifier = Modifier.semantics { contentDescription = older }
             ) {
                 Text("›", style = MaterialTheme.typography.headlineSmall)
             }
@@ -138,8 +150,8 @@ fun ConnectionScreen(
             },
             R.string.kv_traffic to "↑ ${formatBytes(c.sentBytes)} · ↓ ${formatBytes(c.rcvdBytes)}",
             R.string.kv_packets to "${c.sentPkts} ↑ · ${c.rcvdPkts} ↓",
-            R.string.kv_first_seen to formatTime(c.firstSeen),
-            R.string.kv_last_seen to formatTime(c.lastSeen)
+            R.string.kv_first_seen to formatWhen(c.firstSeen),
+            R.string.kv_last_seen to formatWhen(c.lastSeen)
         )
         Column(Modifier.verticalScroll(rememberScrollState())) {
             Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

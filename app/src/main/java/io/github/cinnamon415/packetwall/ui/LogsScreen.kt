@@ -95,6 +95,19 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
     val compact by vm.compact.collectAsState()
     var quick by remember { mutableStateOf<Conn?>(null) }
     val ctx = LocalContext.current
+    val link by LogsLink.request.collectAsState()
+    LaunchedEffect(link) {
+        link?.let {
+            vm.setStatus(it.status)
+            vm.updateFilter(it.filter)
+            vm.setTab(LogTab.CONNECTIONS)
+            LogsLink.request.value = null
+        }
+    }
+    val open = { id: Int ->
+        LogsLink.ids = shown.map { it.id }
+        onOpenConn(id)
+    }
 
     val scope = rememberCoroutineScope()
     var menu by remember { mutableStateOf(false) }
@@ -105,7 +118,7 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
         title = stringResource(
             R.string.nav_logs
         ),
-        subtitle = "${shown.size} / ${shownState.total}",
+        subtitle = if (tab == LogTab.CAPTURES) null else "${shown.size} / ${shownState.total}",
         onMenu = openDrawer,
         actions = {
             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
@@ -123,22 +136,25 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
             }
         }
     ) {
-        Column(Modifier.padding(horizontal = 12.dp)) {
-            OutlinedTextField(
-                vm.filter, vm::updateFilter, Modifier.fillMaxWidth(), singleLine = true,
-                leadingIcon = { Icon(painterResource(R.drawable.ic_filter), null) },
-                textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
-                isError = !check.valid,
-                supportingText = check.error?.let { e -> { Text(parseErrorText(e)) } },
-                placeholder = { Text(stringResource(R.string.logs_filter_hint), fontFamily = FontFamily.Monospace) },
-                trailingIcon = { FilterHelpButton { vm.updateFilter(it) } }
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                val chips = listOf(R.string.chip_all, R.string.chip_blocked, R.string.chip_allowed)
-                StatusFilter.entries.zip(chips).forEach { (f, label) ->
-                    FilterChip(status == f, { vm.setStatus(f) }, { Text(stringResource(label)) })
+        // the filter and chips do nothing on the recording tab
+        if (tab != LogTab.CAPTURES) {
+            Column(Modifier.padding(horizontal = 12.dp)) {
+                OutlinedTextField(
+                    vm.filter, vm::updateFilter, Modifier.fillMaxWidth(), singleLine = true,
+                    leadingIcon = { Icon(painterResource(R.drawable.ic_filter), null) },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
+                    isError = !check.valid,
+                    supportingText = check.error?.let { e -> { Text(parseErrorText(e)) } },
+                    placeholder = { Text(stringResource(R.string.logs_filter_hint), fontFamily = FontFamily.Monospace) },
+                    trailingIcon = { FilterHelpButton { vm.updateFilter(it) } }
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val chips = listOf(R.string.chip_all, R.string.chip_blocked, R.string.chip_allowed)
+                    StatusFilter.entries.zip(chips).forEach { (f, label) ->
+                        FilterChip(status == f, { vm.setStatus(f) }, { Text(stringResource(label)) })
+                    }
+                    FilterChip(compact, vm::toggleCompact, { Icon(painterResource(R.drawable.ic_density), null) })
                 }
-                FilterChip(compact, vm::toggleCompact, { Icon(painterResource(R.drawable.ic_density), null) })
             }
         }
         PrimaryScrollableTabRow(selectedTabIndex = tab.ordinal, edgePadding = 0.dp) {
@@ -162,9 +178,9 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
             LazyColumn {
                 items(shown, key = { it.id }) { c ->
                     when (tab) {
-                        LogTab.DNS -> DnsRow(app, c, onLongClick = { quick = c }) { onOpenConn(c.id) }
-                        LogTab.HTTP -> HttpRow(c, onLongClick = { quick = c }) { onOpenConn(c.id) }
-                        else -> ConnRow(c, compact, c.tracker, onLongClick = { quick = c }) { onOpenConn(c.id) }
+                        LogTab.DNS -> DnsRow(app, c, onLongClick = { quick = c }) { open(c.id) }
+                        LogTab.HTTP -> HttpRow(c, onLongClick = { quick = c }) { open(c.id) }
+                        else -> ConnRow(c, compact, c.tracker, onLongClick = { quick = c }) { open(c.id) }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                 }
@@ -184,7 +200,7 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
 internal fun ConnRow(c: Conn, compact: Boolean, tracker: String?, onLongClick: () -> Unit, onClick: () -> Unit) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val error = MaterialTheme.colorScheme.error
-    val time = formatTime(c.firstSeen)
+    val time = formatWhen(c.firstSeen)
     val proto = "${c.protoLabel}, ${c.dstPort}"
     Row(
         Modifier.fillMaxWidth()
@@ -302,7 +318,7 @@ private fun HttpRow(c: Conn, onLongClick: () -> Unit, onClick: () -> Unit) {
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
-                formatTime(c.firstSeen),
+                formatWhen(c.firstSeen),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (c.blocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -605,7 +621,7 @@ private fun DnsRow(app: PacketwallApp, c: Conn, onLongClick: () -> Unit, onClick
             )
         }
         Text(
-            formatTime(c.firstSeen),
+            formatWhen(c.firstSeen),
             style = MaterialTheme.typography.bodySmall,
             color = if (c.blocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
         )

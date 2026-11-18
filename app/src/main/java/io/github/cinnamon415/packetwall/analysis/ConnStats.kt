@@ -19,15 +19,18 @@ object ConnStats {
         val byProto: List<Pair<String, Int>> = emptyList(),
         val trackersByApp: List<AppCount> = emptyList(),
         val blockedByApp: List<AppCount> = emptyList(),
-        /** Connections blocked by a firewall rule, newest first (the list order). */
+        /** Blocked connections, newest first (the list order). */
         val recentBlocked: List<Conn> = emptyList(),
-        /** All connections blocked by a rule (not the internal Private DNS drops). */
-        val blockedCount: Int = 0
+        /** All blocked connections: the same count as the log's Blocked chip. */
+        val blockedCount: Int = 0,
+        /** Connections and active ones, from the same list as the rest (not the engine's own counters). */
+        val total: Int = 0,
+        val active: Int = 0
     )
 
     /** [conns] is newest first; [tracker] names the tracking company of a connection, if any. */
     fun summarize(conns: List<Conn>, tracker: (Conn) -> String? = { it.tracker }, top: Int = 8): Summary {
-        val ruleBlocked = conns.filter { it.blocked && it.fwRule != 0 }
+        val ruleBlocked = conns.filter { it.blocked }
         val tracked = conns.mapNotNull { c -> tracker(c)?.let { c to it } }
         return Summary(
             byApp = conns.groupBy { it.uid }
@@ -44,7 +47,9 @@ object ConnStats {
                 .map { (_, l) -> AppCount(l.first().app, l.size) }
                 .sortedByDescending { it.count }.take(top),
             recentBlocked = ruleBlocked.take(top),
-            blockedCount = ruleBlocked.size
+            blockedCount = ruleBlocked.size,
+            total = conns.size,
+            active = conns.count { it.active }
         )
     }
 }

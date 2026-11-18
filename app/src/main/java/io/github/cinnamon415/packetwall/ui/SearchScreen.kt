@@ -218,7 +218,7 @@ private fun ConnResult(c: Conn, onClick: () -> Unit) {
         mono = true,
         sub = listOf(
             c.app.name,
-            formatTime(c.lastSeen),
+            formatWhen(c.lastSeen),
             stringResource(if (c.blocked) R.string.search_blocked else R.string.search_allowed)
         ).joinToString(" · ")
     ) { onClick() }

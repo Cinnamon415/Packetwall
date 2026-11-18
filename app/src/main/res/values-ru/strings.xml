@@ -582,4 +582,6 @@
     <string name="reason_kill_switch">прокси был недоступен, сработал kill switch (Настройки → Upstream)</string>
     <string name="reason_quic">QUIC заблокирован</string>
     <string name="reason_internal">служебная блокировка Packetwall, без правила</string>
+    <string name="conn_newer">Более новое соединение</string>
+    <string name="conn_older">Более старое соединение</string>
 </resources>

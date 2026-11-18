@@ -33,6 +33,9 @@ object CaptureStatus {
      */
     val pausedSince = MutableStateFlow<Long?>(null)
 
+    /** Start of the current (or last) protection session: Home and Statistics count from here. */
+    val sessionStart = MutableStateFlow(0L)
+
     val paused get() = pausedSince.value != null
 
     val running get() = state.value is CaptureState.Running

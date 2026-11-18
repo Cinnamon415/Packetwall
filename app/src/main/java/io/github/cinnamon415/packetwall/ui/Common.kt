@@ -107,6 +107,15 @@ private val timeFmt = DateTimeFormatter.ofPattern("HH:mm:ss")
 /** Local wall-clock time of [ms] (thread-safe). */
 fun formatTime(ms: Long): String = timeFmt.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
 
+private val dayTimeFmt = DateTimeFormatter.ofPattern("dd.MM HH:mm")
+
+/** Time of day for today, date and time for earlier days (the log can keep up to 30 days). */
+fun formatWhen(ms: Long, now: Long = System.currentTimeMillis()): String {
+    val zone = ZoneId.systemDefault()
+    val t = Instant.ofEpochMilli(ms).atZone(zone)
+    return if (t.toLocalDate() == Instant.ofEpochMilli(now).atZone(zone).toLocalDate()) timeFmt.format(t) else dayTimeFmt.format(t)
+}
+
 fun formatDuration(ms: Long): String {
     val s = ms / 1000
     return when {

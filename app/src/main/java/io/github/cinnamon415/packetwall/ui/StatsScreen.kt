@@ -2,6 +2,7 @@ package io.github.cinnamon415.packetwall.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,7 +45,7 @@ import io.github.cinnamon415.packetwall.ui.theme.LocalExtraColors
 import kotlin.math.max
 
 @Composable
-fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
+fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenLogs: (LogsLink.Request) -> Unit) {
     val stats by app.connections.stats.collectAsState()
     val history by app.connections.history.collectAsState()
     val up = LocalExtraColors.current.up
@@ -69,7 +70,7 @@ fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     StatCell(
                         Modifier.weight(1f),
                         stringResource(R.string.tile_requests),
-                        "${stats.totalConns}",
+                        "${summary.total}",
                         MaterialTheme.colorScheme.onSurface
                     )
                     StatCell(Modifier.weight(1f), "DNS", "${stats.dnsQueries}", MaterialTheme.colorScheme.onSurface)
@@ -85,7 +86,8 @@ fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     byApp.forEachIndexed { i, (a, s, r) ->
                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                         Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                            Modifier.fillMaxWidth().clickable { onOpenLogs(LogsLink.Request(StatusFilter.ALL, pkgFilter(a.packageName))) }
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             AppIcon(a, 28.dp)
@@ -117,7 +119,10 @@ fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                 RoundedGroup {
                     byHost.forEachIndexed { i, (h, n, b) ->
                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onOpenLogs(LogsLink.Request(StatusFilter.ALL, "host == \"$h\"")) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
                             Text(
                                 h,
                                 fontFamily = FontFamily.Monospace,
@@ -140,7 +145,10 @@ fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                 RoundedGroup {
                     byProto.forEachIndexed { i, (p, n) ->
                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth().clickable { onOpenLogs(LogsLink.Request(StatusFilter.ALL, "proto == \"$p\"")) }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
                             Text(p, modifier = Modifier.weight(1f))
                             Text("$n", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -153,7 +161,9 @@ fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     trackersByApp.forEachIndexed { i, (a, n, names) ->
                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                         Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                            Modifier.fillMaxWidth()
+                                .clickable { onOpenLogs(LogsLink.Request(StatusFilter.ALL, "tracker && " + pkgFilter(a.packageName))) }
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             AppIcon(a, 28.dp)
@@ -179,7 +189,10 @@ fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     blockedByApp.forEachIndexed { i, (a, n) ->
                         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                         Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                            Modifier.fillMaxWidth().clickable {
+                                onOpenLogs(LogsLink.Request(StatusFilter.BLOCKED, pkgFilter(a.packageName)))
+                            }
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             AppIcon(a, 28.dp)
@@ -194,6 +207,8 @@ fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
         }
     }
 }
+
+private fun pkgFilter(pkg: String) = "pkg == \"$pkg\""
 
 @Composable
 private fun StatCell(modifier: Modifier, label: String, value: String, color: Color) {

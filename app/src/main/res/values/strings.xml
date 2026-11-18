@@ -584,4 +584,6 @@
     <string name="reason_kill_switch">the proxy was unreachable, kill switch (Settings → Upstream)</string>
     <string name="reason_quic">QUIC blocked</string>
     <string name="reason_internal">internal Packetwall block, no rule</string>
+    <string name="conn_newer">Newer connection</string>
+    <string name="conn_older">Older connection</string>
 </resources>

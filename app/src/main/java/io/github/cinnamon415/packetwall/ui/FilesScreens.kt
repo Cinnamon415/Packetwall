@@ -276,7 +276,10 @@ fun FileViewScreen(onBack: () -> Unit, onOpenConn: (Int) -> Unit, onOpenPacket: 
             }
             LazyColumn {
                 items(shown, key = { it.id }) { c ->
-                    ConnRow(c, false, c.tracker, onLongClick = {}) { onOpenConn(c.id) }
+                    ConnRow(c, false, c.tracker, onLongClick = {}) {
+                        LogsLink.ids = shown.map { it.id }
+                        onOpenConn(c.id)
+                    }
                     HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                 }
             }

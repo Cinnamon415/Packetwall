@@ -8,12 +8,26 @@ import androidx.lifecycle.SavedStateHandle
 import io.github.cinnamon415.packetwall.analysis.ConnFilter
 import io.github.cinnamon415.packetwall.engine.Conn
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 
 enum class StatusFilter { ALL, BLOCKED, ALLOWED }
+
+/**
+ * Opening the log already filtered (from Home tiles, Statistics) and stepping through the list that
+ * was on screen (the arrows on a connection).
+ */
+object LogsLink {
+    data class Request(val status: StatusFilter, val filter: String)
+
+    val request = MutableStateFlow<Request?>(null)
+
+    /** Ids of the list a connection was opened from, in its order; null = the whole log. */
+    @Volatile var ids: List<Int>? = null
+}
 
 enum class LogTab { CONNECTIONS, DNS, HTTP, CAPTURES }
 

@@ -134,7 +134,9 @@ class CaptureService : VpnService() {
         pfd = fd
         app.connections.reset()
         CaptureStatus.alwaysOn.value = isAlwaysOn to isLockdownEnabled
-        CaptureStatus.state.value = CaptureState.Running(System.currentTimeMillis())
+        val startedAt = System.currentTimeMillis()
+        CaptureStatus.sessionStart.value = startedAt
+        CaptureStatus.state.value = CaptureState.Running(startedAt)
 
         networks = cm?.let { NetworkTracker(it) { lp -> onLinkChanged(lp) }.also(NetworkTracker::start) }
         if (monitor != null) {
