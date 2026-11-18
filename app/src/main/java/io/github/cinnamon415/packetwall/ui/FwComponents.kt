@@ -28,6 +28,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -44,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +63,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
+import io.github.cinnamon415.packetwall.analysis.GeoIp
 import io.github.cinnamon415.packetwall.engine.Conn
 import io.github.cinnamon415.packetwall.fw.Action
 import io.github.cinnamon415.packetwall.fw.FwState
@@ -68,6 +71,7 @@ import io.github.cinnamon415.packetwall.fw.ListParser
 import io.github.cinnamon415.packetwall.fw.Proto
 import io.github.cinnamon415.packetwall.fw.Route
 import io.github.cinnamon415.packetwall.fw.Rule
+import io.github.cinnamon415.packetwall.fw.RuleScore
 import io.github.cinnamon415.packetwall.fw.SetKind
 import io.github.cinnamon415.packetwall.fw.Target
 import io.github.cinnamon415.packetwall.fw.TargetKind
@@ -109,10 +113,42 @@ fun whoLabel(who: Who, st: FwState, app: PacketwallApp?): String = when (who) {
     is Who.Group -> st.group(who.id)?.name ?: "#${who.id}"
 }
 
+/**
+ * Why a connection was blocked when no rule did it. The engine blocks on its own in a few cases
+ * (see capture_vpn.c); they are told apart by what the connection looks like.
+ */
+fun internalBlockReason(c: Conn, app: PacketwallApp): Int {
+    val s = app.settings.values.value
+    val udp = c.ipproto == 17
+    return when {
+        c.dstPort == 853 || (c.l7proto == "TLS" && c.host != null && DNS_HOSTS.any { c.host.endsWith(it) }) -> R.string.reason_private_dns
+        c.dstPort == 53 || c.l7proto == "DNS" -> R.string.reason_dns
+        s.upstream && udp && s.upUdp == 1 -> R.string.reason_upstream_udp
+        s.upstream && s.upOnDown == 0 -> R.string.reason_kill_switch
+        c.l7proto == "QUIC" -> R.string.reason_quic
+        else -> R.string.reason_internal
+    }
+}
+
+private val DNS_HOSTS = listOf(
+    "dns.google", "cloudflare-dns.com", "one.one.one.one", "1dot1dot1dot1.cloudflare-dns.com", "quad9.net", "adguard-dns.com",
+    "dns.adguard.com", "nextdns.io", "mullvad.net", "controld.com", "opendns.com"
+)
+
 /** "Why": the rule (or blocklist) that decided a connection. */
 @Composable
-fun decisionText(ref: Int, blocked: Boolean, st: FwState, app: PacketwallApp): String? {
-    if (ref == 0) return null
+fun decisionText(ref: Int, blocked: Boolean, st: FwState, app: PacketwallApp, c: Conn? = null): String? {
+    if (ref ==
+        0
+    ) {
+        return if (blocked &&
+            c != null
+        ) {
+            stringResource(R.string.decision_blocked) + " · " + stringResource(internalBlockReason(c, app))
+        } else {
+            null
+        }
+    }
     val verb = stringResource(if (blocked) R.string.decision_blocked else R.string.decision_allowed)
     if (ref < 0) {
         val set = st.set(-ref) ?: return verb
@@ -124,6 +160,14 @@ fun decisionText(ref: Int, blocked: Boolean, st: FwState, app: PacketwallApp): S
 }
 
 // ------------------------------------------------------------------ rule list
+
+/** Why a rule has no effect now: its set is off, or the GeoIP database it needs is missing. */
+fun ruleInactive(r: Rule, st: FwState, geo: GeoIp.Info): Int? = when {
+    !st.isEnabled(r.setId) -> R.string.rule_set_off
+    r.target.kind == TargetKind.COUNTRY && !geo.country.loaded -> R.string.rule_no_geo
+    r.target.kind == TargetKind.ASN && !geo.asn.loaded -> R.string.rule_no_asn
+    else -> null
+}
 
 @Composable
 fun RoundedGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
@@ -147,7 +191,14 @@ fun ActionDot(action: Action) {
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
-fun RuleRow(r: Rule, props: String, selected: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+fun RuleRow(
+    r: Rule,
+    props: String,
+    selected: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
+    dim: Boolean = false,
+    onClick: () -> Unit
+) {
     Row(
         Modifier.fillMaxWidth()
             .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
@@ -159,6 +210,7 @@ fun RuleRow(r: Rule, props: String, selected: Boolean = false, onLongClick: (() 
         Column(Modifier.weight(1f)) {
             Text(
                 ruleTitle(r),
+                color = if (dim) MaterialTheme.colorScheme.outline else Color.Unspecified,
                 fontFamily = if (r.target.kind == TargetKind.ALL) null else FontFamily.Monospace,
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
@@ -188,10 +240,19 @@ fun RulesList(
     onLongClick: ((Rule) -> Unit)? = null,
     onClick: (Rule) -> Unit
 ) {
+    val geo by app.geo.info.collectAsState()
     RoundedGroup {
         rules.forEachIndexed { i, r ->
             if (i > 0) HorizontalDivider(Modifier.padding(start = 52.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh)
-            RuleRow(r, ruleProps(r, st, withSet, withWho, app), r.id in selection, onLongClick?.let { { it(r) } }) { onClick(r) }
+            val inactive = ruleInactive(r, st, geo)
+            val props = listOfNotNull(
+                ruleProps(r, st, withSet, withWho, app).takeIf {
+                    it.isNotEmpty()
+                },
+                inactive?.let { stringResource(it) }
+            )
+                .joinToString(" · ")
+            RuleRow(r, props, r.id in selection, onLongClick?.let { { it(r) } }, dim = inactive != null) { onClick(r) }
         }
     }
 }
@@ -228,7 +289,7 @@ fun validTarget(t: Target): Boolean = when (t.kind) {
     TargetKind.ALL -> true
     TargetKind.DOMAIN -> ListParser.isDomain(t.value.trim().lowercase())
     TargetKind.IP -> ListParser.isIp(t.value.trim().lowercase())
-    TargetKind.COUNTRY -> t.value.trim().length == 2 && t.value.trim().all { it.isLetter() }
+    TargetKind.COUNTRY -> t.value.trim().length == 2 && t.value.trim().all { it in 'a'..'z' || it in 'A'..'Z' }
     TargetKind.ASN -> ListParser.isAsn(t.value)
 }
 
@@ -259,6 +320,7 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
     val portNum = port.toIntOrNull()
     val portOk = port.isEmpty() || (portNum != null && portNum in 1..65535)
     val ok = validTarget(target) && portOk && st.set(setId) != null
+    val cutsAll = initial.who == Who.Global && kind == TargetKind.ALL && action == Action.BLOCK && port.isEmpty() && proto == Proto.ANY
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -275,6 +337,13 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (cutsAll) {
+                    Text(
+                        stringResource(R.string.warn_global_block_all),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
 
                 val kinds = listOf(
                     TargetKind.ALL to R.string.target_all,
@@ -460,9 +529,13 @@ fun QuickRuleSheet(c: Conn, app: PacketwallApp, st: FwState, onDismiss: () -> Un
             add(Target(TargetKind.DOMAIN, base, true))
         }
         add(Target(TargetKind.IP, c.dstIp))
+        RuleScore.subnet(c.dstIp)?.let { add(Target(TargetKind.IP, it)) }
         if (forApp) add(Target(TargetKind.ALL))
     }
-    var choice by rememberSaveable(options.size) { mutableStateOf(if (host != null) 1 else 0) }
+    // unblocking: start from the deciding rule's own target (an exact host stays exact), else the base domain
+    val initialChoice = decidingRule?.target?.let { t -> options.indexOfFirst { it == t } }?.takeIf { it >= 0 }
+        ?: if (host != null) 1 else 0
+    var choice by rememberSaveable(options.size) { mutableStateOf(initialChoice) }
     val sel = options.getOrElse(choice) { options.first() }
     val doneMsg = stringResource(R.string.rule_added)
 
@@ -482,6 +555,27 @@ fun QuickRuleSheet(c: Conn, app: PacketwallApp, st: FwState, onDismiss: () -> Un
                         overflow = TextOverflow.Ellipsis
                     )
                 }
+            }
+            if (c.blocked && decidingRule != null && decidingRule.action == Action.BLOCK) {
+                // the simplest way to unblock: remove the rule that blocks it
+                val undo = LocalUndo.current
+                val deletedMsg = stringResource(R.string.undo_rule_deleted)
+                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            stringResource(R.string.blocked_by_rule, ruleTitle(decidingRule), whoLabel(decidingRule.who, st, app)) +
+                                " · " + (st.set(decidingRule.setId)?.name ?: ""),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        FilledTonalButton({
+                            val prev = app.firewall.state.value
+                            app.firewall.deleteRule(decidingRule.id)
+                            onDismiss()
+                            undo?.offer(deletedMsg) { app.firewall.restore(prev) }
+                        }) { Text(stringResource(R.string.delete_blocking_rule)) }
+                    }
+                }
+                Text(stringResource(R.string.or_add_exception), style = MaterialTheme.typography.labelLarge)
             }
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 listOf(Action.BLOCK to R.string.action_block, Action.ALLOW to R.string.action_allow).forEachIndexed { i, (a, s) ->
@@ -518,6 +612,7 @@ fun QuickRuleSheet(c: Conn, app: PacketwallApp, st: FwState, onDismiss: () -> Un
                             val hint = when {
                                 t.kind == TargetKind.DOMAIN && t.subdomains -> stringResource(R.string.prop_subdomains)
                                 t.kind == TargetKind.DOMAIN -> stringResource(R.string.exact_host)
+                                t.kind == TargetKind.IP && '/' in t.value -> stringResource(R.string.target_subnet)
                                 t.kind == TargetKind.IP -> "IP"
                                 else -> null
                             }
@@ -535,17 +630,21 @@ fun QuickRuleSheet(c: Conn, app: PacketwallApp, st: FwState, onDismiss: () -> Un
                 }
             }
             SetDropdown(st, setId) { setId = it }
+            val who = if (forApp) Who.App(c.app.packageName) else Who.Global
             if (action == Action.ALLOW && decidingSet != null && c.blocked) {
+                val candidate = Rule(0, setId, who, sel, Action.ALLOW)
                 val warn = when {
+                    RuleScore.allowWins(st, candidate, decidingRule, decidingSet) -> null
                     pos(setId) > pos(decidingSet) -> stringResource(R.string.exception_lower_set, st.set(decidingSet)?.name ?: "")
-                    !forApp && decidingRule != null && decidingRule.who != Who.Global -> stringResource(R.string.exception_global_vs_app)
+                    decidingRule != null && RuleScore.whoLevel(who) < RuleScore.whoLevel(decidingRule.who) ->
+                        stringResource(R.string.exception_global_vs_app)
+                    decidingRule != null -> stringResource(R.string.exception_broader, ruleTitle(decidingRule))
                     else -> null
                 }
                 if (warn != null) Text(warn, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
             Spacer(Modifier.height(4.dp))
             Button(modifier = Modifier.fillMaxWidth(), onClick = {
-                val who = if (forApp) Who.App(c.app.packageName) else Who.Global
                 app.firewall.addRule(Rule(0, setId, who, sel, action))
                 onDone(doneMsg)
             }) { Text(stringResource(if (action == Action.BLOCK) R.string.action_block else R.string.action_allow)) }

@@ -112,7 +112,7 @@ fun ConnectionScreen(
                 return@ScreenScaffold
             }
         }
-        val decision = decisionText(c.fwRule, c.blocked, fw, app)
+        val decision = decisionText(c.fwRule, c.blocked, fw, app, c)
         val rows = listOfNotNull(
             decision?.let { R.string.kv_rule to it },
             R.string.kv_protocol to "${c.protoLabel} · ${c.l4} · IPv${c.ipver}",

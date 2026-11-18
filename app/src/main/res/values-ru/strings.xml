@@ -567,4 +567,19 @@
     <string name="changes_070">Светлая тема: как в системе, светлая или тёмная\nПауза захвата: правила работают, журнал и пакеты не пишутся\nОтдельно «Хранить пакеты в памяти» и «Записывать на диск»\n«Анализ файлов»: открытие pcap и pcapng\nСписки блокировки: каталог по категориям и свои правки поверх списка\nГруппы приложений: вкладки «Участники» и «Правила», удобный выбор приложений\n«Поиск»: все правила для приложения, домена или IP и где они лежат\nСправка ⓘ у неочевидных настроек и подсказка по фильтру журнала\nТрансляция на ПК: только через adb или с одноразовым токеном в Wi-Fi\nВнешний прокси: kill switch и DNS без утечек, весь IPv6 через VPN\nДругие приложения больше не могут выключить защиту\nОтмена удаления правил, групп и профилей\nБыстрее: индекс правил, журнал, обновление списков</string>
     <string name="changes_060">Пароль прокси хранится зашифрованным\n«Локальная сеть мимо VPN»\nПонятные ошибки на русском\nИсправления навигации и сохранения настроек</string>
     <string name="changes_050">Upstream: HTTP CONNECT и UDP через SOCKS5, маршрут у правил\nТрансляция pcap и непрерывная запись\nПравила по AS, импорт из других файрволов, метки трекеров, отпечатки TLS\nМассовые действия с правилами</string>
+    <string name="target_subnet">подсеть</string>
+    <string name="exception_broader">Блокировка %1$s в этом наборе не шире этого разрешения и победит. Удалите её или поместите разрешение в набор выше.</string>
+    <string name="blocked_by_rule">Блокирует правило %1$s для «%2$s»</string>
+    <string name="delete_blocking_rule">Удалить блокирующее правило</string>
+    <string name="or_add_exception">Или добавьте исключение:</string>
+    <string name="rule_set_off">набор выключен</string>
+    <string name="rule_no_geo">не действует: нет базы стран (Настройки → GeoIP)</string>
+    <string name="rule_no_asn">не действует: нет базы ASN (Настройки → GeoIP)</string>
+    <string name="warn_global_block_all">Это заблокирует весь интернет для всех приложений, кроме разрешённых правилами выше по приоритету.</string>
+    <string name="reason_private_dns">Частный DNS (DoT) отброшен, чтобы Android перешёл на обычный DNS, который видит файрвол (Настройки → DNS)</string>
+    <string name="reason_dns">DNS-запрос в обход DNS Packetwall</string>
+    <string name="reason_upstream_udp">UDP через прокси выключен: приложение перейдёт на TCP (Настройки → Upstream → UDP)</string>
+    <string name="reason_kill_switch">прокси был недоступен, сработал kill switch (Настройки → Upstream)</string>
+    <string name="reason_quic">QUIC заблокирован</string>
+    <string name="reason_internal">служебная блокировка Packetwall, без правила</string>
 </resources>

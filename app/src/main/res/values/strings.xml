@@ -569,4 +569,19 @@
     <string name="changes_070">Light theme: system, light or dark\nPause: rules keep working, log and packets stop\nSeparate “Keep packets in memory” and “Write to disk”\nFile analysis: open pcap and pcapng\nBlocklists: catalog by category and your own edits on top\nApp groups: Members and Rules tabs, easier app picking\nSearch: every rule for an app, domain or IP and where it lives\nⓘ help for settings that are not obvious, log filter help\nStream to PC: only via adb, or with a one-time token over Wi-Fi\nUpstream proxy: kill switch and DNS without leaks, all IPv6 through the VPN\nOther apps can no longer turn protection off\nUndo for deleted rules, groups and profiles\nFaster: rule index, log, list updates</string>
     <string name="changes_060">Proxy password stored encrypted\nLocal network outside the VPN\nClear, localized errors\nNavigation and settings saving fixes</string>
     <string name="changes_050">Upstream: HTTP CONNECT and UDP over SOCKS5, route per rule\npcap streaming and continuous recording\nAS rules, import from other firewalls, tracker labels, TLS fingerprints\nBulk rule actions</string>
+    <string name="target_subnet">subnet</string>
+    <string name="exception_broader">The block %1$s in this set is not broader than this allow and wins. Delete it or put the allow in a higher set.</string>
+    <string name="blocked_by_rule">Blocked by the rule %1$s for “%2$s”</string>
+    <string name="delete_blocking_rule">Delete the blocking rule</string>
+    <string name="or_add_exception">Or add an exception:</string>
+    <string name="rule_set_off">set is off</string>
+    <string name="rule_no_geo">no effect: country database missing (Settings → GeoIP)</string>
+    <string name="rule_no_asn">no effect: ASN database missing (Settings → GeoIP)</string>
+    <string name="warn_global_block_all">This blocks the whole internet for every app, except what rules higher in priority allow.</string>
+    <string name="reason_private_dns">Private DNS (DoT) dropped so that Android falls back to plain DNS the firewall can see (Settings → DNS)</string>
+    <string name="reason_dns">DNS query around Packetwall\'s DNS</string>
+    <string name="reason_upstream_udp">UDP through the proxy is off: the app falls back to TCP (Settings → Upstream → UDP)</string>
+    <string name="reason_kill_switch">the proxy was unreachable, kill switch (Settings → Upstream)</string>
+    <string name="reason_quic">QUIC blocked</string>
+    <string name="reason_internal">internal Packetwall block, no rule</string>
 </resources>
