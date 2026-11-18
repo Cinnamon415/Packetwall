@@ -42,6 +42,9 @@ sealed interface Dest {
     @Serializable data class Packet(val connId: Int, val seq: Long, val file: Boolean = false) : Dest
 
     @Serializable data class GroupRules(val id: Int) : Dest
+
+    /** One blocklist: entries, search and the user's edits. */
+    @Serializable data class ListEntries(val id: Int) : Dest
 }
 
 /** The back stack. Survives configuration changes and process death (see [rememberNavigator]). */

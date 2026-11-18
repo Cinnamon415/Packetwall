@@ -73,7 +73,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-private fun SearchField(q: String, onChange: (String) -> Unit) {
+internal fun SearchField(q: String, onChange: (String) -> Unit) {
     OutlinedTextField(
         q,
         onChange,

@@ -256,4 +256,23 @@ class FirewallStoreTest {
         assertEquals("three unchanged lists: no reload at all", 0, loads)
         assertEquals(stamp, s.listFile(ids[0]).lastModified())
     }
+
+    @Test fun listEditsSurviveUpdatesAndReachTheEngine() = runTest {
+        val s = store()
+        val id = s.addBlocklist("List", "list.example") // entries: ads.list.example, !ok.list.example
+        advanceUntilIdle()
+        s.setEntryDisabled(id, "ads.list.example", true)
+        s.addEntries(id, ListParser.parse(sequenceOf("||mine.example^")).entries)
+        s.compileNow()
+        val path = lastCompiled.lines().first { it.startsWith("L\t") }.substringAfterLast('\t')
+        val effective = File(path).readLines()
+        assertEquals(listOf("!ok.list.example", "mine.example"), effective)
+        // an update keeps the edits
+        s.updateAllNow()
+        advanceUntilIdle()
+        assertEquals(listOf("ads.list.example"), s.state.value.set(id)!!.disabled)
+        s.resetEdits(id)
+        s.compileNow()
+        assertTrue(lastCompiled.contains("$id.txt"))
+    }
 }

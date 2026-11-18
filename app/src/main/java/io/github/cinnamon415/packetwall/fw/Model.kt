@@ -84,8 +84,13 @@ data class RuleSet(
     val etag: String? = null,
     val lastModified: String? = null,
     /** Hash of the normalized entries: an unchanged download does not rewrite the file. */
-    val contentHash: Int = 0
-)
+    val contentHash: Int = 0,
+    /** The user's edits of a list, kept across updates: entries switched off, and entries added. */
+    val disabled: List<String> = emptyList(),
+    val added: List<String> = emptyList()
+) {
+    val edited get() = disabled.isNotEmpty() || added.isNotEmpty()
+}
 
 @Serializable
 data class SetState(val id: Int, val enabled: Boolean)

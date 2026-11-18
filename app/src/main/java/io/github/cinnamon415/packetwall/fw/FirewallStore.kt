@@ -165,6 +165,7 @@ class FirewallStore(
             )
         }
         File(listsDir, "$id.txt").delete()
+        File(listsDir, "$id.edited.txt").delete()
     }
 
     fun setEnabled(id: Int, enabled: Boolean) = update { st ->
@@ -241,6 +242,58 @@ class FirewallStore(
     // ---------------------------------------------------------------- blocklists
 
     fun listFile(setId: Int) = File(listsDir, "$setId.txt")
+
+    // ---------------------------------------------------------------- list edits
+
+    private fun editList(id: Int, change: (RuleSet) -> RuleSet) = update { st ->
+        st.copy(sets = st.sets.map { if (it.id == id) change(it) else it })
+    }
+
+    /** Switches one entry of a list off (or back on); kept when the list is updated. */
+    fun setEntryDisabled(id: Int, entry: String, disabled: Boolean) = editList(id) {
+        it.copy(disabled = if (disabled) (it.disabled + entry).distinct() else it.disabled - entry)
+    }
+
+    /** Adds entries (already normalized, see [ListParser]) to a list. */
+    fun addEntries(id: Int, entries: List<String>) = editList(id) { it.copy(added = (it.added + entries).distinct()) }
+
+    fun removeAdded(id: Int, entry: String) = editList(id) { it.copy(added = it.added - entry) }
+
+    fun resetEdits(id: Int) = editList(id) { it.copy(disabled = emptyList(), added = emptyList()) }
+
+    private val effectiveKeys = java.util.concurrent.ConcurrentHashMap<Int, String>()
+
+    /**
+     * The file the engine loads for a list: the downloaded one, or with edits a copy without the
+     * switched-off entries plus the added ones. The copy is rebuilt only when the list or the edits change.
+     */
+    private fun effectiveList(st: FwState, id: Int): File {
+        val set = st.set(id)
+        val src = listFile(id)
+        if (set == null || !set.edited) return src
+        val out = File(listsDir, "$id.edited.txt")
+        val key = "${src.length()}:${src.lastModified()}:${set.disabled.hashCode()}:${set.added.hashCode()}"
+        if (out.exists() && effectiveKeys[id] == key) return out
+        val off = set.disabled.toHashSet()
+        val tmp = File(listsDir, "$id.edited.tmp")
+        tmp.bufferedWriter().use { w ->
+            if (src.exists()) {
+                src.bufferedReader().useLines { lines ->
+                    lines.filter { it !in off }.forEach {
+                        w.write(it)
+                        w.write("\n")
+                    }
+                }
+            }
+            set.added.forEach {
+                w.write(it)
+                w.write("\n")
+            }
+        }
+        tmp.renameTo(out)
+        effectiveKeys[id] = key
+        return out
+    }
 
     fun readList(setId: Int): List<String> = listFile(setId).takeIf { it.exists() }?.readLines() ?: emptyList()
 
@@ -644,7 +697,7 @@ class FirewallStore(
     fun compileNow(force: Boolean = false) = synchronized(compileLock) {
         try {
             val st = _state.value
-            RulesCompiler.compile(st, uidOf, ::listFile, compiled, asnPrefixes)
+            RulesCompiler.compile(st, uidOf, { id -> effectiveList(st, id) }, compiled, asnPrefixes)
             val fp = fingerprint()
             if (!force && fp == lastFingerprint && _loaded.value >= 0) return@synchronized
             _loaded.value = loader.load(compiled.absolutePath)

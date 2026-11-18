@@ -57,8 +57,6 @@ import io.github.cinnamon415.packetwall.analysis.ConnFilter
 import io.github.cinnamon415.packetwall.readCapped
 import java.io.File
 import java.io.InputStream
-import java.text.DateFormat
-import java.util.Date
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -206,8 +204,6 @@ fun FilesScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpened: () -> Unit
         }
     }
 }
-
-private fun formatDate(ms: Long) = DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(ms))
 
 @Composable
 private fun FileRow(name: String, line: String, enabled: Boolean, trailing: @Composable () -> Unit = { Chevron() }, onClick: () -> Unit) {

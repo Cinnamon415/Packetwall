@@ -1,44 +1,50 @@
 package io.github.cinnamon415.packetwall.fw
 
+import io.github.cinnamon415.packetwall.R
+
 /** Built-in blocklist catalog. All lists are DNS/host lists; cosmetic rules are skipped on import. */
 object Catalog {
-    data class Entry(val name: String, val url: String, val note: String)
+    enum class Category(val label: Int) {
+        ADS(R.string.listcat_ads),
+        MALWARE(R.string.listcat_malware),
+        TELEMETRY(R.string.listcat_telemetry),
+        REGIONAL(R.string.listcat_regional)
+    }
+
+    /** [note]: what it blocks and roughly how big, shown under the name. */
+    data class Entry(val name: String, val url: String, val category: Category, val note: Int)
+
+    private const val HAGEZI = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock"
 
     val entries = listOf(
+        Entry("HaGeZi Multi Light", "$HAGEZI/light.txt", Category.ADS, R.string.note_hagezi_light),
+        Entry("HaGeZi Multi Normal", "$HAGEZI/multi.txt", Category.ADS, R.string.note_hagezi_normal),
+        Entry("HaGeZi Multi Pro", "$HAGEZI/pro.txt", Category.ADS, R.string.note_hagezi_pro),
+        Entry("OISD small", "https://small.oisd.nl/", Category.ADS, R.string.note_oisd_small),
+        Entry("OISD big", "https://big.oisd.nl/", Category.ADS, R.string.note_oisd_big),
         Entry(
-            "HaGeZi Multi Light",
-            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt",
-            "ads, trackers · ~70k"
+            "AdGuard DNS filter",
+            "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt",
+            Category.ADS,
+            R.string.note_adguard_dns
         ),
         Entry(
-            "HaGeZi Multi Normal",
-            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/multi.txt",
-            "ads, trackers, malware · ~150k"
+            "StevenBlack hosts",
+            "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+            Category.ADS,
+            R.string.note_stevenblack
         ),
-        Entry("HaGeZi Multi Pro", "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt", "stricter · ~250k"),
-        Entry(
-            "HaGeZi Native: OPPO/Realme",
-            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/native.oppo-realme.txt",
-            "system telemetry"
-        ),
-        Entry(
-            "HaGeZi Native: Xiaomi",
-            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/native.xiaomi.txt",
-            "system telemetry"
-        ),
-        Entry(
-            "HaGeZi Native: Samsung",
-            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/native.samsung.txt",
-            "system telemetry"
-        ),
-        Entry("OISD small", "https://small.oisd.nl/", "ads, trackers · low false positives"),
-        Entry("OISD big", "https://big.oisd.nl/", "ads, trackers, malware"),
-        Entry("AdGuard DNS filter", "https://adguardteam.github.io/AdGuardSDNSFilter/Filters/filter.txt", "AdGuard DNS"),
-        Entry("StevenBlack hosts", "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts", "hosts format"),
+        Entry("HaGeZi Threat Intelligence (mini)", "$HAGEZI/tif.mini.txt", Category.MALWARE, R.string.note_hagezi_tif),
+        Entry("Phishing Army", "https://phishing.army/download/phishing_army_blocklist.txt", Category.MALWARE, R.string.note_phishing_army),
+        Entry("HaGeZi Native: Xiaomi", "$HAGEZI/native.xiaomi.txt", Category.TELEMETRY, R.string.note_native),
+        Entry("HaGeZi Native: Samsung", "$HAGEZI/native.samsung.txt", Category.TELEMETRY, R.string.note_native),
+        Entry("HaGeZi Native: OPPO/Realme", "$HAGEZI/native.oppo-realme.txt", Category.TELEMETRY, R.string.note_native),
+        Entry("HaGeZi Native: Huawei", "$HAGEZI/native.huawei.txt", Category.TELEMETRY, R.string.note_native),
         Entry(
             "AdGuard Russian (network rules)",
             "https://filters.adtidy.org/extension/ublock/filters/1.txt",
-            "RU · cosmetic rules skipped"
+            Category.REGIONAL,
+            R.string.note_adguard_ru
         )
     )
 }

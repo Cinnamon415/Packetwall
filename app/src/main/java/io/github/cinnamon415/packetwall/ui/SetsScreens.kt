@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,16 +29,17 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
@@ -56,6 +58,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -96,46 +99,44 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private fun formatDate(ms: Long): String =
+internal fun formatDate(ms: Long): String =
     if (ms == 0L) "—" else DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(ms))
 
 // ------------------------------------------------------------------ Blocklists
 
+/** Lists: the connected ones on top, the catalog below (by category), add by URL or from a file. */
 @Composable
-fun BlocklistsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
+fun BlocklistsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenList: (Int) -> Unit) {
     val st by app.firewall.state.collectAsState()
     val updating by app.firewall.updating.collectAsState()
     var adding by remember { mutableStateOf(false) }
-    var details by remember { mutableStateOf<Int?>(null) }
     var importUri by remember { mutableStateOf<Uri?>(null) }
-    var menu by remember { mutableStateOf(false) }
+    var category by rememberSaveable { mutableStateOf<Catalog.Category?>(null) }
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { importUri = it }
 
     val lists = st.blocklists
     val total = lists.filter { st.isEnabled(it.id) }.sumOf { it.entries }
-    val last = lists.maxOfOrNull { it.updated } ?: 0L
+    val have = lists.mapNotNull { it.url }.toSet()
 
-    ScreenScaffold(title = stringResource(R.string.nav_blocklists), onMenu = openDrawer, actions = {
-        IconButton(onClick = { app.firewall.updateAll() }, enabled = updating.isEmpty()) {
-            Icon(Icons.Filled.Refresh, stringResource(R.string.update_all))
+    ScreenScaffold(
+        title = stringResource(R.string.nav_blocklists),
+        subtitle = stringResource(
+            R.string.lists_enabled,
+            lists.count {
+                st.isEnabled(it.id)
+            },
+            total
+        ),
+        onMenu = openDrawer,
+        actions = {
+            IconButton(onClick = { app.firewall.updateAll() }, enabled = updating.isEmpty() && lists.any { it.url != null }) {
+                Icon(Icons.Filled.Refresh, stringResource(R.string.update_all))
+            }
         }
-        IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
-        DropdownMenu(menu, { menu = false }) {
-            DropdownMenuItem({ Text(stringResource(R.string.import_file)) }, {
-                menu = false
-                openFile.launch(arrayOf("*/*"))
-            })
-        }
-    }) {
+    ) {
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
-                // one-line summary (spec: no big banner)
-                Text(
-                    stringResource(R.string.blocklists_summary, lists.size, total, formatDate(last)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
-                )
+                ListSubheader(stringResource(R.string.lists_connected))
                 if (lists.isEmpty()) {
                     EmptyHint(stringResource(R.string.no_blocklists))
                 } else {
@@ -144,7 +145,7 @@ fun BlocklistsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                             if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                             Row(
                                 Modifier.fillMaxWidth()
-                                    .clickable { details = s.id }
+                                    .clickable { onOpenList(s.id) }
                                     .padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -156,6 +157,7 @@ fun BlocklistsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                                         else -> listOfNotNull(
                                             stringResource(R.string.entries_count, s.entries),
                                             if (s.action == Action.ALLOW) stringResource(R.string.action_allow) else null,
+                                            if (s.edited) stringResource(R.string.list_edits_n, s.disabled.size + s.added.size) else null,
                                             if (s.url == null) stringResource(R.string.from_file) else formatDate(s.updated)
                                         ).joinToString(" · ")
                                     }
@@ -164,7 +166,9 @@ fun BlocklistsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                                         style = MaterialTheme.typography.bodySmall,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        color = if (s.error != null && s.id !in updating) {
+                                        color = if (s.error != null &&
+                                            s.id !in updating
+                                        ) {
                                             MaterialTheme.colorScheme.error
                                         } else {
                                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -179,85 +183,102 @@ fun BlocklistsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                         }
                     }
                 }
+
+                ListSubheader(stringResource(R.string.catalog))
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(category == null, { category = null }, { Text(stringResource(R.string.all)) })
+                    Catalog.Category.entries.forEach { c ->
+                        FilterChip(category == c, { category = if (category == c) null else c }, { Text(stringResource(c.label)) })
+                    }
+                }
+                val available = Catalog.entries.filter { (category == null || it.category == category) && it.url !in have }
+                if (available.isEmpty()) {
+                    EmptyHint(stringResource(R.string.catalog_all_added))
+                } else {
+                    RoundedGroup(Modifier.padding(top = 6.dp)) {
+                        available.forEachIndexed { i, e ->
+                            if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
+                            Row(
+                                Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(e.name, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        stringResource(e.note),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                FilledTonalIconButton({ app.firewall.addBlocklist(e.name, e.url) }) {
+                                    Icon(Icons.Filled.Add, stringResource(R.string.add_list_named, e.name))
+                                }
+                            }
+                        }
+                    }
+                }
                 Spacer(Modifier.height(96.dp))
             }
             ExtendedFloatingActionButton(
                 onClick = { adding = true },
                 icon = { Icon(Icons.Filled.Add, null) },
-                text = { Text(stringResource(R.string.blocklist_add)) },
+                text = { Text(stringResource(R.string.list_add_url_file)) },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
             )
         }
     }
     if (adding) {
-        AddBlocklistDialog(st, onDismiss = { adding = false }) { picks, customName, customUrl ->
-            adding = false
-            picks.forEach { app.firewall.addBlocklist(it.name, it.url) }
-            if (customUrl.isNotBlank()) {
-                app.firewall.addBlocklist(customName.ifBlank { Uri.parse(customUrl).host ?: customUrl }, customUrl.trim())
+        AddListDialog(
+            onDismiss = { adding = false },
+            onFile = {
+                adding = false
+                openFile.launch(arrayOf("*/*"))
             }
+        ) { name, url ->
+            adding = false
+            app.firewall.addBlocklist(name.ifBlank { Uri.parse(url).host ?: url }, url.trim())
         }
     }
-    details?.let { id -> st.set(id)?.let { s -> BlocklistDetails(app, s, onDismiss = { details = null }) } }
     importUri?.let { uri -> ImportListDialog(app, uri) { importUri = null } }
 }
 
 @Composable
-private fun AddBlocklistDialog(st: FwState, onDismiss: () -> Unit, onAdd: (List<Catalog.Entry>, String, String) -> Unit) {
-    val have = st.blocklists.mapNotNull { it.url }.toSet()
-    var picks by remember { mutableStateOf(setOf<Catalog.Entry>()) }
+private fun AddListDialog(onDismiss: () -> Unit, onFile: () -> Unit, onUrl: (String, String) -> Unit) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
-    val urlOk = url.isBlank() || (url.trim().startsWith("https://") || url.trim().startsWith("http://"))
+    val urlOk = url.trim().let { it.startsWith("https://") || it.startsWith("http://") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.blocklist_add)) },
+        title = { Text(stringResource(R.string.list_add_url_file)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                FieldLabel(stringResource(R.string.catalog))
-                Catalog.entries.forEach { e ->
-                    val added = e.url in have
-                    Row(
-                        Modifier.fillMaxWidth().clickable(enabled = !added) { picks = if (e in picks) picks - e else picks + e },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(added || e in picks, null, enabled = !added)
-                        Column {
-                            Text(e.name)
-                            Text(e.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 FieldLabel(stringResource(R.string.custom_url))
                 OutlinedTextField(
                     url,
                     { url = it },
                     Modifier.fillMaxWidth(),
                     singleLine = true,
-                    isError = !urlOk,
+                    isError = url.isNotBlank() && !urlOk,
                     placeholder = { Text("https://…", fontFamily = FontFamily.Monospace) }
                 )
-                OutlinedTextField(
-                    name,
-                    { name = it },
-                    Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.name)) }
+                NameField(name) { name = it }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                FieldLabel(stringResource(R.string.list_from_file_label))
+                OutlinedButton(onClick = onFile, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.import_file)) }
+                Text(
+                    stringResource(R.string.import_file_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         },
-        confirmButton = {
-            TextButton(onClick = { onAdd(picks.toList(), name, url) }, enabled = urlOk && (picks.isNotEmpty() || url.isNotBlank())) {
-                Text(stringResource(R.string.add))
-            }
-        },
+        confirmButton = { TextButton({ onUrl(name, url) }, enabled = urlOk) { Text(stringResource(R.string.add)) } },
         dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
 }
 
 @Composable
-private fun BlocklistDetails(app: PacketwallApp, s: RuleSet, onDismiss: () -> Unit) {
+internal fun BlocklistDetails(app: PacketwallApp, s: RuleSet, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf(s.name) }
     var action by remember { mutableStateOf(s.action) }
     var reject by remember { mutableStateOf(s.reject) }
