@@ -62,8 +62,6 @@
     <string name="all_sets">Все наборы</string>
     <string name="app_not_installed">Приложение не установлено</string>
     <string name="app_rules">Правила приложения</string>
-    <string name="blocklist_add">Добавить список</string>
-    <string name="blocklists_summary">Списков: %1$d · включено записей: %2$d · обновлено %3$s</string>
     <string name="cancel">Отмена</string>
     <string name="catalog">Каталог</string>
     <string name="country_help">Двухбуквенный код ISO. Нужна база стран (Настройки → GeoIP)</string>

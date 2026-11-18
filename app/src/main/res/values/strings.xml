@@ -64,8 +64,6 @@
     <string name="all_sets">All sets</string>
     <string name="app_not_installed">This app is not installed</string>
     <string name="app_rules">App rules</string>
-    <string name="blocklist_add">Add list</string>
-    <string name="blocklists_summary">%1$d lists · %2$d entries enabled · updated %3$s</string>
     <string name="cancel">Cancel</string>
     <string name="catalog">Catalog</string>
     <string name="country_help">Two-letter ISO code. Needs the country database (Settings → GeoIP)</string>

@@ -31,6 +31,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -237,12 +238,13 @@ fun FileViewScreen(onBack: () -> Unit, onOpenConn: (Int) -> Unit, onOpenPacket: 
     }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var filter by rememberSaveable { mutableStateOf("") }
-    val conns = f.conns.value
+    val conns by f.conns.collectAsState()
+    val info by f.packets.info.collectAsState()
     val compiled = remember(filter) { runCatching { ConnFilter.compile(filter) } }
     val shown = remember(conns, compiled) { compiled.getOrNull()?.let { p -> conns.filter(p) } ?: conns }
     ScreenScaffold(
         title = f.name,
-        subtitle = stringResource(R.string.file_summary, f.packets.info.value.packets, conns.size),
+        subtitle = stringResource(R.string.file_summary, info.packets, conns.size),
         monoTitle = true,
         onBack = onBack
     ) {
