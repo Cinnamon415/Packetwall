@@ -105,7 +105,7 @@
     <string name="name">Name</string>
     <string name="no_blocklists">No lists yet. Add one from the catalog or import a file.</string>
     <string name="no_rules_app">No rules for this app: its traffic is decided by its groups\' and the global rules.</string>
-    <string name="no_rules_global">No global rules. Add one or block a host from the logs with a long press.</string>
+    <string name="no_rules_global">No global rules. Add one or block a host from the Log with a long press.</string>
     <string name="ok">OK</string>
     <string name="only_with_rules">Only with rules</string>
     <string name="port">Port</string>
@@ -236,7 +236,7 @@
     <string name="geo_missing">Not downloaded: country rules do not match yet</string>
     <string name="download">Download</string>
     <string name="log_keep">Keep the connection log</string>
-    <string name="storage_db_hint">Closed connections are saved on the device and shown in Logs after a restart. Packets are not saved (use Captures).</string>
+    <string name="storage_db_hint">Closed connections are saved on the device and stay in the Log after a restart. Packets are not saved here: use writing to disk for them.</string>
     <string name="log_clear">Clear the saved log</string>
     <plurals name="days"><item quantity="one">%d day</item><item quantity="other">%d days</item></plurals>
     <string name="exception_lower_set">The block comes from “%1$s”, which has a higher priority: this exception would not apply. Pick that set or a higher one.</string>
@@ -596,4 +596,6 @@
     <string name="move_up">Move up</string>
     <string name="move_down">Move down</string>
     <string name="kind_all_traffic">All traffic</string>
+    <string name="app_history">Connections of this app: %1$d</string>
+    <string name="list_already_added">This list is already added</string>
 </resources>

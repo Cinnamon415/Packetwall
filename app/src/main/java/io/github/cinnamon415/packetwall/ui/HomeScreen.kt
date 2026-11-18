@@ -3,6 +3,7 @@ package io.github.cinnamon415.packetwall.ui
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -65,7 +67,8 @@ fun HomeScreen(
     openDrawer: () -> Unit,
     onOpenLogs: (LogsLink.Request) -> Unit,
     onOpenStats: () -> Unit,
-    onOpenConn: (Int) -> Unit
+    onOpenConn: (Int) -> Unit,
+    onOpenSets: () -> Unit = {}
 ) {
     val summary by appViewModel(app) { a, _ -> DashboardViewModel(a) }.summary.collectAsStateWithLifecycle()
     val stats by app.connections.stats.collectAsState()
@@ -101,7 +104,7 @@ fun HomeScreen(
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            StatusBanner(app, state, now, onToggle)
+            StatusBanner(app, state, now, onToggle, onOpenSets)
 
             // Tiles 2x2
             val blocked = summary.blockedCount
@@ -301,7 +304,7 @@ fun SectionHeader(title: String, action: String?, onAction: (() -> Unit)?) {
  * recorded) and off.
  */
 @Composable
-private fun StatusBanner(app: PacketwallApp, state: CaptureState, now: Long, onToggle: (Boolean) -> Unit) {
+private fun StatusBanner(app: PacketwallApp, state: CaptureState, now: Long, onToggle: (Boolean) -> Unit, onOpenSets: () -> Unit) {
     val ctx = LocalContext.current
     val on = state is CaptureState.Running
     val pausedSince by CaptureStatus.pausedSince.collectAsState()
@@ -330,7 +333,10 @@ private fun StatusBanner(app: PacketwallApp, state: CaptureState, now: Long, onT
                     tint = if (on) fg else MaterialTheme.colorScheme.outline
                 )
                 Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
+                // tapping the status (with the profile in it) switches profiles
+                var profiles by remember { mutableStateOf(false) }
+                ProfileMenu(app, profiles, { profiles = false }, onOpenSets)
+                Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable { profiles = true }) {
                     Text(
                         stringResource(
                             when {

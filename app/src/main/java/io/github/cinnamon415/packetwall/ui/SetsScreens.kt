@@ -232,6 +232,7 @@ fun BlocklistsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenList: (In
     }
     if (adding) {
         AddListDialog(
+            existing = st.blocklists.mapNotNull { it.url?.trim() }.toSet(),
             onDismiss = { adding = false },
             onFile = {
                 adding = false
@@ -246,10 +247,11 @@ fun BlocklistsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenList: (In
 }
 
 @Composable
-private fun AddListDialog(onDismiss: () -> Unit, onFile: () -> Unit, onUrl: (String, String) -> Unit) {
+private fun AddListDialog(existing: Set<String>, onDismiss: () -> Unit, onFile: () -> Unit, onUrl: (String, String) -> Unit) {
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
-    val urlOk = url.trim().let { it.startsWith("https://") || it.startsWith("http://") }
+    val dup = url.trim() in existing
+    val urlOk = url.trim().let { it.startsWith("https://") || it.startsWith("http://") } && !dup
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.list_add_url_file)) },
@@ -262,6 +264,7 @@ private fun AddListDialog(onDismiss: () -> Unit, onFile: () -> Unit, onUrl: (Str
                     Modifier.fillMaxWidth(),
                     singleLine = true,
                     isError = url.isNotBlank() && !urlOk,
+                    supportingText = if (dup) ({ Text(stringResource(R.string.list_already_added)) }) else null,
                     placeholder = { Text("https://…", fontFamily = FontFamily.Monospace) }
                 )
                 NameField(name) { name = it }
@@ -353,6 +356,8 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
     var done by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(uri) {
+        // the provider's file name, not the document id of the path ("msf:1234")
+        withContext(Dispatchers.IO) { displayName(ctx, uri) }?.substringBeforeLast('.')?.takeIf { it.isNotBlank() }?.let { name = it }
         try {
             bytes = withContext(Dispatchers.IO) { ctx.contentResolver.openInputStream(uri)!!.readCapped(Limits.IMPORT_BYTES, "import") }
             detected = withContext(Dispatchers.Default) { ForeignImport.detect(bytes!!) }
@@ -739,7 +744,14 @@ private fun SetDialog(app: PacketwallApp, s: RuleSet, st: FwState, onDismiss: ()
     )
     if (confirm) {
         val n = st.rules.count { it.setId == s.id }
-        ConfirmDialog(stringResource(R.string.delete_set_rules_q, s.name, n), { confirm = false }) {
+        val q = if (s.kind ==
+            SetKind.BLOCKLIST
+        ) {
+            stringResource(R.string.delete_set_q, s.name)
+        } else {
+            stringResource(R.string.delete_set_rules_q, s.name, n)
+        }
+        ConfirmDialog(q, { confirm = false }) {
             app.firewall.deleteSet(s.id)
             onDismiss()
         }

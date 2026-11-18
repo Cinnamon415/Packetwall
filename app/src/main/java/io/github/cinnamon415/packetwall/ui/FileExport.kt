@@ -34,6 +34,13 @@ class FileExport internal constructor(private val start: (String, (OutputStream)
     }
 }
 
+/** The name a document provider shows for [uri] (OpenableColumns.DISPLAY_NAME), or null. */
+fun displayName(ctx: android.content.Context, uri: android.net.Uri): String? = runCatching {
+    ctx.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+        if (c.moveToFirst()) c.getString(0) else null
+    }
+}.getOrNull()
+
 @Composable
 fun rememberFileExport(mime: String, onDone: (ok: Boolean) -> Unit = {}): FileExport {
     val ctx = LocalContext.current

@@ -3,7 +3,6 @@ package io.github.cinnamon415.packetwall.ui
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -83,10 +82,7 @@ private object Recents {
     }
 }
 
-private fun displayName(ctx: Context, uri: Uri): String =
-    ctx.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-        if (c.moveToFirst()) c.getString(0) else null
-    } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "capture"
+private fun fileName(ctx: Context, uri: Uri): String = displayName(ctx, uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "capture"
 
 /** Reads a capture into [OpenedFile]; returns the number of packets. */
 private suspend fun openCapture(app: PacketwallApp, name: String, open: () -> InputStream): Int {
@@ -131,7 +127,7 @@ fun FilesScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpened: () -> Unit
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            open(displayName(ctx, uri), uri.toString()) { ctx.contentResolver.openInputStream(uri)!! }
+            open(fileName(ctx, uri), uri.toString()) { ctx.contentResolver.openInputStream(uri)!! }
         }
     }
 

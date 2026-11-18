@@ -103,7 +103,7 @@
     <string name="name">Название</string>
     <string name="no_blocklists">Списков пока нет. Добавьте из каталога или импортируйте файл.</string>
     <string name="no_rules_app">У приложения нет своих правил: его трафик решают правила его групп и глобальные правила.</string>
-    <string name="no_rules_global">Глобальных правил нет. Добавьте правило или заблокируйте хост из логов долгим нажатием.</string>
+    <string name="no_rules_global">Глобальных правил нет. Добавьте правило или заблокируйте хост из Журнала долгим нажатием.</string>
     <string name="ok">ОК</string>
     <string name="only_with_rules">Только с правилами</string>
     <string name="port">Порт</string>
@@ -234,7 +234,7 @@
     <string name="geo_missing">Не загружена: правила по странам пока не срабатывают</string>
     <string name="download">Загрузить</string>
     <string name="log_keep">Хранить журнал соединений</string>
-    <string name="storage_db_hint">Закрытые соединения сохраняются на устройстве и видны в логах после перезапуска. Пакеты не сохраняются (для них — «Захваты»).</string>
+    <string name="storage_db_hint">Закрытые соединения сохраняются на устройстве и видны в Журнале после перезапуска. Пакеты сюда не сохраняются: для них — запись на диск.</string>
     <string name="log_clear">Очистить сохранённый журнал</string>
     <plurals name="days"><item quantity="one">%d день</item><item quantity="few">%d дня</item><item quantity="many">%d дней</item><item quantity="other">%d дня</item></plurals>
     <string name="exception_lower_set">Блокировка из набора «%1$s», у него приоритет выше: такое исключение не сработает. Выберите этот набор или выше.</string>
@@ -594,4 +594,6 @@
     <string name="move_up">Переместить выше</string>
     <string name="move_down">Переместить ниже</string>
     <string name="kind_all_traffic">Весь трафик</string>
+    <string name="app_history">Соединения приложения: %1$d</string>
+    <string name="list_already_added">Этот список уже подключён</string>
 </resources>

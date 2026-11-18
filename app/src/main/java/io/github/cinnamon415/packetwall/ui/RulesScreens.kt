@@ -282,7 +282,14 @@ fun ListSubheader(text: String, help: Help? = null) {
 /** Rules of one app (or app group) in every set. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit, onOpenGroup: (Int) -> Unit = {}, initialTab: Int = 0) {
+fun WhoRulesScreen(
+    app: PacketwallApp,
+    who: Who,
+    onBack: () -> Unit,
+    onOpenGroup: (Int) -> Unit = {},
+    initialTab: Int = 0,
+    onOpenLogs: (LogsLink.Request) -> Unit = {}
+) {
     val undo = LocalUndo.current
     val ruleDeletedMsg = stringResource(R.string.undo_rule_deleted)
     val groupDeletedMsg = stringResource(R.string.undo_group_deleted)
@@ -371,6 +378,14 @@ fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit, onOpenGroup
                                     )
                                     groups.forEach { g -> AssistChip({ onOpenGroup(g.id) }, { Text(g.name) }) }
                                 }
+                            }
+                        }
+                        if (who is Who.App) {
+                            // the app's connection history: the log filtered to this app
+                            val conns by app.connections.conns.collectAsState()
+                            val n = remember(conns, who.pkg) { conns.count { it.app.packageName == who.pkg } }
+                            TextButton({ onOpenLogs(LogsLink.Request(StatusFilter.ALL, "pkg == \"${who.pkg}\"")) }) {
+                                Text(stringResource(R.string.app_history, n))
                             }
                         }
                         if (rules.isEmpty()) {
@@ -598,7 +613,7 @@ fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onOk: (Str
 // ------------------------------------------------------------------ Global rules
 
 @Composable
-fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
+fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenSets: () -> Unit = {}) {
     val undo = LocalUndo.current
     val ruleDeletedMsg = stringResource(R.string.undo_rule_deleted)
     val groupDeletedMsg = stringResource(R.string.undo_group_deleted)
@@ -626,6 +641,10 @@ fun GlobalScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                 SelectionActions(app, st, selection) { selection = emptySet() }
                 return@ScreenScaffold
             }
+            // the profile these rules run under, switchable here (spec: profile picker on Global)
+            var profiles by remember { mutableStateOf(false) }
+            TextButton({ profiles = true }) { Text((st.profile?.name ?: "—") + " ▾") }
+            ProfileMenu(app, profiles, { profiles = false }, onOpenSets)
             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.more)) }
             DropdownMenu(menu, { menu = false }) {
                 DropdownMenuItem(

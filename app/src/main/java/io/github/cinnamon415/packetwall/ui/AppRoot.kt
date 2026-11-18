@@ -126,7 +126,8 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                                     nav.root(Dest.Logs)
                                 },
                                 onOpenStats = { nav.root(Dest.Stats) },
-                                onOpenConn = { nav.push(Dest.Connection(it)) }
+                                onOpenConn = { nav.push(Dest.Connection(it)) },
+                                onOpenSets = { nav.root(Dest.Sets) }
                             )
                             Dest.Logs -> LogsScreen(app, state, openDrawer, onOpenConn = {
                                 nav.push(Dest.Connection(it))
@@ -176,9 +177,12 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                             )
                             is Dest.AppRules -> WhoRulesScreen(app, Who.App(d.pkg), onBack = {
                                 nav.pop()
-                            }, onOpenGroup = { nav.push(Dest.GroupRules(it)) })
+                            }, onOpenGroup = { nav.push(Dest.GroupRules(it)) }, onOpenLogs = { r ->
+                                LogsLink.request.value = r
+                                nav.push(Dest.Logs)
+                            })
                             is Dest.GroupRules -> WhoRulesScreen(app, Who.Group(d.id), onBack = { nav.pop() }, initialTab = d.tab)
-                            Dest.Global -> GlobalScreen(app, openDrawer)
+                            Dest.Global -> GlobalScreen(app, openDrawer, onOpenSets = { nav.root(Dest.Sets) })
                             Dest.Blocklists -> BlocklistsScreen(app, openDrawer, onOpenList = { nav.push(Dest.ListEntries(it)) })
                             is Dest.ListEntries -> ListScreen(app, d.id, onBack = { nav.pop() }, initialQuery = d.query)
                             Dest.Search -> SearchScreen(
