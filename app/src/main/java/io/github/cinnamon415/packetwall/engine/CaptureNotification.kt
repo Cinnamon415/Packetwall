@@ -40,13 +40,18 @@ object CaptureNotification {
             .apply { if (paused) setContentText(ctx.getString(R.string.paused_hint)) }
             .setContentIntent(openApp(ctx))
             .setOngoing(true)
-            .addAction(
-                Notification.Action.Builder(
-                    null,
-                    ctx.getString(if (paused) R.string.action_resume else R.string.action_pause),
-                    pause
-                ).build()
-            )
+            .apply {
+                // firewall-only mode (no packets kept): nothing to pause
+                if (paused || CaptureStatus.packetsKept.value) {
+                    addAction(
+                        Notification.Action.Builder(
+                            null,
+                            ctx.getString(if (paused) R.string.action_resume else R.string.action_pause),
+                            pause
+                        ).build()
+                    )
+                }
+            }
             .addAction(Notification.Action.Builder(null, ctx.getString(R.string.action_stop), stop).build())
             .build()
     }

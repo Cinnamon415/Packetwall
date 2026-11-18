@@ -56,7 +56,8 @@ class CaptureService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         lastStartId = startId
         if (intent?.action == ACTION_PAUSE || intent?.action == ACTION_RESUME) {
-            CaptureStatus.pausedSince.value = if (intent.action == ACTION_PAUSE) System.currentTimeMillis() else null
+            val pause = intent.action == ACTION_PAUSE && CaptureStatus.packetsKept.value
+            CaptureStatus.pausedSince.value = if (pause) System.currentTimeMillis() else null
             if (CaptureStatus.running) startForegroundCompat() // the notification shows the new state
             return START_STICKY
         }
@@ -64,6 +65,8 @@ class CaptureService : VpnService() {
             control.execute { stopCapture() }
             return START_NOT_STICKY
         }
+        // the notification offers Pause only when packets are kept (read again at start below)
+        CaptureStatus.packetsKept.value = app.settings.current.capturePackets
         // within 5 s of startForegroundService(): here, not on the control thread, which may be busy
         startForegroundCompat()
         pendingStarts.incrementAndGet()
@@ -136,6 +139,8 @@ class CaptureService : VpnService() {
         CaptureStatus.alwaysOn.value = isAlwaysOn to isLockdownEnabled
         val startedAt = System.currentTimeMillis()
         CaptureStatus.sessionStart.value = startedAt
+        CaptureStatus.packetsKept.value = st.capturePackets
+        if (!st.capturePackets) CaptureStatus.pausedSince.value = null
         CaptureStatus.state.value = CaptureState.Running(startedAt)
 
         networks = cm?.let { NetworkTracker(it) { lp -> onLinkChanged(lp) }.also(NetworkTracker::start) }

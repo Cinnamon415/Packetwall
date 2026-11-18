@@ -606,4 +606,5 @@
     <string name="always_on_dialog_title">Чтобы трафик не шёл мимо</string>
     <string name="always_on_dialog">Пока Packetwall не запущен (после перезагрузки, обновления или сбоя), Android пускает трафик без фильтрации. Включите в настройках VPN для Packetwall «Постоянная VPN» и «Блокировать соединения без VPN».</string>
     <string name="later">Позже</string>
+    <string name="chart_paused_since">Запись на паузе с %1$s</string>
 </resources>

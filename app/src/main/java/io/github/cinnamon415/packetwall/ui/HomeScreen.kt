@@ -6,8 +6,11 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,14 +20,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -104,54 +108,63 @@ fun HomeScreen(
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            StatusBanner(app, state, now, onToggle, onOpenSets)
-
-            // Tiles 2x2
-            val blocked = summary.blockedCount
             val alpha = if (on) 1f else 0.5f
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Tile(
-                    Modifier.weight(1f),
-                    R.drawable.ic_logs,
-                    stringResource(R.string.tile_requests),
-                    "${summary.total}",
-                    alpha,
-                    onClick = { onOpenLogs(LogsLink.Request(StatusFilter.ALL, "")) }
-                )
-                Tile(
-                    Modifier.weight(1f),
+            val tiles = listOf(
+                TileSpec(R.drawable.ic_logs, stringResource(R.string.tile_requests), "${summary.total}", null) {
+                    onOpenLogs(LogsLink.Request(StatusFilter.ALL, ""))
+                },
+                TileSpec(
                     R.drawable.ic_block,
                     stringResource(R.string.tile_blocked),
-                    "$blocked",
-                    alpha,
-                    color = MaterialTheme.colorScheme.error,
-                    onClick = { onOpenLogs(LogsLink.Request(StatusFilter.BLOCKED, "")) }
-                )
+                    "${summary.blockedCount}",
+                    MaterialTheme.colorScheme.error
+                ) {
+                    onOpenLogs(LogsLink.Request(StatusFilter.BLOCKED, ""))
+                },
+                TileSpec(R.drawable.ic_import, stringResource(R.string.tile_received), formatBytes(stats.bytesRcvd), null, onOpenStats),
+                TileSpec(R.drawable.ic_wall, stringResource(R.string.tile_active), "${summary.active}", null) {
+                    onOpenLogs(LogsLink.Request(StatusFilter.ALL, "active"))
+                }
+            )
+            val chart: @Composable () -> Unit = {
+                // Speed ↑↓ (spec: home shows the speed graph)
+                if (on) {
+                    val history by app.connections.history.collectAsState()
+                    val pausedAt by CaptureStatus.pausedSince.collectAsState()
+                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                        SpeedChart(
+                            history,
+                            LocalExtraColors.current.up,
+                            LocalExtraColors.current.down,
+                            height = 64.dp,
+                            pausedSince = pausedAt,
+                            paused = LocalExtraColors.current.warn
+                        )
+                    }
+                }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Tile(
-                    Modifier.weight(1f),
-                    R.drawable.ic_import,
-                    stringResource(R.string.tile_received),
-                    formatBytes(stats.bytesRcvd),
-                    alpha,
-                    onClick = onOpenStats
-                )
-                Tile(
-                    Modifier.weight(1f),
-                    R.drawable.ic_wall,
-                    stringResource(R.string.tile_active),
-                    "${summary.active}",
-                    alpha,
-                    onClick = { onOpenLogs(LogsLink.Request(StatusFilter.ALL, "active")) }
-                )
-            }
-
-            // Speed ↑↓ (spec: home shows the speed graph)
-            if (on) {
-                val history by app.connections.history.collectAsState()
-                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                    SpeedChart(history, LocalExtraColors.current.up, LocalExtraColors.current.down, height = 64.dp)
+            BoxWithConstraints {
+                if (maxWidth >= WIDE) {
+                    // wide screens: the status is a column of its own, counters and the chart beside it
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatusBanner(app, state, now, onToggle, onOpenSets, wide = true, modifier = Modifier.width(300.dp))
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                tiles.forEach { t -> Tile(Modifier.weight(1f), t.icon, t.label, t.value, alpha, t.color, t.onClick) }
+                            }
+                            chart()
+                        }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatusBanner(app, state, now, onToggle, onOpenSets, wide = false)
+                        tiles.chunked(2).forEach { pair ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                pair.forEach { t -> Tile(Modifier.weight(1f), t.icon, t.label, t.value, alpha, t.color, t.onClick) }
+                            }
+                        }
+                        chart()
+                    }
                 }
             }
 
@@ -299,15 +312,30 @@ fun SectionHeader(title: String, action: String?, onAction: (() -> Unit)?) {
     }
 }
 
+/** Width from which Home puts the status beside the counters. */
+private val WIDE = 600.dp
+
+private class TileSpec(val icon: Int, val label: String, val value: String, val color: Color?, val onClick: () -> Unit)
+
 /**
- * Protection state with a three-way switch: running, paused (rules keep filtering, nothing is
- * recorded) and off.
+ * Protection state (mockup N8): a card in the state's color with a square icon, the status line
+ * (tap: switch profile) and the actions. Pause exists only while packets are kept: in firewall-only
+ * mode nothing is recorded, so there is nothing to pause. On wide screens the buttons stack.
  */
 @Composable
-private fun StatusBanner(app: PacketwallApp, state: CaptureState, now: Long, onToggle: (Boolean) -> Unit, onOpenSets: () -> Unit) {
+private fun StatusBanner(
+    app: PacketwallApp,
+    state: CaptureState,
+    now: Long,
+    onToggle: (Boolean) -> Unit,
+    onOpenSets: () -> Unit,
+    wide: Boolean,
+    modifier: Modifier = Modifier
+) {
     val ctx = LocalContext.current
     val on = state is CaptureState.Running
     val pausedSince by CaptureStatus.pausedSince.collectAsState()
+    val packets by CaptureStatus.packetsKept.collectAsState()
     val paused = on && pausedSince != null
     val extra = LocalExtraColors.current
     val bg by animateColorAsState(
@@ -323,20 +351,35 @@ private fun StatusBanner(app: PacketwallApp, state: CaptureState, now: Long, onT
         on -> MaterialTheme.colorScheme.onPrimaryContainer
         else -> MaterialTheme.colorScheme.onSurface
     }
-    Surface(shape = RoundedCornerShape(16.dp), color = bg, contentColor = fg) {
+    Surface(modifier, shape = RoundedCornerShape(16.dp), color = bg, contentColor = fg) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    painterResource(if (paused) R.drawable.ic_pause else R.drawable.ic_wall),
-                    null,
-                    modifier = Modifier.size(28.dp),
-                    tint = if (on) fg else MaterialTheme.colorScheme.outline
-                )
+            // tapping the status (with the profile in it) switches profiles
+            var profiles by remember { mutableStateOf(false) }
+            ProfileMenu(app, profiles, { profiles = false }, onOpenSets)
+            Row(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable { profiles = true },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    Modifier.size(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = when {
+                        paused -> extra.warn
+                        on -> MaterialTheme.colorScheme.primary
+                        else -> MaterialTheme.colorScheme.surfaceContainerHighest
+                    },
+                    contentColor = when {
+                        paused -> MaterialTheme.colorScheme.surface
+                        on -> MaterialTheme.colorScheme.onPrimary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(painterResource(if (paused) R.drawable.ic_pause else R.drawable.ic_wall), null, Modifier.size(24.dp))
+                    }
+                }
                 Spacer(Modifier.width(12.dp))
-                // tapping the status (with the profile in it) switches profiles
-                var profiles by remember { mutableStateOf(false) }
-                ProfileMenu(app, profiles, { profiles = false }, onOpenSets)
-                Column(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable { profiles = true }) {
+                Column(Modifier.weight(1f)) {
                     Text(
                         stringResource(
                             when {
@@ -360,7 +403,11 @@ private fun StatusBanner(app: PacketwallApp, state: CaptureState, now: Long, onT
                         )
                         else -> listOfNotNull("VPN", fwState.profile?.name)
                     }
-                    Text(line.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        line.joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = LocalContentColor.current.copy(alpha = 0.85f)
+                    )
                     val strictDns by CaptureStatus.privateDnsStrict.collectAsState()
                     if (on && strictDns) {
                         Text(
@@ -371,37 +418,54 @@ private fun StatusBanner(app: PacketwallApp, state: CaptureState, now: Long, onT
                     }
                 }
             }
-            val modes = listOf(R.string.mode_running, R.string.mode_paused, R.string.mode_off)
-            val current = when {
-                paused -> 1
-                on -> 0
-                else -> 2
-            }
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                modes.forEachIndexed { i, label ->
-                    SegmentedButton(
-                        selected = current == i,
-                        onClick = {
-                            when (i) {
-                                0 -> if (!on) onToggle(true) else CaptureService.setPaused(ctx, false)
-                                1 -> if (on) CaptureService.setPaused(ctx, true)
-                                else -> if (on) onToggle(false)
+            // the actions: phone — side by side, wide — one under the other
+            val buttons: List<@Composable (Modifier) -> Unit> = buildList {
+                when {
+                    !on -> add { m -> StatusButton(m, R.drawable.ic_power, R.string.turn_on, ButtonKind.FILLED) { onToggle(true) } }
+                    paused -> {
+                        add { m ->
+                            StatusButton(m, R.drawable.ic_play, R.string.action_resume, ButtonKind.FILLED) {
+                                CaptureService.setPaused(ctx, false)
                             }
-                        },
-                        enabled = i != 1 || on,
-                        shape = SegmentedButtonDefaults.itemShape(i, modes.size),
-                        colors = if (paused && i == 1) {
-                            SegmentedButtonDefaults.colors(
-                                activeContainerColor = extra.warn,
-                                activeContentColor = MaterialTheme.colorScheme.surface
-                            )
-                        } else {
-                            SegmentedButtonDefaults.colors()
-                        },
-                        icon = {}
-                    ) { Text(stringResource(label), maxLines = 1) }
+                        }
+                        add { m -> StatusButton(m, R.drawable.ic_power, R.string.turn_off, ButtonKind.OUTLINED) { onToggle(false) } }
+                    }
+                    else -> {
+                        if (packets) {
+                            add { m ->
+                                StatusButton(m, R.drawable.ic_pause, R.string.action_pause, ButtonKind.TONAL) {
+                                    CaptureService.setPaused(ctx, true)
+                                }
+                            }
+                        }
+                        add { m -> StatusButton(m, R.drawable.ic_power, R.string.turn_off, ButtonKind.OUTLINED) { onToggle(false) } }
+                    }
+                }
+            }
+            if (wide) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { buttons.forEach { it(Modifier.fillMaxWidth()) } }
+            } else {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    buttons.forEach { it(Modifier.weight(1f)) }
+                    if (buttons.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }
+    }
+}
+
+private enum class ButtonKind { FILLED, TONAL, OUTLINED }
+
+@Composable
+private fun StatusButton(modifier: Modifier, icon: Int, label: Int, kind: ButtonKind, onClick: () -> Unit) {
+    val content: @Composable RowScope.() -> Unit = {
+        Icon(painterResource(icon), null, Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(stringResource(label), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    when (kind) {
+        ButtonKind.FILLED -> Button(onClick, modifier, content = content)
+        ButtonKind.TONAL -> FilledTonalButton(onClick, modifier, content = content)
+        ButtonKind.OUTLINED -> OutlinedButton(onClick, modifier, content = content)
     }
 }

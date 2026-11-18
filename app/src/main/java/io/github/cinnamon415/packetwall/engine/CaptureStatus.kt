@@ -33,6 +33,12 @@ object CaptureStatus {
      */
     val pausedSince = MutableStateFlow<Long?>(null)
 
+    /**
+     * The running session keeps packets (Settings: keep packets in memory, read at start). Without
+     * them Packetwall is a firewall only: nothing is recorded, so there is no pause.
+     */
+    val packetsKept = MutableStateFlow(true)
+
     /** Start of the current (or last) protection session: Home and Statistics count from here. */
     val sessionStart = MutableStateFlow(0L)
 

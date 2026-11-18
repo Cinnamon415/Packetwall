@@ -30,6 +30,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -230,7 +231,14 @@ private fun SplitBar(a: Float, b: Float, ca: Color, cb: Color) {
 
 /** Bytes/s over the last minutes, up and down. */
 @Composable
-fun SpeedChart(h: List<ConnectionsRegister.Sample>, up: Color, down: Color, height: Dp = 120.dp) {
+fun SpeedChart(
+    h: List<ConnectionsRegister.Sample>,
+    up: Color,
+    down: Color,
+    height: Dp = 120.dp,
+    pausedSince: Long? = null,
+    paused: Color = up
+) {
     val grid = MaterialTheme.colorScheme.outlineVariant
     val rates = remember(h) {
         h.zipWithNext { a, b ->
@@ -241,23 +249,32 @@ fun SpeedChart(h: List<ConnectionsRegister.Sample>, up: Color, down: Color, heig
     val peak = rates.maxOfOrNull { max(it.second, it.third) } ?: 0f
     val cur = rates.lastOrNull()
     Column(Modifier.padding(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Dot(up)
+        if (pausedSince != null) {
+            // on pause: what was recorded until then, a dashed line after (mockup N8)
             Text(
-                " ↑ " + stringResource(R.string.per_second, formatBytes((cur?.second ?: 0f).toLong())) + "   ",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Dot(down)
-            Text(
-                " ↓ " + stringResource(R.string.per_second, formatBytes((cur?.third ?: 0f).toLong())),
-                style = MaterialTheme.typography.bodySmall
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                stringResource(R.string.speed_max, stringResource(R.string.per_second, formatBytes(peak.toLong()))),
+                stringResource(R.string.chart_paused_since, formatTime(pausedSince).substring(0, 5)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Dot(up)
+                Text(
+                    " ↑ " + stringResource(R.string.per_second, formatBytes((cur?.second ?: 0f).toLong())) + "   ",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Dot(down)
+                Text(
+                    " ↓ " + stringResource(R.string.per_second, formatBytes((cur?.third ?: 0f).toLong())),
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    stringResource(R.string.speed_max, stringResource(R.string.per_second, formatBytes(peak.toLong()))),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         Spacer(Modifier.height(8.dp))
         Canvas(Modifier.fillMaxWidth().height(height)) {
@@ -268,8 +285,20 @@ fun SpeedChart(h: List<ConnectionsRegister.Sample>, up: Color, down: Color, heig
             if (rates.size < 2 || peak <= 0f) return@Canvas
             val t0 = rates.first().first
             val span = max(1L, rates.last().first - t0).toFloat()
+            val shown = if (pausedSince != null) rates.filter { it.first <= pausedSince } else rates
+            if (pausedSince != null) {
+                val x0 = ((pausedSince - t0).coerceAtLeast(0) / span * size.width).coerceIn(0f, size.width)
+                drawLine(
+                    paused,
+                    Offset(x0, size.height - 1.dp.toPx()),
+                    Offset(size.width, size.height - 1.dp.toPx()),
+                    1.5.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()))
+                )
+            }
+            if (shown.size < 2) return@Canvas
             fun path(sel: (Triple<Long, Float, Float>) -> Float) = Path().apply {
-                rates.forEachIndexed { i, r ->
+                shown.forEachIndexed { i, r ->
                     val x = (r.first - t0) / span * size.width
                     val y = size.height - sel(r) / peak * size.height
                     if (i == 0) moveTo(x, y) else lineTo(x, y)
