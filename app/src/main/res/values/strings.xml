@@ -88,7 +88,6 @@
     <string name="for_app">For this app</string>
     <string name="from_file">from a file</string>
     <string name="group_members">%1$d apps</string>
-    <string name="group_members_edit">Edit members</string>
     <string name="group_new">New app group</string>
     <string name="groups">Groups</string>
     <string name="import_action">Import</string>
@@ -105,7 +104,7 @@
     <string name="loading">Loading…</string>
     <string name="name">Name</string>
     <string name="no_blocklists">No lists yet. Add one from the catalog or import a file.</string>
-    <string name="no_rules_app">No rules for this app. Its traffic is decided by global rules.</string>
+    <string name="no_rules_app">No rules for this app: its traffic is decided by its groups\' and the global rules.</string>
     <string name="no_rules_global">No global rules. Add one or block a host from the logs with a long press.</string>
     <string name="ok">OK</string>
     <string name="only_with_rules">Only with rules</string>
@@ -282,7 +281,6 @@
     <string name="stream_lan">Allow connections from the local network</string>
     <string name="stream_lan_warn">Anyone on this Wi-Fi who has the link with the key can read the captured traffic.</string>
     <string name="record_title">Continuous recording</string>
-    <string name="record_hint">Ring of pcapng files on the device</string>
     <string name="record_size">File size</string>
     <string name="record_age">New file after</string>
     <string name="record_keep">Files to keep</string>
@@ -393,7 +391,7 @@
     <string name="mode_off">Off</string>
     <string name="status_paused">Capture paused</string>
     <string name="record_to_disk">Write packets to disk (pcapng)</string>
-    <string name="record_to_disk_hint">A ring of pcapng files: Log → Recordings</string>
+    <string name="record_to_disk_hint">A ring of pcapng files on the device; open them in File analysis</string>
     <string name="record_needs_packets">Needs “Keep packets in memory”</string>
     <string name="nav_files">File analysis</string>
     <string name="files_open">Open a pcap or pcapng</string>
@@ -446,4 +444,23 @@
     <string name="list_reset_q">Reset %1$d edits of this list?</string>
     <string name="list_add_entry">Own entry</string>
     <string name="list_add_entry_hint">A domain (with its subdomains), an IP or CIDR, or a line in list syntax: ||x^, @@||x^ to allow, hosts lines. One per line.</string>
+    <string name="record_off">Off. Turn it on in Settings → Analysis</string>
+    <string name="record_waiting">Starts with the next packets · files up to %1$d MB, last %2$d kept</string>
+    <string name="group_label">Group</string>
+    <plurals name="apps_n"><item quantity="one">%d app</item><item quantity="other">%d apps</item></plurals>
+    <string name="more">More</string>
+    <string name="group_delete">Delete group</string>
+    <string name="group_tab_members">Members %1$d</string>
+    <string name="group_tab_rules">Rules %1$d</string>
+    <string name="app_in_groups">In groups:</string>
+    <string name="no_rules_group">No rules for this group yet. Rules here apply to every member.</string>
+    <string name="group_add_apps">Add apps</string>
+    <string name="group_empty">No apps in the group yet</string>
+    <string name="undo_member_removed">%1$s removed from the group</string>
+    <string name="app_not_installed_short">%1$s · not installed</string>
+    <string name="group_remove_member">Remove %1$s</string>
+    <string name="group_add_to">Add to “%1$s”</string>
+    <string name="nothing_found">Nothing found</string>
+    <string name="group_add_n">Add %1$d</string>
+    <string name="system_apps">System</string>
 </resources>

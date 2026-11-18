@@ -490,24 +490,13 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
     var profileMenu by remember { mutableStateOf<Int?>(null) }
     var renameProfile by remember { mutableStateOf<Int?>(null) }
     var importJsonUri by remember { mutableStateOf<Uri?>(null) }
-    var importListUri by remember { mutableStateOf<Uri?>(null) }
 
     val export = rememberFileExport("application/json")
     val openJson = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { importJsonUri = it }
-    val openList = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { importListUri = it }
 
     ScreenScaffold(title = stringResource(R.string.nav_sets), onMenu = openDrawer, actions = {
         IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
         DropdownMenu(menu, { menu = false }) {
-            DropdownMenuItem({ Text(stringResource(R.string.set_new)) }, {
-                menu = false
-                newSet = true
-            })
-            DropdownMenuItem({ Text(stringResource(R.string.profile_new)) }, {
-                menu = false
-                newProfile = true
-            })
-            HorizontalDivider()
             DropdownMenuItem({ Text(stringResource(R.string.export_json)) }, {
                 menu = false
                 export.launchText("packetwall-rules.json") { app.firewall.exportJson() }
@@ -515,10 +504,6 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
             DropdownMenuItem({ Text(stringResource(R.string.import_json)) }, {
                 menu = false
                 openJson.launch(arrayOf("application/json", "text/*", "*/*"))
-            })
-            DropdownMenuItem({ Text(stringResource(R.string.import_file)) }, {
-                menu = false
-                openList.launch(arrayOf("*/*"))
             })
         }
     }) {
@@ -566,26 +551,31 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     }
                 }
             }
+            TextButton(onClick = { newProfile = true }) {
+                Icon(Icons.Filled.Add, null)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.profile_new))
+            }
             Text(
                 stringResource(R.string.profiles_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp, top = 6.dp)
+                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
             )
 
             ListSubheader(stringResource(R.string.sets_order))
             ReorderableSets(app, st) { editSet = it }
-            Text(
-                stringResource(R.string.sets_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp, top = 6.dp)
-            )
             TextButton(onClick = { newSet = true }) {
                 Icon(Icons.Filled.Add, null)
                 Spacer(Modifier.width(6.dp))
                 Text(stringResource(R.string.set_new))
             }
+            Text(
+                stringResource(R.string.sets_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
+            )
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -610,7 +600,6 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
     }
     editSet?.let { s -> SetDialog(app, s, st) { editSet = null } }
     importJsonUri?.let { uri -> ImportJsonDialog(app, uri) { importJsonUri = null } }
-    importListUri?.let { uri -> ImportListDialog(app, uri) { importListUri = null } }
 }
 
 /** Long press a row and drag to change the priority; the first set wins. */

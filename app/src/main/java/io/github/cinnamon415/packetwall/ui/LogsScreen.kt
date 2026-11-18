@@ -6,7 +6,6 @@ import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -514,48 +512,19 @@ fun CopyCode(text: String) {
 private fun RecordCard(app: PacketwallApp, s: Settings.Values, onChanged: () -> Unit) {
     val st by app.recorder.state.collectAsState()
     LaunchedEffect(st.file) { onChanged() }
+    // settings live in Settings → Analysis; here only what the recorder is doing
     RoundedGroup {
         Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.record_title), style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        if (st.running &&
-                            st.file != null
-                        ) {
-                            "${st.file} · ${formatBytes(st.bytes)}"
-                        } else {
-                            stringResource(R.string.record_hint)
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Switch(s.record, { v -> app.settings.update { it.copy(record = v) } })
-            }
-            if (s.record) {
-                @Composable fun chips(label: String, options: List<Int>, value: Int, fmt: (Int) -> String, set: (Int) -> Unit) {
-                    Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        options.forEach { o -> FilterChip(o == value, { set(o) }, { Text(fmt(o)) }) }
-                    }
-                }
-                chips(stringResource(R.string.record_size), listOf(8, 32, 128, 512), s.recordMb, {
-                    "$it MB"
-                }) { v -> app.settings.update { it.copy(recordMb = v) } }
-                chips(stringResource(R.string.record_age), listOf(10, 60, 360, 1440), s.recordMinutes, {
-                    if (it <
-                        60
-                    ) {
-                        "$it min"
-                    } else {
-                        "${it / 60} h"
-                    }
-                }) { v -> app.settings.update { it.copy(recordMinutes = v) } }
-                chips(stringResource(R.string.record_keep), listOf(2, 5, 10, 24), s.recordKeep, {
-                    "$it"
-                }) { v -> app.settings.update { it.copy(recordKeep = v) } }
-            }
+            Text(stringResource(R.string.record_title), style = MaterialTheme.typography.titleSmall)
+            Text(
+                when {
+                    !s.record || !s.capturePackets -> stringResource(R.string.record_off)
+                    st.running && st.file != null -> "${st.file} · ${formatBytes(st.bytes)}"
+                    else -> stringResource(R.string.record_waiting, s.recordMb, s.recordKeep)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

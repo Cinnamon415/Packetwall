@@ -154,7 +154,9 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                                 onOpenApp = { nav.push(Dest.AppRules(it)) },
                                 onOpenGroup = { nav.push(Dest.GroupRules(it)) }
                             )
-                            is Dest.AppRules -> WhoRulesScreen(app, Who.App(d.pkg), onBack = { nav.pop() })
+                            is Dest.AppRules -> WhoRulesScreen(app, Who.App(d.pkg), onBack = {
+                                nav.pop()
+                            }, onOpenGroup = { nav.push(Dest.GroupRules(it)) })
                             is Dest.GroupRules -> WhoRulesScreen(app, Who.Group(d.id), onBack = { nav.pop() })
                             Dest.Global -> GlobalScreen(app, openDrawer)
                             Dest.Blocklists -> BlocklistsScreen(app, openDrawer, onOpenList = { nav.push(Dest.ListEntries(it)) })

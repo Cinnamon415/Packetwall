@@ -18,31 +18,41 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -53,10 +63,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
@@ -139,11 +152,6 @@ fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -
                     menu = false
                 }, trailingIcon = { if (q.sort == sort) Text("✓") })
             }
-            HorizontalDivider()
-            DropdownMenuItem({ Text(stringResource(R.string.group_new)) }, {
-                menu = false
-                newGroup = true
-            })
         }
     }) {
         SearchField(vm.search, vm::updateSearch)
@@ -155,7 +163,7 @@ fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -
             return@ScreenScaffold
         }
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
-            if (st.groups.isNotEmpty() && vm.search.isBlank()) {
+            if (vm.search.isBlank()) {
                 item { ListSubheader(stringResource(R.string.groups)) }
                 items(st.groups, key = { "g${it.id}" }) { g ->
                     Row(
@@ -187,6 +195,13 @@ fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -
                             }
                         }
                         Chevron()
+                    }
+                }
+                item {
+                    TextButton(onClick = { newGroup = true }, modifier = Modifier.padding(horizontal = 4.dp)) {
+                        Icon(Icons.Filled.Add, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.group_new))
                     }
                 }
                 item { ListSubheader(stringResource(R.string.nav_apps)) }
@@ -257,8 +272,9 @@ fun ListSubheader(text: String) {
 // ------------------------------------------------------------------ App / group rules
 
 /** Rules of one app (or app group) in every set. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit) {
+fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit, onOpenGroup: (Int) -> Unit = {}) {
     val undo = LocalUndo.current
     val ruleDeletedMsg = stringResource(R.string.undo_rule_deleted)
     val groupDeletedMsg = stringResource(R.string.undo_group_deleted)
@@ -268,7 +284,9 @@ fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit) {
     var editing by remember { mutableStateOf<Rule?>(null) }
     var menu by remember { mutableStateOf(false) }
     var rename by remember { mutableStateOf(false) }
-    var members by remember { mutableStateOf(false) }
+    var picker by rememberSaveable { mutableStateOf(false) }
+    // a group opens on its members: that is what a new group needs first
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     var selection by remember { mutableStateOf(setOf<Int>()) }
 
     if (who is Who.Group && group == null) {
@@ -283,19 +301,16 @@ fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit) {
             }.thenBy { it.target.kind }.thenBy { it.target.value }
         )
     val title = info?.name ?: group?.name ?: (who as? Who.App)?.pkg ?: ""
-    val subtitle =
-        info?.let { "${it.packageName} · uid ${it.uid}" } ?: group?.let { stringResource(R.string.group_members, it.packages.size) }
+    val subtitle = info?.let { "${it.packageName} · uid ${it.uid}" }
+        ?: group?.let {
+            stringResource(R.string.group_label) + " · " +
+                pluralStringResource(R.plurals.apps_n, it.packages.size, it.packages.size)
+        }
+    val showRules = group == null || tab == 1
 
     BackHandler(selection.isNotEmpty()) { selection = emptySet() }
     ScreenScaffold(
-        title = if (selection.isEmpty()) {
-            title
-        } else {
-            stringResource(
-                R.string.selected_n,
-                selection.size
-            )
-        },
+        title = if (selection.isEmpty()) title else stringResource(R.string.selected_n, selection.size),
         subtitle = subtitle,
         onBack = onBack,
         actions = {
@@ -304,18 +319,11 @@ fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit) {
                 return@ScreenScaffold
             }
             if (group != null) {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null) }
+                IconButton(onClick = { rename = true }) { Icon(Icons.Filled.Edit, stringResource(R.string.rename)) }
+                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.more)) }
                 DropdownMenu(menu, { menu = false }) {
-                    DropdownMenuItem({ Text(stringResource(R.string.group_members_edit)) }, {
-                        menu = false
-                        members = true
-                    })
-                    DropdownMenuItem({ Text(stringResource(R.string.rename)) }, {
-                        menu = false
-                        rename = true
-                    })
                     DropdownMenuItem(
-                        { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
+                        { Text(stringResource(R.string.group_delete), color = MaterialTheme.colorScheme.error) },
                         {
                             menu = false
                             val prev = app.firewall.state.value
@@ -328,43 +336,68 @@ fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit) {
         }
     ) {
         Box(Modifier.fillMaxSize()) {
-            Column(Modifier.padding(horizontal = 12.dp)) {
-                if (info == null && who is Who.App) EmptyHint(stringResource(R.string.app_not_installed))
-                if (rules.isEmpty()) {
-                    EmptyHint(stringResource(R.string.no_rules_app))
+            Column {
+                if (group != null) {
+                    PrimaryTabRow(selectedTabIndex = tab) {
+                        Tab(tab == 0, { tab = 0 }, text = { Text(stringResource(R.string.group_tab_members, group.packages.size)) })
+                        Tab(tab == 1, { tab = 1 }, text = { Text(stringResource(R.string.group_tab_rules, rules.size)) })
+                    }
+                }
+                if (group != null && tab == 0) {
+                    GroupMembers(app, group, onAdd = { picker = true })
                 } else {
-                    Spacer(Modifier.height(4.dp))
-                    RulesList(
-                        rules,
-                        st,
-                        withSet = true,
-                        withWho = false,
-                        app = app,
-                        selection = selection,
-                        onLongClick = { r -> selection = selection + r.id }
-                    ) { r ->
-                        if (selection.isNotEmpty()) {
-                            selection = if (r.id in
-                                selection
-                            ) {
-                                selection - r.id
-                            } else {
-                                selection + r.id
+                    Column(Modifier.padding(horizontal = 12.dp)) {
+                        if (info == null && who is Who.App) EmptyHint(stringResource(R.string.app_not_installed))
+                        if (who is Who.App) {
+                            val groups = st.groups.filter { who.pkg in it.packages }
+                            if (groups.isNotEmpty()) {
+                                Row(
+                                    Modifier.horizontalScroll(rememberScrollState()).padding(top = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        stringResource(R.string.app_in_groups),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    groups.forEach { g -> AssistChip({ onOpenGroup(g.id) }, { Text(g.name) }) }
+                                }
                             }
+                        }
+                        if (rules.isEmpty()) {
+                            EmptyHint(stringResource(if (group != null) R.string.no_rules_group else R.string.no_rules_app))
                         } else {
-                            editing = r
+                            Spacer(Modifier.height(4.dp))
+                            RulesList(
+                                rules,
+                                st,
+                                withSet = true,
+                                withWho = false,
+                                app = app,
+                                selection = selection,
+                                onLongClick = { r -> selection = selection + r.id }
+                            ) { r ->
+                                if (selection.isNotEmpty()) {
+                                    selection = if (r.id in selection) selection - r.id else selection + r.id
+                                } else {
+                                    editing = r
+                                }
+                            }
                         }
                     }
                 }
             }
-            ExtendedFloatingActionButton(
-                onClick = {
-                    editing = Rule(0, FwState.DEFAULT_SET, who, Target(TargetKind.ALL), Action.BLOCK)
-                },
-                icon = { Icon(Icons.Filled.Add, null) },
-                text = { Text(stringResource(R.string.rule_add)) },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
-            )
+            if (showRules) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        editing = Rule(0, FwState.DEFAULT_SET, who, Target(TargetKind.ALL), Action.BLOCK)
+                    },
+                    icon = { Icon(Icons.Filled.Add, null) },
+                    text = { Text(stringResource(R.string.rule_add)) },
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+                )
+            }
         }
     }
     editing?.let { r ->
@@ -394,65 +427,152 @@ fun WhoRulesScreen(app: PacketwallApp, who: Who, onBack: () -> Unit) {
             app.firewall.saveGroup(group.copy(name = it))
         }
     }
-    if (members && group != null) {
-        GroupMembersDialog(app, group, { members = false }) {
-            members = false
-            app.firewall.saveGroup(group.copy(packages = it))
+    if (picker && group != null) {
+        AppPickerDialog(app, group, { picker = false }) { added ->
+            picker = false
+            // re-read: the group may have changed while the picker was open
+            val g = app.firewall.state.value.group(group.id) ?: return@AppPickerDialog
+            app.firewall.saveGroup(g.copy(packages = (g.packages + added).distinct().sorted()))
         }
     }
 }
 
+/** Members of a group, each with ✕; "Add apps" opens the full-screen picker. */
 @Composable
-private fun GroupMembersDialog(app: PacketwallApp, g: AppGroup, onDismiss: () -> Unit, onSave: (List<String>) -> Unit) {
-    val all by produceState<List<AppInfo>>(emptyList()) {
+private fun GroupMembers(app: PacketwallApp, g: AppGroup, onAdd: () -> Unit) {
+    val undo = LocalUndo.current
+    val removedMsg = stringResource(R.string.undo_member_removed)
+    val members = remember(g.packages) {
+        g.packages.map { pkg -> pkg to app.apps.byPackage(pkg) }.sortedBy { (pkg, a) -> (a?.name ?: pkg).lowercase() }
+    }
+    LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+        item {
+            FilledTonalButton(onClick = onAdd, modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                Icon(Icons.Filled.Add, null)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.group_add_apps))
+            }
+        }
+        if (members.isEmpty()) item { EmptyHint(stringResource(R.string.group_empty)) }
+        items(members, key = { it.first }) { (pkg, a) ->
+            Row(
+                Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (a != null) {
+                    AppIcon(a, 40.dp)
+                } else {
+                    Box(Modifier.size(40.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(a?.name ?: pkg, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        if (a == null) stringResource(R.string.app_not_installed_short, pkg) else pkg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton({
+                    val prev = app.firewall.state.value
+                    val cur = prev.group(g.id) ?: return@IconButton
+                    app.firewall.saveGroup(cur.copy(packages = cur.packages - pkg))
+                    undo?.offer(removedMsg.format(a?.name ?: pkg)) { app.firewall.restore(prev) }
+                }) { Icon(Icons.Filled.Close, stringResource(R.string.group_remove_member, a?.name ?: pkg)) }
+            }
+        }
+    }
+}
+
+/** Full-screen choice of apps to add to [g]; current members are not listed. */
+@Composable
+private fun AppPickerDialog(app: PacketwallApp, g: AppGroup, onDismiss: () -> Unit, onAdd: (List<String>) -> Unit) {
+    val all by produceState<List<AppInfo>?>(null) {
         value = withContext(Dispatchers.IO) { app.apps.installed().sortedBy { it.name.lowercase() } }
     }
-    var sel by remember { mutableStateOf(g.packages.toSet()) }
-    var q by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(g.name) },
-        text = {
-            Column {
-                OutlinedTextField(
-                    q,
-                    { q = it },
-                    Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    leadingIcon = { Icon(Icons.Filled.Search, null) }
-                )
-                LazyColumn(Modifier.height(380.dp)) {
+    var sel by rememberSaveable { mutableStateOf(listOf<String>()) }
+    var q by rememberSaveable { mutableStateOf("") }
+    var system by rememberSaveable { mutableStateOf(false) }
+    Dialog(onDismiss, DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+            Box(Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize()) {
+                    Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onDismiss) { Icon(Icons.Filled.Close, stringResource(R.string.cancel)) }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.group_add_to, g.name),
+                                style = MaterialTheme.typography.titleLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                stringResource(R.string.selected_n, sel.size),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    SearchField(q, { q = it })
+                    Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(system, { system = !system }, { Text(stringResource(R.string.system_apps)) })
+                    }
                     val n = q.trim().lowercase()
-                    items(
-                        all.filter {
-                            n.isEmpty() || it.name.lowercase().contains(n) || it.packageName.contains(n)
-                        },
-                        key = { it.packageName }
-                    ) { a ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable {
-                                sel = if (a.packageName in
-                                    sel
-                                ) {
-                                    sel - a.packageName
-                                } else {
-                                    sel + a.packageName
+                    val shown = all?.filter {
+                        it.packageName !in g.packages &&
+                            (system || !it.isSystem || it.packageName in sel) &&
+                            (n.isEmpty() || it.name.lowercase().contains(n) || it.packageName.contains(n))
+                    }
+                    when {
+                        shown == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(stringResource(R.string.loading))
+                        }
+                        shown.isEmpty() -> EmptyHint(stringResource(R.string.nothing_found))
+                        else -> {
+                            // a new filter starts from the top, not from wherever the old first row moved to
+                            val listState = rememberLazyListState()
+                            LaunchedEffect(system, n) { listState.scrollToItem(0) }
+                            LazyColumn(state = listState, contentPadding = PaddingValues(bottom = 88.dp)) {
+                                items(shown, key = { it.packageName }) { a ->
+                                    val on = a.packageName in sel
+                                    Row(
+                                        Modifier.fillMaxWidth().clickable { sel = if (on) sel - a.packageName else sel + a.packageName }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Checkbox(on, null)
+                                        Spacer(Modifier.width(4.dp))
+                                        AppIcon(a, 36.dp)
+                                        Spacer(Modifier.width(12.dp))
+                                        Column(Modifier.weight(1f)) {
+                                            Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text(
+                                                a.packageName,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                    }
                                 }
-                            },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(a.packageName in sel, null)
-                            AppIcon(a, 28.dp)
-                            Spacer(Modifier.width(8.dp))
-                            Text(a.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
                     }
                 }
+                if (sel.isNotEmpty()) {
+                    ExtendedFloatingActionButton(
+                        onClick = { onAdd(sel) },
+                        icon = { Icon(Icons.Filled.Check, null) },
+                        text = { Text(stringResource(R.string.group_add_n, sel.size)) },
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)
+                    )
+                }
             }
-        },
-        confirmButton = { TextButton({ onSave(sel.toList().sorted()) }) { Text(stringResource(R.string.save)) } },
-        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
-    )
+        }
+    }
 }
 
 @Composable

@@ -137,6 +137,20 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     s.record && s.capturePackets,
                     enabled = s.capturePackets
                 ) { v -> app.settings.update { it.copy(record = v) } }
+                if (s.record && s.capturePackets) {
+                    ChoiceRow(stringResource(R.string.record_size), listOf(8, 32, 128, 512), s.recordMb, { "$it ${Units.mb}" }) { v ->
+                        app.settings.update { it.copy(recordMb = v) }
+                    }
+                    ChoiceRow(
+                        stringResource(R.string.record_age),
+                        listOf(10, 60, 360, 1440),
+                        s.recordMinutes,
+                        { if (it < 60) "$it ${Units.m}" else "${it / 60} ${Units.h}" }
+                    ) { v -> app.settings.update { it.copy(recordMinutes = v) } }
+                    ChoiceRow(stringResource(R.string.record_keep), listOf(2, 5, 10, 24), s.recordKeep, { "$it" }) { v ->
+                        app.settings.update { it.copy(recordKeep = v) }
+                    }
+                }
             }
             Text(
                 stringResource(R.string.settings_apply_hint),

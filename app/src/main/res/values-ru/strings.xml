@@ -86,7 +86,6 @@
     <string name="for_app">Для приложения</string>
     <string name="from_file">из файла</string>
     <string name="group_members">приложений: %1$d</string>
-    <string name="group_members_edit">Состав группы</string>
     <string name="group_new">Новая группа приложений</string>
     <string name="groups">Группы</string>
     <string name="import_action">Импортировать</string>
@@ -103,7 +102,7 @@
     <string name="loading">Загрузка…</string>
     <string name="name">Название</string>
     <string name="no_blocklists">Списков пока нет. Добавьте из каталога или импортируйте файл.</string>
-    <string name="no_rules_app">У приложения нет правил — его трафик решают глобальные правила.</string>
+    <string name="no_rules_app">У приложения нет своих правил: его трафик решают правила его групп и глобальные правила.</string>
     <string name="no_rules_global">Глобальных правил нет. Добавьте правило или заблокируйте хост из логов долгим нажатием.</string>
     <string name="ok">ОК</string>
     <string name="only_with_rules">Только с правилами</string>
@@ -280,7 +279,6 @@
     <string name="stream_lan">Разрешить подключения из локальной сети</string>
     <string name="stream_lan_warn">Любой в этой сети Wi-Fi, у кого есть ссылка с ключом, сможет читать захваченный трафик.</string>
     <string name="record_title">Непрерывная запись</string>
-    <string name="record_hint">Кольцо файлов pcapng на устройстве</string>
     <string name="record_size">Размер файла</string>
     <string name="record_age">Новый файл через</string>
     <string name="record_keep">Хранить файлов</string>
@@ -391,7 +389,7 @@
     <string name="mode_off">Выкл</string>
     <string name="status_paused">Захват на паузе</string>
     <string name="record_to_disk">Записывать пакеты на диск (pcapng)</string>
-    <string name="record_to_disk_hint">Кольцо файлов pcapng: Журнал → Записи</string>
+    <string name="record_to_disk_hint">Кольцо файлов pcapng на устройстве; открыть их можно в «Анализе файлов»</string>
     <string name="record_needs_packets">Нужно «Хранить пакеты в памяти»</string>
     <string name="nav_files">Анализ файлов</string>
     <string name="files_open">Открыть pcap или pcapng</string>
@@ -444,4 +442,23 @@
     <string name="list_reset_q">Сбросить %1$d правок этого списка?</string>
     <string name="list_add_entry">Своя запись</string>
     <string name="list_add_entry_hint">Домен (с поддоменами), IP или CIDR, либо строка в синтаксисе списков: ||x^, @@||x^ чтобы разрешить, строки hosts. По одной в строке.</string>
+    <string name="record_off">Выключена. Включается в Настройках → Анализ</string>
+    <string name="record_waiting">Начнётся с первыми пакетами · файлы до %1$d МБ, хранятся последние %2$d</string>
+    <string name="group_label">Группа</string>
+    <plurals name="apps_n"><item quantity="one">%d приложение</item><item quantity="few">%d приложения</item><item quantity="many">%d приложений</item><item quantity="other">%d приложения</item></plurals>
+    <string name="more">Ещё</string>
+    <string name="group_delete">Удалить группу</string>
+    <string name="group_tab_members">Участники %1$d</string>
+    <string name="group_tab_rules">Правила %1$d</string>
+    <string name="app_in_groups">В группах:</string>
+    <string name="no_rules_group">У группы пока нет правил. Правила здесь действуют на всех участников.</string>
+    <string name="group_add_apps">Добавить приложения</string>
+    <string name="group_empty">В группе пока нет приложений</string>
+    <string name="undo_member_removed">%1$s убрано из группы</string>
+    <string name="app_not_installed_short">%1$s · не установлено</string>
+    <string name="group_remove_member">Убрать %1$s</string>
+    <string name="group_add_to">Добавить в «%1$s»</string>
+    <string name="nothing_found">Ничего не найдено</string>
+    <string name="group_add_n">Добавить %1$d</string>
+    <string name="system_apps">Системные</string>
 </resources>
