@@ -111,10 +111,11 @@ Ordered by risk: first what lets traffic or data leak or get lost, then speed, t
 
 ## Not doing (with reasons)
 
-- **VPN in a separate process (S-M6).** All state (rules, connections, settings) is shared through in-memory singletons. A separate process needs IPC for every screen, which is a rewrite. Instead:
-  - a crash in the UI no longer takes the VPN down, via size limits and catch Throwable (1.14);
-  - About and the Settings help suggest "Always-on VPN + block connections without VPN".
-- **ICMP through the proxy (S-L11).** SOCKS5 and HTTP CONNECT do not carry ICMP. With "everything through upstream", ICMP is blocked instead.
+- **VPN in a separate process (S-M6).** All state (rules, connections, settings, the packet buffer) is shared through in-memory singletons; moving the VPN to another process means IPC under almost every screen (the log as deltas within Binder's 1 MB, packets on demand, multi-process settings). Not done in 0.7. What is done, and what it does not cover:
+  - size limits and catch Throwable make a crash from hostile input (lists, imports) unlikely; any other crash in the UI still stops the VPN;
+  - capture files, the largest risk, are parsed in their own process (":parser") as a stream onto disk; the main process holds only the connection table (a 441 MB file: +8 MB);
+  - Settings → Network shows whether Always-on VPN + lockdown is on (with help and a link), and a one-time dialog suggests it after protection first starts; with both on, a crash drops the internet for seconds instead of leaking.
+- **ICMP through the proxy (S-L11).** SOCKS5 and HTTP CONNECT do not carry ICMP. **Not fixed yet:** with "everything through upstream" ICMP currently goes out directly (real address). Options are being chosen (block / reject / local reply / direct by choice).
 
 ## Testing
 

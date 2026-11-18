@@ -53,7 +53,8 @@ enum class Help(val title: Int, val body: Int) {
     REJECT(R.string.help_reject_t, R.string.help_reject),
     SET_PRIORITY(R.string.help_sets_t, R.string.help_sets),
     PROFILES(R.string.help_profiles_t, R.string.help_profiles),
-    LOG_STORAGE(R.string.help_log_t, R.string.help_log)
+    LOG_STORAGE(R.string.help_log_t, R.string.help_log),
+    ALWAYS_ON(R.string.help_always_on_t, R.string.help_always_on)
 }
 
 /** A small ⓘ that opens the explanation of [topic]. */

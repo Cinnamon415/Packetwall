@@ -596,4 +596,16 @@
     <string name="kind_all_traffic">All traffic</string>
     <string name="app_history">Connections of this app: %1$d</string>
     <string name="list_already_added">This list is already added</string>
+    <string name="problem_parser">The file could not be parsed: the parser ran out of memory or crashed. Protection was not affected.</string>
+    <string name="file_truncated">Only the first %1$d packets were read: the file goes on beyond the limits (packets, connections or size)</string>
+    <string name="packets_first_only">the first %1$d shown, export saves all</string>
+    <string name="always_on_title">Always-on VPN</string>
+    <string name="always_on_ok">On, connections without the VPN are blocked</string>
+    <string name="always_on_off">Not on: while Packetwall is not running, traffic goes around it</string>
+    <string name="always_on_unknown">Shown once protection runs · open Android settings</string>
+    <string name="help_always_on_t">Always-on VPN</string>
+    <string name="help_always_on">While Packetwall is not running — after a reboot, an update or a crash — Android sends traffic directly, unfiltered.\n\nIn Android settings → Network &amp; internet → VPN → Packetwall (⚙) turn on “Always-on VPN” and “Block connections without VPN”. Android then starts Packetwall itself and lets no traffic through while it is not running.\n\nThe interface and protection run in one process, so a rare interface crash also stops protection. With these two settings the internet just drops for a few seconds at that moment instead of going around.</string>
+    <string name="always_on_dialog_title">So that no traffic goes around</string>
+    <string name="always_on_dialog">While Packetwall is not running (after a reboot, an update or a crash), Android sends traffic unfiltered. Turn on “Always-on VPN” and “Block connections without VPN” for Packetwall in the VPN settings.</string>
+    <string name="later">Later</string>
 </resources>

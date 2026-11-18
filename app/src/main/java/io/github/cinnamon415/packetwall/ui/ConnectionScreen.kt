@@ -92,7 +92,7 @@ fun ConnectionScreen(
                 val export = rememberFileExport("application/octet-stream")
                 IconButton(onClick = {
                     export.launch("conn-${c.id}-${c.title.take(40)}.pcapng") { out ->
-                        source.packets.writePcapng(out, source.packets.packetsOf(c))
+                        source.packets.writeConn(out, c)
                     }
                 }) {
                     Icon(painterResource(R.drawable.ic_save), stringResource(R.string.export_pcapng))

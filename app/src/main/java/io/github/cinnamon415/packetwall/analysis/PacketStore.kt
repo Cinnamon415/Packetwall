@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
  * Each [Pkt] keeps its raw Enhanced Packet Block, so export is a plain concatenation and keeps the
  * per-packet options (uid comment, direction flags, "dropped").
  */
-class PacketStore {
+class PacketStore : PacketSource {
     class Pkt(
         val seq: Long,
         /** Microseconds since the epoch. */
@@ -71,7 +71,7 @@ class PacketStore {
 
     data class Info(val packets: Int = 0, val bytes: Long = 0, val dropped: Long = 0, val firstTs: Long = 0)
     private val _info = MutableStateFlow(Info())
-    val info: StateFlow<Info> = _info
+    override val info: StateFlow<Info> = _info
     private var evicted = 0L
 
     /** Bumped when packets are added, so open views can refresh. */
@@ -178,34 +178,34 @@ class PacketStore {
      * packet views and pcapng export work the same. Not passed to the sinks.
      */
     fun addPacket(tsMicros: Long, data: ByteArray, origLen: Int, tx: Boolean, uid: Int, dropped: Boolean) {
-        val pad = (4 - data.size % 4) % 4
-        val comments = listOfNotNull(if (uid >= 0) "u-$uid" else null, if (dropped) "dropped" else null).map { it.toByteArray() }
-        val optLen = 4 + 4 + comments.sumOf { 4 + ((it.size + 3) and 3.inv()) } + 4 // flags, comments, end of options
-        val total = DATA_OFF + data.size + pad + optLen + 4
-        val bb = ByteBuffer.allocate(total).order(ByteOrder.LITTLE_ENDIAN)
-        bb.putInt(6).putInt(total).putInt(0).putInt((tsMicros ushr 32).toInt()).putInt(tsMicros.toInt())
-        bb.putInt(data.size).putInt(origLen).put(data).put(ByteArray(pad))
-        bb.putShort(2).putShort(4).putInt(if (tx) 2 else 1) // epb_flags: outbound / inbound
-        for (c in comments) {
-            bb.putShort(1).putShort(c.size.toShort()).put(c).put(ByteArray((4 - c.size % 4) % 4))
-        }
-        bb.putShort(0).putShort(0)
-        bb.putInt(total)
+        val block = epb(tsMicros, data, 0, data.size, origLen, tx, uid, dropped)
         synchronized(lock) {
-            addEpb(bb.array())
+            addEpb(block)
             _info.value = Info(packets.size, bytes, evicted, packets.firstOrNull()?.ts ?: 0)
         }
     }
 
     /** Packets of a connection (same 5-tuple, inside its lifetime). */
-    fun packetsOf(c: Conn): List<Pkt> {
+    override fun packetsOf(c: Conn, limit: Int): List<Pkt> {
         val key = keyOf(c) ?: return emptyList()
         val from = c.firstSeen * 1000 - 2_000_000
         val to = c.lastSeen * 1000 + 5_000_000
-        return synchronized(lock) { byKey[key]?.filter { it.ts in from..to } ?: emptyList() }
+        return synchronized(lock) { byKey[key]?.asSequence()?.filter { it.ts in from..to }?.take(limit)?.toList() ?: emptyList() }
     }
 
     fun all(): List<Pkt> = synchronized(lock) { packets.toList() }
+
+    override fun count(): Int = synchronized(lock) { packets.size }
+
+    override fun packetAt(i: Int): Pkt? = synchronized(lock) { packets.getOrNull(i) }
+
+    override fun bySeq(seq: Long): Pkt? = synchronized(lock) {
+        // seq grows by one per packet, so the position follows from the oldest one kept
+        val first = packets.firstOrNull()?.seq ?: return null
+        packets.getOrNull((seq - first).toInt())?.takeIf { it.seq == seq } ?: packets.firstOrNull { it.seq == seq }
+    }
+
+    override fun writeConn(out: OutputStream, c: Conn) = writePcapng(out, packetsOf(c))
 
     /** Writes a pcapng file: preamble, metadata blocks, then the packets. */
     fun writePcapng(out: OutputStream, only: List<Pkt>? = null) {
@@ -215,17 +215,38 @@ class PacketStore {
         list.forEach { out.write(it.block) }
     }
 
-    private fun defaultPreamble(): ByteArray {
-        val shb = ByteBuffer.allocate(28).order(ByteOrder.LITTLE_ENDIAN)
-            .putInt(0x0A0D0D0A).putInt(28).putInt(0x1A2B3C4D).putShort(1).putShort(0).putLong(-1L).putInt(28)
-        val idb = ByteBuffer.allocate(20).order(ByteOrder.LITTLE_ENDIAN)
-            .putInt(1).putInt(20).putShort(LINKTYPE_RAW).putShort(0).putInt(0).putInt(20)
-        return shb.array() + idb.array()
-    }
+    private fun defaultPreamble(): ByteArray = defaultHeader()
 
     companion object {
         /** Offset of the packet data inside an EPB. */
         const val DATA_OFF = 28
+
+        /** An Enhanced Packet Block for raw IP packet bytes, with the uid comment and direction flags Packetwall writes. */
+        fun epb(tsMicros: Long, data: ByteArray, off: Int, len: Int, origLen: Int, tx: Boolean, uid: Int, dropped: Boolean): ByteArray {
+            val pad = (4 - len % 4) % 4
+            val comments = listOfNotNull(if (uid >= 0) "u-$uid" else null, if (dropped) "dropped" else null).map { it.toByteArray() }
+            val optLen = 4 + 4 + comments.sumOf { 4 + ((it.size + 3) and 3.inv()) } + 4 // flags, comments, end of options
+            val total = DATA_OFF + len + pad + optLen + 4
+            val bb = ByteBuffer.allocate(total).order(ByteOrder.LITTLE_ENDIAN)
+            bb.putInt(6).putInt(total).putInt(0).putInt((tsMicros ushr 32).toInt()).putInt(tsMicros.toInt())
+            bb.putInt(len).putInt(origLen).put(data, off, len).put(ByteArray(pad))
+            bb.putShort(2).putShort(4).putInt(if (tx) 2 else 1) // epb_flags: outbound / inbound
+            for (c in comments) {
+                bb.putShort(1).putShort(c.size.toShort()).put(c).put(ByteArray((4 - c.size % 4) % 4))
+            }
+            bb.putShort(0).putShort(0)
+            bb.putInt(total)
+            return bb.array()
+        }
+
+        /** SHB + one raw-IP interface: the start of a pcapng file. */
+        fun defaultHeader(): ByteArray {
+            val shb = ByteBuffer.allocate(28).order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(0x0A0D0D0A).putInt(28).putInt(0x1A2B3C4D).putShort(1).putShort(0).putLong(-1L).putInt(28)
+            val idb = ByteBuffer.allocate(20).order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(1).putInt(20).putShort(LINKTYPE_RAW).putShort(0).putInt(0).putInt(20)
+            return shb.array() + idb.array()
+        }
         private const val LINKTYPE_RAW: Short = 101
 
         /**

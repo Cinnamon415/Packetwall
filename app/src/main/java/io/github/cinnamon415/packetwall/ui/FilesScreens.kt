@@ -11,8 +11,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -48,17 +48,17 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import io.github.cinnamon415.packetwall.Limits
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.Problem
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.analysis.CaptureFile
 import io.github.cinnamon415.packetwall.analysis.ConnFilter
-import io.github.cinnamon415.packetwall.readCapped
+import io.github.cinnamon415.packetwall.analysis.Dissector
+import io.github.cinnamon415.packetwall.analysis.ParserService
 import java.io.File
-import java.io.InputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -85,12 +85,26 @@ private object Recents {
 
 private fun fileName(ctx: Context, uri: Uri): String = displayName(ctx, uri) ?: uri.lastPathSegment?.substringAfterLast('/') ?: "capture"
 
-/** Reads a capture into [OpenedFile]; returns the number of packets. */
-private suspend fun openCapture(app: PacketwallApp, name: String, open: () -> InputStream): Int {
-    val bytes = withContext(Dispatchers.IO) { open().readCapped(Limits.UNPACKED_BYTES, "capture") }
-    val r = withContext(Dispatchers.Default) { CaptureFile.read(bytes) { uid -> app.apps.get(uid) } }
-    OpenedFile.current = FileSource(name, r.conns, r.store, r.skipped)
-    return r.packets
+/**
+ * Opens a capture into [OpenedFile]: the parser process reads it into a directory in the cache
+ * (packets on disk), then the connection table is loaded here. Returns the number of packets.
+ */
+private suspend fun openCapture(app: PacketwallApp, name: String, uri: String?, path: String?): Int {
+    val root = File(app.cacheDir, "captures-open").apply { mkdirs() }
+    val dir = File(root, "f${System.currentTimeMillis()}")
+    try {
+        val n = ParserService.parse(app, uri, path, dir)
+        val r = withContext(Dispatchers.IO) { CaptureFile.load(dir) { uid -> app.apps.get(uid) } }
+        val old = OpenedFile.current
+        OpenedFile.current = FileSource(name, r.conns, r.packets, r.skipped, r.truncated, dir)
+        old?.packets?.close()
+        // earlier files are no longer shown: free their space
+        withContext(Dispatchers.IO) { root.listFiles()?.filter { it != dir }?.forEach { it.deleteRecursively() } }
+        return n
+    } catch (e: Throwable) {
+        withContext(NonCancellable + Dispatchers.IO) { dir.deleteRecursively() }
+        throw e
+    }
 }
 
 /** "File analysis": open a pcap/pcapng, the recent ones, and Packetwall's own recordings. */
@@ -105,12 +119,12 @@ fun FilesScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpened: () -> Unit
     var deleting by remember { mutableStateOf<File?>(null) }
     val export = rememberFileExport("application/octet-stream")
 
-    fun open(name: String, uri: String?, input: () -> InputStream) {
+    fun open(name: String, uri: String?, path: String? = null) {
         busy = true
         problem = null
         scope.launch {
             try {
-                val n = openCapture(app, name, input)
+                val n = openCapture(app, name, uri, path)
                 if (uri != null) {
                     Recents.add(ctx, RecentFile(uri, name, System.currentTimeMillis(), n))
                     recents = Recents.load(ctx)
@@ -128,7 +142,7 @@ fun FilesScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpened: () -> Unit
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            open(fileName(ctx, uri), uri.toString()) { ctx.contentResolver.openInputStream(uri)!! }
+            open(fileName(ctx, uri), uri.toString())
         }
     }
 
@@ -172,7 +186,7 @@ fun FilesScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpened: () -> Unit
                         recents.forEachIndexed { i, f ->
                             if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                             FileRow(f.name, stringResource(R.string.files_recent_line, formatDate(f.opened), f.packets), enabled = !busy) {
-                                open(f.name, f.uri) { ctx.contentResolver.openInputStream(Uri.parse(f.uri))!! }
+                                open(f.name, f.uri)
                             }
                         }
                     }
@@ -193,7 +207,7 @@ fun FilesScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpened: () -> Unit
                                 IconButton({
                                     deleting = f
                                 }) { Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.delete)) }
-                            }) { open(f.name, null) { f.inputStream() } }
+                            }) { open(f.name, null, f.path) }
                         }
                     }
                 }
@@ -264,6 +278,14 @@ fun FileViewScreen(onBack: () -> Unit, onOpenConn: (Int) -> Unit, onOpenPacket: 
                 supportingText = (compiled.exceptionOrNull() as? ConnFilter.ParseError)?.let { e -> { Text(parseErrorText(e)) } },
                 trailingIcon = { FilterHelpButton { filter = it } }
             )
+            if (f.truncated) {
+                Text(
+                    stringResource(R.string.file_truncated, info.packets),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
             if (f.skipped > 0) {
                 Text(
                     stringResource(R.string.file_skipped, f.skipped),
@@ -282,21 +304,30 @@ fun FileViewScreen(onBack: () -> Unit, onOpenConn: (Int) -> Unit, onOpenPacket: 
                 }
             }
         } else {
-            val rows by produceState<List<PktRow>?>(null, f) { value = withContext(Dispatchers.Default) { buildRows(f.packets.all()) } }
-            val list = rows
-            if (list == null) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            } else {
-                // packet -> its connection, to open the packet view inside that connection
-                val connOf = remember(list) {
-                    val byKey = conns.associateBy { io.github.cinnamon415.packetwall.analysis.PacketStore.keyOf(it) }
-                    list.associate { it.p.seq to (byKey[it.p.key]?.id ?: 0) }
-                }
-                LazyColumn {
-                    items(list, key = { it.p.seq }) { r ->
-                        PacketRow(r) { onOpenPacket(connOf[r.p.seq] ?: 0, r.p.seq) }
-                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
+            // every packet of the file, read from disk only for the rows on screen
+            val t0 = remember(f) { f.packets.info.value.firstTs }
+            LazyColumn {
+                items(f.packets.count(), key = { it }) { i ->
+                    val row by produceState<PktRow?>(null, i) {
+                        value = withContext(Dispatchers.IO) {
+                            f.packets.packetAt(i)?.let { p ->
+                                PktRow(
+                                    p,
+                                    Dissector.summary(p.block, p.dataOff, p.capLen),
+                                    null,
+                                    null,
+                                    p.ts - t0
+                                )
+                            }
+                        }
                     }
+                    val r = row
+                    if (r == null) {
+                        Box(Modifier.fillMaxWidth().height(48.dp))
+                    } else {
+                        PacketRow(r) { onOpenPacket(f.packets.flowOf(i), r.p.seq) }
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                 }
             }
         }

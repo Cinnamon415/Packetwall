@@ -11,6 +11,8 @@ class Settings(ctx: Context, private val box: SecretBox = SecretBox.keystore()) 
     data class Values(
         /** 0 = follow the system, 1 = light, 2 = dark. */
         val theme: Int = 0,
+        /** The one-time advice about Android's Always-on VPN was shown. */
+        val alwaysOnTipShown: Boolean = false,
         /** Keep packets in memory for the packets/data views and pcapng export. */
         val capturePackets: Boolean = true,
         /** Packet buffer size in MiB (oldest packets are dropped first). */
@@ -66,6 +68,7 @@ class Settings(ctx: Context, private val box: SecretBox = SecretBox.keystore()) 
 
     private fun read() = Values(
         theme = prefs.getInt("theme", 0),
+        alwaysOnTipShown = prefs.getBoolean("always_on_tip", false),
         capturePackets = prefs.getBoolean("capture_packets", true),
         bufferMb = prefs.getInt("buffer_mb", 16),
         snaplen = prefs.getInt("snaplen", 0),
@@ -125,6 +128,7 @@ class Settings(ctx: Context, private val box: SecretBox = SecretBox.keystore()) 
         if (v.upPass != old.upPass) edit.putString(KEY_PASS, box.seal(v.upPass))
         edit
             .putInt("theme", v.theme)
+            .putBoolean("always_on_tip", v.alwaysOnTipShown)
             .putBoolean("capture_packets", v.capturePackets)
             .putInt("buffer_mb", v.bufferMb)
             .putInt("snaplen", v.snaplen)

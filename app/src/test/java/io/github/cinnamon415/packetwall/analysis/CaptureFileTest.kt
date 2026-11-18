@@ -1,14 +1,35 @@
 package io.github.cinnamon415.packetwall.analysis
 
+import io.github.cinnamon415.packetwall.engine.AppInfo
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class CaptureFileTest {
+    @get:Rule val tmp = TemporaryFolder()
+    private var n = 0
+
+    private class Read(val summary: CaptureFile.Summary, val loaded: CaptureFile.Loaded) {
+        val packets get() = summary.packets
+        val skipped get() = summary.skipped
+        val conns get() = loaded.conns
+        val store get() = loaded.packets
+    }
+
+    /** Parses as the parser process does (stream onto disk), then loads like the UI. */
+    private fun read(bytes: ByteArray, maxBytes: Long = Long.MAX_VALUE, appOf: (Int) -> AppInfo? = { null }): Read {
+        val dir = File(tmp.root, "c${n++}")
+        val s = CaptureFile.parse(ByteArrayInputStream(bytes), dir, maxBytes)
+        return Read(s, CaptureFile.load(dir, appOf))
+    }
     private fun ip4(proto: Int, src: ByteArray, dst: ByteArray, l4: ByteArray): ByteArray {
         val b = ByteBuffer.allocate(20 + l4.size)
         b.put(0x45.toByte()).put(0).putShort((20 + l4.size).toShort()).putShort(1).putShort(0x4000).put(64).put(proto.toByte()).putShort(0)
@@ -76,7 +97,7 @@ class CaptureFileTest {
             eth(ip4(6, server, phone, tcp(80, 50000, 0x12))),
             eth(ip4(6, phone, server, tcp(50000, 80, 0x18, "GET / HTTP/1.1\r\nHost: www.example.org\r\n\r\n".toByteArray())))
         )
-        val r = CaptureFile.read(pcap(1, frames)) { null }
+        val r = read(pcap(1, frames))
         assertEquals(4, r.packets)
         assertEquals(0, r.skipped)
         assertEquals(2, r.conns.size)
@@ -102,7 +123,7 @@ class CaptureFileTest {
         val out = ByteArrayOutputStream()
         live.writePcapng(out)
         val names = mapOf(10123 to io.github.cinnamon415.packetwall.engine.AppInfo(10123, "com.a", "A", false))
-        val r = CaptureFile.read(out.toByteArray()) { names[it] }
+        val r = read(out.toByteArray()) { names[it] }
         val c = r.conns.single()
         assertEquals("A", c.app.name)
         assertEquals(1, c.blockedPkts)
@@ -114,10 +135,49 @@ class CaptureFileTest {
             it[12] = 0x08
             it[13] = 0x06
         }
-        val r = CaptureFile.read(pcap(1, listOf(arp))) { null }
+        val r = read(pcap(1, listOf(arp)))
         assertEquals(1, r.skipped)
         assertEquals(0, r.conns.size)
-        assertTrue(runCatching { CaptureFile.read(ByteArray(100)) { null } }.isFailure)
+        assertTrue(runCatching { read(ByteArray(100)) }.isFailure)
         assertNull(CaptureFile.ipPayload(147, arp, 0, arp.size))
+    }
+
+    @Test fun packetsComeFromDiskAndExportWhole() {
+        val frames = (0 until 50).map { i ->
+            if (i % 2 == 0) {
+                eth(ip4(6, phone, server, tcp(50000, 443, 0x18, ByteArray(100) { i.toByte() })))
+            } else {
+                eth(ip4(6, server, phone, tcp(443, 50000, 0x18, ByteArray(200) { i.toByte() })))
+            }
+        } + eth(ip4(17, phone, dns, udp(40000, 53, dnsQuery("a.example"))))
+        val r = read(pcap(1, frames))
+        assertEquals(51, r.store.count())
+        val web = r.conns.single { it.dstPort == 443 }
+        assertEquals(25, web.sentPkts)
+        assertEquals(25, web.rcvdPkts)
+        // packets of a connection in capture order, with their direction and data
+        val pk = r.store.packetsOf(web)
+        assertEquals(50, pk.size)
+        assertTrue(pk[0].tx && !pk[1].tx)
+        assertEquals(7.toByte(), pk[7].block[PacketStore.DATA_OFF + 40])
+        assertEquals(10, r.store.packetsOf(web, 10).size)
+        // the global list and lookups by seq agree
+        assertEquals(web.id, r.store.flowOf(3))
+        assertEquals(pk[3].seq, r.store.bySeq(pk[3].seq)!!.seq)
+        // export of one connection is a valid capture with all of its packets
+        val out = ByteArrayOutputStream()
+        r.store.writeConn(out, web)
+        val again = read(out.toByteArray())
+        assertEquals(50, again.packets)
+        assertEquals(1, again.conns.size)
+    }
+
+    @Test fun stopsAtTheSizeLimit() {
+        val frames = (0 until 100).map { eth(ip4(6, phone, server, tcp(50000, 443, 0x18, ByteArray(500)))) }
+        val r = read(pcap(1, frames), maxBytes = 10_000)
+        assertTrue(r.summary.truncated)
+        assertTrue(r.loaded.truncated)
+        assertTrue(r.packets in 1..19)
+        assertEquals(r.packets, r.store.count())
     }
 }

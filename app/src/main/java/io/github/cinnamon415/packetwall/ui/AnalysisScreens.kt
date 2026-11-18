@@ -68,6 +68,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
+/** At most this many packets of one connection are listed (export writes all of them). */
+const val CONN_SHOWN = 20_000
+
 /** One row of the packets list. */
 class PktRow(val p: PacketStore.Pkt, val s: Dissector.Summary, val relSeq: Long?, val relAck: Long?, val dt: Long)
 
@@ -82,7 +85,8 @@ fun rememberConnPackets(source: CaptureSource, c: Conn): List<PktRow>? {
         var seen: Pair<Int, Long>? = null
         while (true) {
             val conn = latest
-            val pkts = withContext(Dispatchers.Default) { source.packets.packetsOf(conn) }
+            // a long download in a capture file can have millions of packets: the view shows the first ones
+            val pkts = withContext(Dispatchers.IO) { source.packets.packetsOf(conn, CONN_SHOWN) }
             val now = pkts.size to (pkts.lastOrNull()?.seq ?: -1L)
             if (now != seen) {
                 seen = now
@@ -133,6 +137,7 @@ fun PacketsTab(source: CaptureSource, c: Conn, onOpenPacket: (Long) -> Unit) {
                 Timeline(rows, span, range, { range = it })
                 Text(
                     stringResource(R.string.packets_shown, shown.size, rows.size) +
+                        (if (rows.size >= CONN_SHOWN) " · " + stringResource(R.string.packets_first_only, CONN_SHOWN) else "") +
                         if (range != null) " · " + stringResource(R.string.tap_to_reset) else "",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -238,10 +243,7 @@ internal fun PacketRow(r: PktRow, onClick: () -> Unit) {
 @Composable
 fun PacketScreen(source: CaptureSource, connId: Int, seq: Long, onBack: () -> Unit) {
     val conn = remember(connId) { source.conns.value.firstOrNull { it.id == connId } }
-    val pkt = remember(seq) {
-        conn?.let { source.packets.packetsOf(it) }?.firstOrNull { it.seq == seq }
-            ?: source.packets.all().firstOrNull { it.seq == seq }
-    }
+    val pkt = remember(seq) { source.packets.bySeq(seq) }
     var selected by remember { mutableStateOf<Dissector.Field?>(null) }
     if (pkt == null) {
         ScreenScaffold(title = "#$seq", onBack = onBack) { EmptyHint(stringResource(R.string.packet_gone)) }

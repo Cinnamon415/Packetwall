@@ -109,6 +109,8 @@ class PacketwallApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // the ":parser" process only parses capture files: no engine, rules or settings there
+        if (getProcessName().endsWith(":parser")) return
         Units.load(this)
         settings = Settings(this)
         geo = GeoIp(filesDir)

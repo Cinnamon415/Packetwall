@@ -1,6 +1,7 @@
 package io.github.cinnamon415.packetwall
 
 import android.content.Context
+import io.github.cinnamon415.packetwall.analysis.ParserService
 import io.github.cinnamon415.packetwall.analysis.PcapServer
 import io.github.cinnamon415.packetwall.fw.ForeignImport
 import java.io.FileNotFoundException
@@ -45,6 +46,9 @@ sealed interface Problem {
 
     data object FileAccess : Problem
 
+    /** The parser process stopped before finishing (out of memory, a crash). */
+    data object ParserCrashed : Problem
+
     /** No Wi-Fi or Ethernet network to listen on. */
     data object NoLan : Problem
 
@@ -63,6 +67,7 @@ sealed interface Problem {
         is PortInUse -> "port:$port"
         FileAccess -> "file"
         NoLan -> "no-lan"
+        ParserCrashed -> "parser"
         is Unsupported -> "unsupported:${reason.name}"
         is Other -> detail
     }
@@ -77,6 +82,7 @@ sealed interface Problem {
         is PortInUse -> ctx.getString(R.string.problem_port, port)
         FileAccess -> ctx.getString(R.string.problem_file)
         NoLan -> ctx.getString(R.string.problem_no_lan)
+        ParserCrashed -> ctx.getString(R.string.problem_parser)
         is Unsupported -> ctx.getString(
             when (reason) {
                 ForeignImport.Unsupported.Reason.SINGBOX_BINARY -> R.string.problem_srs_binary
@@ -88,6 +94,7 @@ sealed interface Problem {
 
     companion object {
         fun of(e: Throwable, port: Int = 0): Problem = when (e) {
+            is ParserService.Failed -> e.problem
             is HttpStatusException -> Http(e.code)
             is TooLargeException, is OutOfMemoryError -> TooLarge
             is PcapServer.NoLanException -> NoLan
@@ -112,6 +119,7 @@ sealed interface Problem {
             s == "too-large" -> TooLarge
             s == "file" -> FileAccess
             s == "no-lan" -> NoLan
+            s == "parser" -> ParserCrashed
             s.startsWith("http:") -> s.substring(5).toIntOrNull()?.let(::Http) ?: Other(s)
             s.startsWith("port:") -> s.substring(5).toIntOrNull()?.let(::PortInUse) ?: Other(s)
             s.startsWith("unsupported:") ->

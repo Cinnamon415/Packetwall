@@ -83,6 +83,7 @@ import okhttp3.Request
 fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
     var shorterLog by remember { mutableStateOf<Int?>(null) }
     val s by app.settings.values.collectAsState()
+    val ctx = LocalContext.current
     ScreenScaffold(title = stringResource(R.string.nav_settings), onMenu = openDrawer) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
             ListSubheader(stringResource(R.string.settings_appearance))
@@ -164,6 +165,37 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
             )
             ListSubheader(stringResource(R.string.settings_network))
             RoundedGroup {
+                val always by CaptureStatus.alwaysOn.collectAsState()
+                Row(
+                    Modifier.fillMaxWidth().clickable {
+                        openVpnSettings(ctx)
+                    }.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        TitleWithInfo(stringResource(R.string.always_on_title), Help.ALWAYS_ON)
+                        Text(
+                            when (val a = always) {
+                                null -> stringResource(R.string.always_on_unknown)
+                                else -> if (a.first &&
+                                    a.second
+                                ) {
+                                    stringResource(R.string.always_on_ok)
+                                } else {
+                                    stringResource(R.string.always_on_off)
+                                }
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (always?.let { !(it.first && it.second) } == true) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                    }
+                    Chevron()
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                 SwitchRow(
                     stringResource(R.string.lan_bypass),
                     stringResource(R.string.lan_bypass_hint),

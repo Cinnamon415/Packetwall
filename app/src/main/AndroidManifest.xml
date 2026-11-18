@@ -42,6 +42,11 @@
             android:taskAffinity=""
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
+        <!-- capture files are parsed in their own process: a bad file cannot stop the VPN -->
+        <service
+            android:name=".analysis.ParserService"
+            android:exported="false"
+            android:process=":parser" />
         <service
             android:name=".engine.CaptureService"
             android:exported="false"

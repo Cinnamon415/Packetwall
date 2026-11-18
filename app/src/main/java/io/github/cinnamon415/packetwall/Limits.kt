@@ -13,6 +13,9 @@ object Limits {
     const val LINE_CHARS = 4096
     const val IMPORT_BYTES = 100L shl 20
     const val UNPACKED_BYTES = 300L shl 20
+
+    /** A capture file is read as a stream onto disk (parser process): the limit is about disk space. */
+    const val CAPTURE_BYTES = 2L shl 30
     const val TRACKERS_BYTES = 50L shl 20
 }
 

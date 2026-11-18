@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -30,6 +31,7 @@ import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -41,6 +43,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -215,8 +218,35 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                 }
             }
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 8.dp))
+            AlwaysOnAdvice(app)
         }
     }
+}
+
+/**
+ * Once, after protection first runs without Android's Always-on VPN + lockdown: without them, traffic
+ * goes around Packetwall whenever it is not running (after a reboot, an update or a crash).
+ */
+@Composable
+private fun AlwaysOnAdvice(app: PacketwallApp) {
+    val always by CaptureStatus.alwaysOn.collectAsState()
+    val s by app.settings.values.collectAsState()
+    val a = always ?: return
+    if (s.alwaysOnTipShown || (a.first && a.second)) return
+    val ctx = LocalContext.current
+    val done = { app.settings.update { it.copy(alwaysOnTipShown = true) } }
+    AlertDialog(
+        onDismissRequest = done,
+        title = { Text(stringResource(R.string.always_on_dialog_title)) },
+        text = { Text(stringResource(R.string.always_on_dialog)) },
+        confirmButton = {
+            TextButton({
+                done()
+                openVpnSettings(ctx)
+            }) { Text(stringResource(R.string.diag_open_vpn_settings)) }
+        },
+        dismissButton = { TextButton(done) { Text(stringResource(R.string.later)) } }
+    )
 }
 
 @Composable

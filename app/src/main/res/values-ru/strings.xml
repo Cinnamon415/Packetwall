@@ -594,4 +594,16 @@
     <string name="kind_all_traffic">Весь трафик</string>
     <string name="app_history">Соединения приложения: %1$d</string>
     <string name="list_already_added">Этот список уже подключён</string>
+    <string name="problem_parser">Не удалось разобрать файл: процессу разбора не хватило памяти или он упал. Защита при этом не затронута.</string>
+    <string name="file_truncated">Прочитаны первые %1$d пакетов: дальше файл не читался (слишком много пакетов, соединений или байт)</string>
+    <string name="packets_first_only">показаны первые %1$d, экспорт сохранит все</string>
+    <string name="always_on_title">Постоянная VPN</string>
+    <string name="always_on_ok">Включена, соединения без VPN блокируются</string>
+    <string name="always_on_off">Не включена: пока Packetwall не запущен, трафик идёт мимо</string>
+    <string name="always_on_unknown">Состояние видно после включения защиты · открыть настройки Android</string>
+    <string name="help_always_on_t">Постоянная VPN</string>
+    <string name="help_always_on">Если Packetwall не запущен — после перезагрузки, обновления или сбоя — Android пускает трафик напрямую, без фильтрации.\n\nВ настройках Android → Сеть и интернет → VPN → Packetwall (⚙) включите «Постоянная VPN» и «Блокировать соединения без VPN». Тогда Android сам запускает Packetwall и не пускает трафик, пока он не работает.\n\nИнтерфейс и защита работают в одном процессе, поэтому редкий сбой интерфейса тоже останавливает защиту. С этими двумя настройками в такой момент интернет просто пропадёт на несколько секунд, а не пойдёт мимо.</string>
+    <string name="always_on_dialog_title">Чтобы трафик не шёл мимо</string>
+    <string name="always_on_dialog">Пока Packetwall не запущен (после перезагрузки, обновления или сбоя), Android пускает трафик без фильтрации. Включите в настройках VPN для Packetwall «Постоянная VPN» и «Блокировать соединения без VPN».</string>
+    <string name="later">Позже</string>
 </resources>
