@@ -24,5 +24,13 @@ object CaptureStatus {
     /** Private DNS is in strict mode: queries are encrypted, rules by name only see SNI. */
     val privateDnsStrict = MutableStateFlow(false)
 
+    /**
+     * Capture paused: the rules keep filtering, but no packets are kept, recorded or streamed and no
+     * new connections are logged. The time it started, or null when not paused.
+     */
+    val pausedSince = MutableStateFlow<Long?>(null)
+
+    val paused get() = pausedSince.value != null
+
     val running get() = state.value is CaptureState.Running
 }

@@ -29,11 +29,17 @@ sealed interface Dest {
 
     @Serializable data object About : Dest
 
-    @Serializable data class Connection(val id: Int, val tab: Int = 0) : Dest
+    @Serializable data object Files : Dest
+
+    /** The capture file open in [OpenedFile]. */
+    @Serializable data object FileView : Dest
+
+    /** [file]: a connection of the opened capture file, not of the live capture. */
+    @Serializable data class Connection(val id: Int, val tab: Int = 0, val file: Boolean = false) : Dest
 
     @Serializable data class AppRules(val pkg: String) : Dest
 
-    @Serializable data class Packet(val connId: Int, val seq: Long) : Dest
+    @Serializable data class Packet(val connId: Int, val seq: Long, val file: Boolean = false) : Dest
 
     @Serializable data class GroupRules(val id: Int) : Dest
 }

@@ -44,10 +44,32 @@ private val Dark = darkColorScheme(
 
 /** Semantic colors that Material 3 has no slot for. */
 @Immutable
-data class ExtraColors(val ok: Color, val up: Color, val down: Color)
+data class ExtraColors(
+    val ok: Color,
+    val up: Color,
+    val down: Color,
+    /** Paused state: an amber container. */
+    val warnContainer: Color,
+    val onWarnContainer: Color,
+    val warn: Color
+)
 
-private val LightExtra = ExtraColors(ok = Color(0xFF2E6B3A), up = Color(0xFF7A5300), down = Color(0xFF415F91))
-private val DarkExtra = ExtraColors(ok = Color(0xFF8BD89A), up = Color(0xFFF1C27D), down = Color(0xFFAAC7FF))
+private val LightExtra = ExtraColors(
+    ok = Color(0xFF2E6B3A),
+    up = Color(0xFF7A5300),
+    down = Color(0xFF415F91),
+    warnContainer = Color(0xFFFFDFA6),
+    onWarnContainer = Color(0xFF261900),
+    warn = Color(0xFF7A5300)
+)
+private val DarkExtra = ExtraColors(
+    ok = Color(0xFF8BD89A),
+    up = Color(0xFFF1C27D),
+    down = Color(0xFFAAC7FF),
+    warnContainer = Color(0xFF5C4000),
+    onWarnContainer = Color(0xFFFFDFA6),
+    warn = Color(0xFFF1C27D)
+)
 
 val LocalExtraColors = staticCompositionLocalOf { LightExtra }
 val Mono = FontFamily.Monospace

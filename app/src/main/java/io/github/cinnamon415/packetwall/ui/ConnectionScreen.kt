@@ -45,6 +45,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ConnectionScreen(
     app: PacketwallApp,
+    source: CaptureSource,
     id: Int,
     initialTab: Int,
     onNeighbor: (Int, Int) -> Unit,
@@ -52,7 +53,7 @@ fun ConnectionScreen(
     onOpenApp: (String) -> Unit,
     onOpenPacket: (Long) -> Unit
 ) {
-    val conns by app.connections.conns.collectAsState()
+    val conns by source.conns.collectAsState()
     val idx = conns.indexOfFirst { it.id == id }
     val c = conns.getOrNull(idx)
     var tab by rememberSaveable { mutableIntStateOf(initialTab) }
@@ -79,7 +80,7 @@ fun ConnectionScreen(
                 val export = rememberFileExport("application/octet-stream")
                 IconButton(onClick = {
                     export.launch("conn-${c.id}-${c.title.take(40)}.pcapng") { out ->
-                        app.packets.writePcapng(out, app.packets.packetsOf(c))
+                        source.packets.writePcapng(out, source.packets.packetsOf(c))
                     }
                 }) {
                     Icon(painterResource(R.drawable.ic_save), stringResource(R.string.export_pcapng))
@@ -99,15 +100,15 @@ fun ConnectionScreen(
         }
         when (tab) {
             1 -> {
-                PacketsTab(app, c, onOpenPacket)
+                PacketsTab(source, c, onOpenPacket)
                 return@ScreenScaffold
             }
             2 -> {
-                DataTab(app, c)
+                DataTab(source, c)
                 return@ScreenScaffold
             }
             3 -> {
-                HttpTab(app, c)
+                HttpTab(source, c)
                 return@ScreenScaffold
             }
         }

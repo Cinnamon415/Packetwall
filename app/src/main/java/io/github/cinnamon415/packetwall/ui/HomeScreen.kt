@@ -1,11 +1,8 @@
 package io.github.cinnamon415.packetwall.ui
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
@@ -23,6 +19,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,8 +34,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -46,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
+import io.github.cinnamon415.packetwall.engine.CaptureService
 import io.github.cinnamon415.packetwall.engine.CaptureState
 import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import io.github.cinnamon415.packetwall.ui.theme.LocalExtraColors
@@ -85,70 +85,7 @@ fun HomeScreen(
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Status card
-            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    val bg by animateColorAsState(
-                        if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        label = "pw"
-                    )
-                    val fg by animateColorAsState(
-                        if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        label = "pwf"
-                    )
-                    val radius by animateDpAsState(if (on) 20.dp else 30.dp, label = "pwr")
-                    Box(
-                        Modifier.size(60.dp).clip(RoundedCornerShape(radius)).background(bg).clickable { onToggle(!on) },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            painterResource(R.drawable.ic_power),
-                            stringResource(if (on) R.string.turn_off else R.string.turn_on),
-                            tint = fg,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier.size(
-                                    8.dp
-                                ).clip(CircleShape).background(if (on) LocalExtraColors.current.ok else MaterialTheme.colorScheme.outline)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                stringResource(if (on) R.string.status_on else R.string.status_off),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        if (state is CaptureState.Running) {
-                            Text(
-                                formatDuration(now - state.since),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        val strictDns by CaptureStatus.privateDnsStrict.collectAsState()
-                        if (on && strictDns) {
-                            Text(
-                                stringResource(R.string.private_dns_strict),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
-                        val fwState by app.firewall.state.collectAsState()
-                        val doh by CaptureStatus.dohActive.collectAsState()
-                        Text(
-                            listOfNotNull("VPN", fwState.profile?.name, doh?.let { "DoH " + (URI(it).host ?: "") })
-                                .joinToString(" · "),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
+            StatusBanner(app, state, now, onToggle)
 
             // Tiles 2x2
             val blocked = summary.blockedCount
@@ -333,5 +270,109 @@ fun SectionHeader(title: String, action: String?, onAction: (() -> Unit)?) {
             modifier = Modifier.weight(1f)
         )
         if (action != null && onAction != null) TextButton(onClick = onAction) { Text(action) }
+    }
+}
+
+/**
+ * Protection state with a three-way switch: running, paused (rules keep filtering, nothing is
+ * recorded) and off.
+ */
+@Composable
+private fun StatusBanner(app: PacketwallApp, state: CaptureState, now: Long, onToggle: (Boolean) -> Unit) {
+    val ctx = LocalContext.current
+    val on = state is CaptureState.Running
+    val pausedSince by CaptureStatus.pausedSince.collectAsState()
+    val paused = on && pausedSince != null
+    val extra = LocalExtraColors.current
+    val bg by animateColorAsState(
+        when {
+            paused -> extra.warnContainer
+            on -> MaterialTheme.colorScheme.primaryContainer
+            else -> MaterialTheme.colorScheme.surfaceContainerLow
+        },
+        label = "banner"
+    )
+    val fg = when {
+        paused -> extra.onWarnContainer
+        on -> MaterialTheme.colorScheme.onPrimaryContainer
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Surface(shape = RoundedCornerShape(16.dp), color = bg, contentColor = fg) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    painterResource(if (paused) R.drawable.ic_pause else R.drawable.ic_wall),
+                    null,
+                    modifier = Modifier.size(28.dp),
+                    tint = if (on) fg else MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        stringResource(
+                            when {
+                                paused -> R.string.status_paused
+                                on -> R.string.status_on
+                                else -> R.string.status_off
+                            }
+                        ),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    val fwState by app.firewall.state.collectAsState()
+                    val doh by CaptureStatus.dohActive.collectAsState()
+                    val line = when {
+                        paused -> listOf(stringResource(R.string.paused_hint), formatDuration(now - pausedSince!!))
+                        on -> listOfNotNull(
+                            formatDuration(now - (state as CaptureState.Running).since),
+                            "VPN",
+                            fwState.profile?.name,
+                            doh?.let { "DoH " + (URI(it).host ?: "") }
+                        )
+                        else -> listOfNotNull("VPN", fwState.profile?.name)
+                    }
+                    Text(line.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                    val strictDns by CaptureStatus.privateDnsStrict.collectAsState()
+                    if (on && strictDns) {
+                        Text(
+                            stringResource(R.string.private_dns_strict),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+            val modes = listOf(R.string.mode_running, R.string.mode_paused, R.string.mode_off)
+            val current = when {
+                paused -> 1
+                on -> 0
+                else -> 2
+            }
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                modes.forEachIndexed { i, label ->
+                    SegmentedButton(
+                        selected = current == i,
+                        onClick = {
+                            when (i) {
+                                0 -> if (!on) onToggle(true) else CaptureService.setPaused(ctx, false)
+                                1 -> if (on) CaptureService.setPaused(ctx, true)
+                                else -> if (on) onToggle(false)
+                            }
+                        },
+                        enabled = i != 1 || on,
+                        shape = SegmentedButtonDefaults.itemShape(i, modes.size),
+                        colors = if (paused && i == 1) {
+                            SegmentedButtonDefaults.colors(
+                                activeContainerColor = extra.warn,
+                                activeContentColor = MaterialTheme.colorScheme.surface
+                            )
+                        } else {
+                            SegmentedButtonDefaults.colors()
+                        },
+                        icon = {}
+                    ) { Text(stringResource(label), maxLines = 1) }
+                }
+            }
+        }
     }
 }

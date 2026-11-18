@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -59,6 +60,7 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
     val nav = rememberNavigator()
     // keeps tab selections etc. of screens below the top of the stack
     val saveable = rememberSaveableStateHolder()
+    val live = remember(app) { LiveSource(app) }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val state by CaptureStatus.state.collectAsState()
@@ -109,17 +111,42 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                                 onOpenStats = { nav.root(Dest.Stats) },
                                 onOpenConn = { nav.push(Dest.Connection(it)) }
                             )
-                            Dest.Logs -> LogsScreen(app, state, openDrawer, onOpenConn = { nav.push(Dest.Connection(it)) })
-                            is Dest.Connection -> ConnectionScreen(
-                                app,
-                                d.id,
-                                d.tab,
-                                onNeighbor = { id, tab -> nav.replace(Dest.Connection(id, tab)) },
+                            Dest.Logs -> LogsScreen(app, state, openDrawer, onOpenConn = {
+                                nav.push(Dest.Connection(it))
+                            }, onOpenFiles = { nav.root(Dest.Files) })
+                            is Dest.Connection -> {
+                                val source = if (d.file) OpenedFile.current else live
+                                if (source == null) {
+                                    LaunchedEffect(Unit) { nav.pop() }
+                                } else {
+                                    ConnectionScreen(
+                                        app,
+                                        source,
+                                        d.id,
+                                        d.tab,
+                                        onNeighbor = { id, tab -> nav.replace(Dest.Connection(id, tab, d.file)) },
+                                        onBack = { nav.pop() },
+                                        onOpenApp = { nav.push(Dest.AppRules(it)) },
+                                        onOpenPacket = { nav.push(Dest.Packet(d.id, it, d.file)) }
+                                    )
+                                }
+                            }
+                            is Dest.Packet -> {
+                                val source = if (d.file) OpenedFile.current else live
+                                if (source ==
+                                    null
+                                ) {
+                                    LaunchedEffect(Unit) { nav.pop() }
+                                } else {
+                                    PacketScreen(source, d.connId, d.seq, onBack = { nav.pop() })
+                                }
+                            }
+                            Dest.Files -> FilesScreen(app, openDrawer, onOpened = { nav.push(Dest.FileView) })
+                            Dest.FileView -> FileViewScreen(
                                 onBack = { nav.pop() },
-                                onOpenApp = { nav.push(Dest.AppRules(it)) },
-                                onOpenPacket = { nav.push(Dest.Packet(d.id, it)) }
+                                onOpenConn = { nav.push(Dest.Connection(it, file = true)) },
+                                onOpenPacket = { conn, seq -> nav.push(Dest.Packet(conn, seq, file = true)) }
                             )
-                            is Dest.Packet -> PacketScreen(app, d.connId, d.seq, onBack = { nav.pop() })
                             Dest.Stats -> StatsScreen(app, openDrawer)
                             Dest.Apps -> AppsScreen(
                                 app,
@@ -148,7 +175,8 @@ private fun DrawerContent(current: Dest, state: CaptureState, onSelect: (Dest) -
     val main = listOf(
         DrawerEntry(Dest.Home, R.string.nav_home, R.drawable.ic_wall),
         DrawerEntry(Dest.Logs, R.string.nav_logs, R.drawable.ic_logs),
-        DrawerEntry(Dest.Stats, R.string.nav_stats, R.drawable.ic_chart)
+        DrawerEntry(Dest.Stats, R.string.nav_stats, R.drawable.ic_chart),
+        DrawerEntry(Dest.Files, R.string.nav_files, R.drawable.ic_file)
     )
     val fw = listOf(
         DrawerEntry(Dest.Apps, R.string.nav_apps, R.drawable.ic_apps),

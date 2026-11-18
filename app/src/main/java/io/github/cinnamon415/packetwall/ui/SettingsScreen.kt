@@ -27,6 +27,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,6 +44,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -81,6 +85,22 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
     val s by app.settings.values.collectAsState()
     ScreenScaffold(title = stringResource(R.string.nav_settings), onMenu = openDrawer) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
+            ListSubheader(stringResource(R.string.settings_appearance))
+            RoundedGroup {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.theme))
+                    val options = listOf(R.string.theme_system, R.string.theme_light, R.string.theme_dark)
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        options.forEachIndexed { i, label ->
+                            SegmentedButton(s.theme == i, {
+                                app.settings.update { it.copy(theme = i) }
+                            }, SegmentedButtonDefaults.itemShape(i, options.size)) {
+                                Text(stringResource(label), maxLines = 1)
+                            }
+                        }
+                    }
+                }
+            }
             ListSubheader(stringResource(R.string.settings_analysis))
             RoundedGroup {
                 Row(
@@ -99,7 +119,7 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     Switch(s.capturePackets, { v -> app.settings.update { it.copy(capturePackets = v) } })
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
-                ChoiceRow(stringResource(R.string.buffer_size), Settings.BUFFER_SIZES, s.bufferMb, { "$it MB" }) { v ->
+                ChoiceRow(stringResource(R.string.buffer_size), Settings.BUFFER_SIZES, s.bufferMb, { "$it ${Units.mb}" }) { v ->
                     app.settings.update { it.copy(bufferMb = v) }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -107,8 +127,16 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     stringResource(R.string.snaplen),
                     Settings.SNAPLENS,
                     s.snaplen,
-                    { if (it == 0) stringResource(R.string.snaplen_full) else "$it B" }
+                    { if (it == 0) stringResource(R.string.snaplen_full) else "$it ${Units.b}" }
                 ) { v -> app.settings.update { it.copy(snaplen = v) } }
+                HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
+                // writing needs the packets: without "keep packets" the engine does not hand them over
+                SwitchRow(
+                    stringResource(R.string.record_to_disk),
+                    stringResource(if (s.capturePackets) R.string.record_to_disk_hint else R.string.record_needs_packets),
+                    s.record && s.capturePackets,
+                    enabled = s.capturePackets
+                ) { v -> app.settings.update { it.copy(record = v) } }
             }
             Text(
                 stringResource(R.string.settings_apply_hint),
@@ -565,16 +593,16 @@ private fun SettingChip(app: PacketwallApp, selected: Boolean, label: String, ch
     FilterChip(selected, { app.settings.update(change) }, { Text(label) })
 
 @Composable
-private fun SwitchRow(title: String, hint: String?, value: Boolean, onChange: (Boolean) -> Unit) {
+private fun SwitchRow(title: String, hint: String?, value: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable { onChange(!value) }.padding(horizontal = 14.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clickable(enabled = enabled) { onChange(!value) }.padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title)
+            Text(title, color = if (enabled) Color.Unspecified else MaterialTheme.colorScheme.outline)
             if (hint != null) Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(value, onChange)
+        Switch(value, onChange, enabled = enabled)
     }
 }
 

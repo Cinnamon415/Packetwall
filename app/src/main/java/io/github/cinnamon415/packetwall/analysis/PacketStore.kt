@@ -173,6 +173,30 @@ class PacketStore {
         }
     }
 
+    /**
+     * Adds one raw IP packet (an opened capture file): wrapped in an EPB like the live ones, so the
+     * packet views and pcapng export work the same. Not passed to the sinks.
+     */
+    fun addPacket(tsMicros: Long, data: ByteArray, origLen: Int, tx: Boolean, uid: Int, dropped: Boolean) {
+        val pad = (4 - data.size % 4) % 4
+        val comments = listOfNotNull(if (uid >= 0) "u-$uid" else null, if (dropped) "dropped" else null).map { it.toByteArray() }
+        val optLen = 4 + 4 + comments.sumOf { 4 + ((it.size + 3) and 3.inv()) } + 4 // flags, comments, end of options
+        val total = DATA_OFF + data.size + pad + optLen + 4
+        val bb = ByteBuffer.allocate(total).order(ByteOrder.LITTLE_ENDIAN)
+        bb.putInt(6).putInt(total).putInt(0).putInt((tsMicros ushr 32).toInt()).putInt(tsMicros.toInt())
+        bb.putInt(data.size).putInt(origLen).put(data).put(ByteArray(pad))
+        bb.putShort(2).putShort(4).putInt(if (tx) 2 else 1) // epb_flags: outbound / inbound
+        for (c in comments) {
+            bb.putShort(1).putShort(c.size.toShort()).put(c).put(ByteArray((4 - c.size % 4) % 4))
+        }
+        bb.putShort(0).putShort(0)
+        bb.putInt(total)
+        synchronized(lock) {
+            addEpb(bb.array())
+            _info.value = Info(packets.size, bytes, evicted, packets.firstOrNull()?.ts ?: 0)
+        }
+    }
+
     /** Packets of a connection (same 5-tuple, inside its lifetime). */
     fun packetsOf(c: Conn): List<Pkt> {
         val key = keyOf(c) ?: return emptyList()

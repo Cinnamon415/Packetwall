@@ -40,6 +40,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -75,13 +76,13 @@ class PktRow(val p: PacketStore.Pkt, val s: Dissector.Summary, val relSeq: Long?
  * connection got new packets, and no more polling once it is closed.
  */
 @Composable
-fun rememberConnPackets(app: PacketwallApp, c: Conn): List<PktRow>? {
+fun rememberConnPackets(source: CaptureSource, c: Conn): List<PktRow>? {
     val latest by rememberUpdatedState(c)
     val rows by produceState<List<PktRow>?>(null, c.id) {
         var seen: Pair<Int, Long>? = null
         while (true) {
             val conn = latest
-            val pkts = withContext(Dispatchers.Default) { app.packets.packetsOf(conn) }
+            val pkts = withContext(Dispatchers.Default) { source.packets.packetsOf(conn) }
             val now = pkts.size to (pkts.lastOrNull()?.seq ?: -1L)
             if (now != seen) {
                 seen = now
@@ -117,10 +118,10 @@ private fun fmtDelta(us: Long): String = when {
 // ------------------------------------------------------------------ Packets tab
 
 @Composable
-fun PacketsTab(app: PacketwallApp, c: Conn, onOpenPacket: (Long) -> Unit) {
-    val rows = rememberConnPackets(app, c)
+fun PacketsTab(source: CaptureSource, c: Conn, onOpenPacket: (Long) -> Unit) {
+    val rows = rememberConnPackets(source, c)
     var range by remember { mutableStateOf<Pair<Float, Float>?>(null) }
-    val captureOn = app.settings.current.capturePackets
+    val captureOn = !source.live || (LocalContext.current.applicationContext as PacketwallApp).settings.current.capturePackets
     when {
         rows == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.loading)) }
         rows.isEmpty() -> EmptyHint(stringResource(if (captureOn) R.string.no_packets else R.string.capture_off))
@@ -202,7 +203,7 @@ private fun Timeline(rows: List<PktRow>, span: Long, range: Pair<Float, Float>?,
 }
 
 @Composable
-private fun PacketRow(r: PktRow, onClick: () -> Unit) {
+internal fun PacketRow(r: PktRow, onClick: () -> Unit) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val (arrow, color) = when {
         r.p.dropped -> "✕" to MaterialTheme.colorScheme.error
@@ -235,11 +236,11 @@ private fun PacketRow(r: PktRow, onClick: () -> Unit) {
 // ------------------------------------------------------------------ Packet screen
 
 @Composable
-fun PacketScreen(app: PacketwallApp, connId: Int, seq: Long, onBack: () -> Unit) {
-    val conn = remember(connId) { app.connections.conns.value.firstOrNull { it.id == connId } }
+fun PacketScreen(source: CaptureSource, connId: Int, seq: Long, onBack: () -> Unit) {
+    val conn = remember(connId) { source.conns.value.firstOrNull { it.id == connId } }
     val pkt = remember(seq) {
-        conn?.let { app.packets.packetsOf(it) }?.firstOrNull { it.seq == seq }
-            ?: app.packets.all().firstOrNull { it.seq == seq }
+        conn?.let { source.packets.packetsOf(it) }?.firstOrNull { it.seq == seq }
+            ?: source.packets.all().firstOrNull { it.seq == seq }
     }
     var selected by remember { mutableStateOf<Dissector.Field?>(null) }
     if (pkt == null) {
@@ -399,8 +400,8 @@ private fun printable(b: ByteArray): Boolean {
 }
 
 @Composable
-fun DataTab(app: PacketwallApp, c: Conn) {
-    val rows = rememberConnPackets(app, c)
+fun DataTab(source: CaptureSource, c: Conn) {
+    val rows = rememberConnPackets(source, c)
     var mode by rememberSaveable { mutableStateOf(0) } // 0 auto, 1 text, 2 hex
     val blocks = remember(rows) { rows?.let { payloadBlocks(it) } ?: emptyList() }
     Column {
@@ -487,8 +488,8 @@ private fun hexLines(b: ByteArray): String = buildString {
 // ------------------------------------------------------------------ HTTP tab
 
 @Composable
-fun HttpTab(app: PacketwallApp, c: Conn) {
-    val rows = rememberConnPackets(app, c)
+fun HttpTab(source: CaptureSource, c: Conn) {
+    val rows = rememberConnPackets(source, c)
     val blocks = remember(rows) { rows?.let { payloadBlocks(it, 64 * 1024) } ?: emptyList() }
     // TLS details from the reassembled streams (a ClientHello often spans several segments)
     val tlsClient = remember(blocks) { blocks.firstOrNull { it.tx }?.let { TlsInfo.client(it.bytes) } }

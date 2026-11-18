@@ -77,7 +77,6 @@ import io.github.cinnamon415.packetwall.engine.Conn
 import io.github.cinnamon415.packetwall.ui.theme.LocalExtraColors
 import java.io.File
 import java.io.Writer
-import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -87,7 +86,7 @@ import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, onOpenConn: (Int) -> Unit) {
+fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, onOpenConn: (Int) -> Unit, onOpenFiles: () -> Unit) {
     val vm = appViewModel(app) { a, saved -> LogsViewModel(a.connections.conns, saved) }
     val fw by app.firewall.state.collectAsState()
     val shownState by vm.shown.collectAsStateWithLifecycle()
@@ -150,7 +149,7 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
             }
         }
         if (tab == LogTab.CAPTURES) {
-            CapturesTab(app)
+            CapturesTab(app, onOpenFiles)
             return@ScreenScaffold
         }
         if (shown.isEmpty()) {
@@ -183,7 +182,7 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ConnRow(c: Conn, compact: Boolean, tracker: String?, onLongClick: () -> Unit, onClick: () -> Unit) {
+internal fun ConnRow(c: Conn, compact: Boolean, tracker: String?, onLongClick: () -> Unit, onClick: () -> Unit) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     val error = MaterialTheme.colorScheme.error
     val time = formatTime(c.firstSeen)
@@ -318,7 +317,7 @@ private fun HttpRow(c: Conn, onLongClick: () -> Unit, onClick: () -> Unit) {
 fun capturesDir(app: PacketwallApp) = File(app.filesDir, "captures").apply { mkdirs() }
 
 @Composable
-private fun CapturesTab(app: PacketwallApp) {
+private fun CapturesTab(app: PacketwallApp, onOpenFiles: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val info by app.packets.info.collectAsState()
@@ -378,50 +377,11 @@ private fun CapturesTab(app: PacketwallApp) {
         }
         item { StreamCard(app, settings) }
         item { RecordCard(app, settings) { refresh() } }
-        if (files.isEmpty()) {
-            item { EmptyHint(stringResource(R.string.no_captures)) }
-        } else {
-            item {
-                RoundedGroup {
-                    files.forEachIndexed { i, f ->
-                        if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
-                        Row(
-                            Modifier.fillMaxWidth().clickable {
-                                export.launch(f.name) { out -> f.inputStream().use { it.copyTo(out) } }
-                            }.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    f.name,
-                                    fontFamily = FontFamily.Monospace,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    "${formatBytes(
-                                        f.length()
-                                    )} · ${DateFormat.getDateTimeInstance(
-                                        DateFormat.SHORT,
-                                        DateFormat.SHORT
-                                    ).format(Date(f.lastModified()))}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton({ deleting = f }) { Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.delete)) }
-                        }
-                    }
-                }
-            }
-        }
         item {
-            Text(
-                stringResource(R.string.captures_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            // saved and recorded files are opened, exported and deleted in "File analysis"
+            OutlinedButton(onClick = onOpenFiles, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.files_go, files.size))
+            }
         }
     }
 }

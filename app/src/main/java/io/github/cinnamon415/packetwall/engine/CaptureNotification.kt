@@ -27,11 +27,26 @@ object CaptureNotification {
             Intent(ctx, CaptureService::class.java).setAction(CaptureService.ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE
         )
+        val paused = CaptureStatus.paused
+        val pause = PendingIntent.getService(
+            ctx,
+            2,
+            Intent(ctx, CaptureService::class.java).setAction(if (paused) CaptureService.ACTION_RESUME else CaptureService.ACTION_PAUSE),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         return Notification.Builder(ctx, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_wall)
-            .setContentTitle(ctx.getString(R.string.notif_running))
+            .setContentTitle(ctx.getString(if (paused) R.string.notif_paused else R.string.notif_running))
+            .apply { if (paused) setContentText(ctx.getString(R.string.paused_hint)) }
             .setContentIntent(openApp(ctx))
             .setOngoing(true)
+            .addAction(
+                Notification.Action.Builder(
+                    null,
+                    ctx.getString(if (paused) R.string.action_resume else R.string.action_pause),
+                    pause
+                ).build()
+            )
             .addAction(Notification.Action.Builder(null, ctx.getString(R.string.action_stop), stop).build())
             .build()
     }

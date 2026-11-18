@@ -53,14 +53,17 @@ class NativeBridge(private val vpn: VpnService, private val app: PacketwallApp, 
 
     fun getCountryCode(host: String): String = app.geo.country(host)
 
-    fun dumpPcapData(data: ByteArray) = app.packets.feed(data)
+    fun dumpPcapData(data: ByteArray) {
+        if (!CaptureStatus.paused) app.packets.feed(data)
+    }
 
     fun stopPcapDump() {}
 
     fun startConnectionsUpdate() {}
 
     fun updateConnections(newConns: Array<ConnectionDescriptor?>?, updates: Array<ConnectionUpdate?>?) {
-        app.connections.onUpdate(newConns, updates)
+        // paused: connections that start now are not logged; known ones still get their updates
+        app.connections.onUpdate(if (CaptureStatus.paused) null else newConns, updates)
     }
 
     fun sendStatsDump(stats: CaptureStats) {

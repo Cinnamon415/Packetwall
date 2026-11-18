@@ -55,6 +55,11 @@ class CaptureService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         lastStartId = startId
+        if (intent?.action == ACTION_PAUSE || intent?.action == ACTION_RESUME) {
+            CaptureStatus.pausedSince.value = if (intent.action == ACTION_PAUSE) System.currentTimeMillis() else null
+            if (CaptureStatus.running) startForegroundCompat() // the notification shows the new state
+            return START_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
             control.execute { stopCapture() }
             return START_NOT_STICKY
@@ -219,6 +224,7 @@ class CaptureService : VpnService() {
         loopThread = null
         bridge = null
         CaptureStatus.state.value = CaptureState.Stopped
+        CaptureStatus.pausedSince.value = null
         // a start that came in meanwhile keeps the service (and its notification) alive
         if (pendingStarts.get() == 0) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -259,11 +265,18 @@ class CaptureService : VpnService() {
         private const val TAG = "CaptureService"
         const val ACTION_START = "io.github.cinnamon415.packetwall.START"
         const val ACTION_STOP = "io.github.cinnamon415.packetwall.STOP"
+        const val ACTION_PAUSE = "io.github.cinnamon415.packetwall.PAUSE"
+        const val ACTION_RESUME = "io.github.cinnamon415.packetwall.RESUME"
         private const val DNS_DOH = 1
         private const val LOOP_STOP_TIMEOUT_MS = 5000L
 
         fun start(ctx: Context) {
             ContextCompat.startForegroundService(ctx, Intent(ctx, CaptureService::class.java).setAction(ACTION_START))
+        }
+
+        /** Pauses or resumes the capture (the rules keep filtering). */
+        fun setPaused(ctx: Context, paused: Boolean) {
+            ctx.startService(Intent(ctx, CaptureService::class.java).setAction(if (paused) ACTION_PAUSE else ACTION_RESUME))
         }
 
         fun stop(ctx: Context) {
