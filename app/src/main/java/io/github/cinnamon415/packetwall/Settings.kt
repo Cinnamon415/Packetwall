@@ -116,9 +116,11 @@ class Settings(ctx: Context, private val box: SecretBox = SecretBox.keystore()) 
         _values.value = read()
     }
 
-    fun update(fn: (Values) -> Values) {
+    /** Read-modify-write under a lock: the UI and background workers (backups) write concurrently. */
+    fun update(fn: (Values) -> Values) = synchronized(this) {
         val old = _values.value
         val v = fn(old)
+        if (v == old) return@synchronized
         val edit = prefs.edit()
         if (v.upPass != old.upPass) edit.putString(KEY_PASS, box.seal(v.upPass))
         edit

@@ -50,6 +50,7 @@ import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.engine.CaptureState
 import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import io.github.cinnamon415.packetwall.fw.Who
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private data class DrawerEntry(val dest: Dest, @StringRes val label: Int, @DrawableRes val icon: Int)
@@ -59,6 +60,7 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
     val nav = rememberNavigator()
     // keeps tab selections etc. of screens below the top of the stack
     val saveable = rememberSaveableStateHolder()
+    val navKeys = remember { mutableSetOf<String>() }
     val live = remember(app) { LiveSource(app) }
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -67,6 +69,17 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
 
     BackHandler(enabled = drawer.isOpen || nav.stack.size > 1) {
         if (drawer.isOpen) scope.launch { drawer.close() } else nav.pop()
+    }
+
+    // forget the saved state of screens that left the stack (after their exit animation), so the
+    // activity bundle does not grow with every connection opened
+    val stackNow = nav.stack.toList()
+    LaunchedEffect(stackNow) {
+        delay(1000)
+        val live = stackNow.mapIndexed { i, d -> "${i + 1}:$d" }.toSet()
+        (navKeys - live).forEach { saveable.removeState(it) }
+        navKeys.clear()
+        navKeys.addAll(live)
     }
 
     val snackbar = remember { SnackbarHostState() }
@@ -99,7 +112,9 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                     label = "nav"
                 ) { stack ->
                     val d0 = stack.last()
-                    saveable.SaveableStateProvider("${stack.size}:$d0") {
+                    val key = "${stack.size}:$d0"
+                    navKeys.add(key)
+                    saveable.SaveableStateProvider(key) {
                         when (val d = d0) {
                             Dest.Home -> HomeScreen(
                                 app,

@@ -376,15 +376,18 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
                         singleLine = true,
                         label = { Text(stringResource(R.string.host)) }
                     )
+                    // the text may be empty or invalid while typing; only a valid port is saved
+                    var portText by rememberSaveable { mutableStateOf(s.upPort.toString()) }
+                    val portOk = portText.toIntOrNull()?.let { it in 1..65535 } == true
                     OutlinedTextField(
-                        s.upPort.toString(),
+                        portText,
                         { v ->
-                            v.filter(Char::isDigit).take(5).toIntOrNull()?.let { p ->
-                                app.settings.update { it.copy(upPort = p) }
-                            }
+                            portText = v.filter(Char::isDigit).take(5)
+                            portText.toIntOrNull()?.takeIf { it in 1..65535 }?.let { p -> app.settings.update { it.copy(upPort = p) } }
                         },
                         Modifier.width(100.dp),
                         singleLine = true,
+                        isError = !portOk,
                         label = { Text(stringResource(R.string.port)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                     )
