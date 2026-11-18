@@ -22,8 +22,8 @@ android {
         minSdk = 29
         targetSdk = 37
         // versionCode = major * 10000 + minor * 100 + patch; must grow with every release
-        versionCode = 600
-        versionName = "0.6.0"
+        versionCode = 700
+        versionName = "0.7.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")

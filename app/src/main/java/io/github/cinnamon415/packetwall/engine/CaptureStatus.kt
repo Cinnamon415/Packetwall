@@ -21,6 +21,9 @@ object CaptureStatus {
     /** DoH URL while the built-in DNS-over-HTTPS proxy is in use. */
     val dohActive = MutableStateFlow<String?>(null)
 
+    /** Android's "Always-on VPN" and "Block connections without VPN" for Packetwall, as seen at the last start. */
+    val alwaysOn = MutableStateFlow<Pair<Boolean, Boolean>?>(null)
+
     /** Private DNS is in strict mode: queries are encrypted, rules by name only see SNI. */
     val privateDnsStrict = MutableStateFlow(false)
 

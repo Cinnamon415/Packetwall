@@ -45,7 +45,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import io.github.cinnamon415.packetwall.BuildConfig
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.engine.CaptureState
@@ -181,7 +180,11 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                             )
                             Dest.Sets -> SetsScreen(app, openDrawer)
                             Dest.Settings -> SettingsScreen(app, openDrawer)
-                            Dest.About -> AboutScreen(openDrawer)
+                            Dest.About -> AboutScreen(app, openDrawer, onGuide = {
+                                nav.push(Dest.Guide)
+                            }, onChangelog = { nav.push(Dest.Changelog) })
+                            Dest.Guide -> GuideScreen(onBack = { nav.pop() })
+                            Dest.Changelog -> ChangelogScreen(onBack = { nav.pop() })
                         }
                     }
                 }
@@ -252,26 +255,4 @@ private fun DrawerItem(e: DrawerEntry, current: Dest, onSelect: (Dest) -> Unit) 
         onClick = { onSelect(e.dest) },
         colors = NavigationDrawerItemDefaults.colors()
     )
-}
-
-@Composable
-fun AboutScreen(openDrawer: () -> Unit) {
-    ScreenScaffold(title = stringResource(R.string.nav_about), onMenu = openDrawer) {
-        Box(Modifier.fillMaxSize().padding(16.dp)) {
-            Column {
-                Text(
-                    "Packetwall ${BuildConfig.VERSION_NAME}",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "GPL-3.0-or-later. Native engine adapted from PCAPdroid (Emanuele Faranda), " +
-                        "zdtun and nDPI (LGPL-3.0), zstd, libpcap, OkHttp (Apache-2.0). " +
-                        "IP Geolocation by DB-IP (db-ip.com), CC BY 4.0. Tracker data: AdGuard companiesdb, CC BY-SA 4.0.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
 }

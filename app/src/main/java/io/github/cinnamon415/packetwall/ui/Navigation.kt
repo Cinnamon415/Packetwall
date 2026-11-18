@@ -29,6 +29,10 @@ sealed interface Dest {
 
     @Serializable data object About : Dest
 
+    @Serializable data object Guide : Dest
+
+    @Serializable data object Changelog : Dest
+
     @Serializable data object Files : Dest
 
     @Serializable data object Search : Dest
