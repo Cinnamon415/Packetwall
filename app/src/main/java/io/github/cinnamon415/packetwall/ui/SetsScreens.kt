@@ -306,7 +306,7 @@ internal fun BlocklistDetails(app: PacketwallApp, s: RuleSet, onDismiss: () -> U
                         SegmentedButton(action == a, { action = a }, SegmentedButtonDefaults.itemShape(i, 2)) { Text(stringResource(l)) }
                     }
                 }
-                if (action == Action.BLOCK) CheckRow(reject, stringResource(R.string.reject_label)) { reject = it }
+                if (action == Action.BLOCK) CheckRow(reject, stringResource(R.string.reject_label), Help.REJECT) { reject = it }
                 Row {
                     if (s.url != null) TextButton({ app.firewall.updateList(s.id) }) { Text(stringResource(R.string.update_now)) }
                     TextButton({ confirmDelete = true }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
@@ -508,7 +508,7 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
         }
     }) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
-            ListSubheader(stringResource(R.string.profiles))
+            ListSubheader(stringResource(R.string.profiles), Help.PROFILES)
             RoundedGroup {
                 st.profiles.forEachIndexed { i, p ->
                     if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -556,14 +556,8 @@ fun SetsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                 Spacer(Modifier.width(6.dp))
                 Text(stringResource(R.string.profile_new))
             }
-            Text(
-                stringResource(R.string.profiles_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp, bottom = 6.dp)
-            )
 
-            ListSubheader(stringResource(R.string.sets_order))
+            ListSubheader(stringResource(R.string.sets_order), Help.SET_PRIORITY)
             ReorderableSets(app, st) { editSet = it }
             TextButton(onClick = { newSet = true }) {
                 Icon(Icons.Filled.Add, null)

@@ -260,13 +260,19 @@ fun Chevron() {
 }
 
 @Composable
-fun ListSubheader(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
-    )
+fun ListSubheader(text: String, help: Help? = null) {
+    if (help == null) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
+        )
+    } else {
+        TitleWithInfo(text, help, Modifier.padding(start = 16.dp, top = 4.dp)) {
+            Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+    }
 }
 
 // ------------------------------------------------------------------ App / group rules

@@ -339,7 +339,7 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
                     )
                 }
                 if (action == Action.BLOCK) {
-                    CheckRow(reject, stringResource(R.string.reject_label)) { reject = it }
+                    CheckRow(reject, stringResource(R.string.reject_label), Help.REJECT) { reject = it }
                 }
                 if (action == Action.ALLOW) {
                     Text(stringResource(R.string.kv_route), style = MaterialTheme.typography.labelMedium)
@@ -384,13 +384,16 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
 }
 
 @Composable
-fun CheckRow(checked: Boolean, label: String, onChange: (Boolean) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onChange(!checked) },
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Checkbox(checked, onChange)
-        Text(label)
+fun CheckRow(checked: Boolean, label: String, help: Help? = null, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).clickable { onChange(!checked) },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Checkbox(checked, onChange)
+            Text(label)
+        }
+        if (help != null) InfoButton(help)
     }
 }
 

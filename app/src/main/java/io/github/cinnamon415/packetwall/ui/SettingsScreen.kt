@@ -119,7 +119,9 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     Switch(s.capturePackets, { v -> app.settings.update { it.copy(capturePackets = v) } })
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
-                ChoiceRow(stringResource(R.string.buffer_size), Settings.BUFFER_SIZES, s.bufferMb, { "$it ${Units.mb}" }) { v ->
+                ChoiceRow(stringResource(R.string.buffer_size), Settings.BUFFER_SIZES, s.bufferMb, {
+                    "$it ${Units.mb}"
+                }, Help.BUFFER) { v ->
                     app.settings.update { it.copy(bufferMb = v) }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -127,7 +129,8 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     stringResource(R.string.snaplen),
                     Settings.SNAPLENS,
                     s.snaplen,
-                    { if (it == 0) stringResource(R.string.snaplen_full) else "$it ${Units.b}" }
+                    { if (it == 0) stringResource(R.string.snaplen_full) else "$it ${Units.b}" },
+                    Help.SNAPLEN
                 ) { v -> app.settings.update { it.copy(snaplen = v) } }
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                 // writing needs the packets: without "keep packets" the engine does not hand them over
@@ -135,7 +138,8 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     stringResource(R.string.record_to_disk),
                     stringResource(if (s.capturePackets) R.string.record_to_disk_hint else R.string.record_needs_packets),
                     s.record && s.capturePackets,
-                    enabled = s.capturePackets
+                    enabled = s.capturePackets,
+                    help = Help.RECORD
                 ) { v -> app.settings.update { it.copy(record = v) } }
                 if (s.record && s.capturePackets) {
                     ChoiceRow(stringResource(R.string.record_size), listOf(8, 32, 128, 512), s.recordMb, { "$it ${Units.mb}" }) { v ->
@@ -160,13 +164,18 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
             )
             ListSubheader(stringResource(R.string.settings_network))
             RoundedGroup {
-                SwitchRow(stringResource(R.string.lan_bypass), stringResource(R.string.lan_bypass_hint), s.lanBypass) { v ->
+                SwitchRow(
+                    stringResource(R.string.lan_bypass),
+                    stringResource(R.string.lan_bypass_hint),
+                    s.lanBypass,
+                    help = Help.LAN_BYPASS
+                ) { v ->
                     app.settings.update { it.copy(lanBypass = v) }
                 }
             }
             ListSubheader(stringResource(R.string.upstream))
             UpstreamSettings(app, s)
-            ListSubheader("DNS")
+            ListSubheader("DNS", Help.DNS)
             DnsSettings(app, s)
             Text(
                 stringResource(R.string.settings_apply_hint),
@@ -186,7 +195,8 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                     stringResource(R.string.log_keep),
                     Settings.LOG_DAYS,
                     s.logDays,
-                    { if (it == 0) stringResource(R.string.storage_session) else pluralStringResource(R.plurals.days, it, it) }
+                    { if (it == 0) stringResource(R.string.storage_session) else pluralStringResource(R.plurals.days, it, it) },
+                    Help.LOG_STORAGE
                 ) { v ->
                     // a shorter retention deletes older entries right away: ask first
                     if (v in 1 until s.logDays) shorterLog = v else app.settings.update { it.copy(logDays = v) }
@@ -234,9 +244,16 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
 }
 
 @Composable
-private fun <T> ChoiceRow(title: String, options: List<T>, value: T, label: @Composable (T) -> String, onPick: (T) -> Unit) {
-    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-        Text(title)
+private fun <T> ChoiceRow(
+    title: String,
+    options: List<T>,
+    value: T,
+    label: @Composable (T) -> String,
+    help: Help? = null,
+    onPick: (T) -> Unit
+) {
+    Column(Modifier.padding(horizontal = 14.dp, vertical = if (help != null) 4.dp else 10.dp)) {
+        TitleWithInfo(title, help)
         Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             options.forEach { o -> FilterChip(o == value, { onPick(o) }, { Text(label(o)) }) }
         }
@@ -326,7 +343,7 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.upstream_socks))
+                TitleWithInfo(stringResource(R.string.upstream_socks), Help.UPSTREAM)
                 val relay by CaptureStatus.udpRelayUp.collectAsState()
                 Text(
                     when (up) {
@@ -400,13 +417,15 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
                     }
                     Chevron()
                 }
-                Text(stringResource(R.string.upstream_udp), style = MaterialTheme.typography.labelLarge)
+                TitleWithInfo(stringResource(R.string.upstream_udp), Help.UDP) { Text(it, style = MaterialTheme.typography.labelLarge) }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     SettingChip(app, s.upUdp == 1, stringResource(R.string.upstream_udp_block)) { it.copy(upUdp = 1) }
                     if (s.upType == 0) SettingChip(app, s.upUdp == 2, stringResource(R.string.upstream_udp_proxy)) { it.copy(upUdp = 2) }
                     SettingChip(app, s.upUdp == 0, stringResource(R.string.upstream_udp_direct)) { it.copy(upUdp = 0) }
                 }
-                Text(stringResource(R.string.upstream_on_down), style = MaterialTheme.typography.labelLarge)
+                TitleWithInfo(stringResource(R.string.upstream_on_down), Help.KILL_SWITCH) {
+                    Text(it, style = MaterialTheme.typography.labelLarge)
+                }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     SettingChip(app, s.upOnDown == 0, stringResource(R.string.kill_switch)) { it.copy(upOnDown = 0) }
                     SettingChip(app, s.upOnDown == 1, stringResource(R.string.go_direct)) { it.copy(upOnDown = 1) }
@@ -607,13 +626,20 @@ private fun SettingChip(app: PacketwallApp, selected: Boolean, label: String, ch
     FilterChip(selected, { app.settings.update(change) }, { Text(label) })
 
 @Composable
-private fun SwitchRow(title: String, hint: String?, value: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+private fun SwitchRow(
+    title: String,
+    hint: String?,
+    value: Boolean,
+    enabled: Boolean = true,
+    help: Help? = null,
+    onChange: (Boolean) -> Unit
+) {
     Row(
         Modifier.fillMaxWidth().clickable(enabled = enabled) { onChange(!value) }.padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, color = if (enabled) Color.Unspecified else MaterialTheme.colorScheme.outline)
+            TitleWithInfo(title, help) { Text(it, color = if (enabled) Color.Unspecified else MaterialTheme.colorScheme.outline) }
             if (hint != null) Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(value, onChange, enabled = enabled)

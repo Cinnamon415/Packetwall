@@ -130,7 +130,8 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
                 isError = !check.valid,
                 supportingText = check.error?.let { e -> { Text(parseErrorText(e)) } },
-                placeholder = { Text(stringResource(R.string.logs_filter_hint), fontFamily = FontFamily.Monospace) }
+                placeholder = { Text(stringResource(R.string.logs_filter_hint), fontFamily = FontFamily.Monospace) },
+                trailingIcon = { FilterHelpButton { vm.updateFilter(it) } }
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val chips = listOf(R.string.chip_all, R.string.chip_blocked, R.string.chip_allowed)
@@ -341,7 +342,9 @@ private fun CapturesTab(app: PacketwallApp, onOpenFiles: () -> Unit) {
         item {
             RoundedGroup {
                 Column(Modifier.padding(12.dp)) {
-                    Text(stringResource(R.string.buffer_title), style = MaterialTheme.typography.titleSmall)
+                    TitleWithInfo(stringResource(R.string.buffer_title), Help.BUFFER) {
+                        Text(it, style = MaterialTheme.typography.titleSmall)
+                    }
                     Text(
                         if (!settings.capturePackets) {
                             stringResource(R.string.capture_off)

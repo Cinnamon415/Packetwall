@@ -263,7 +263,8 @@ fun FileViewScreen(onBack: () -> Unit, onOpenConn: (Int) -> Unit, onOpenPacket: 
                 isError = compiled.isFailure,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Monospace),
                 placeholder = { Text(stringResource(R.string.logs_filter_hint), fontFamily = FontFamily.Monospace) },
-                supportingText = (compiled.exceptionOrNull() as? ConnFilter.ParseError)?.let { e -> { Text(parseErrorText(e)) } }
+                supportingText = (compiled.exceptionOrNull() as? ConnFilter.ParseError)?.let { e -> { Text(parseErrorText(e)) } },
+                trailingIcon = { FilterHelpButton { filter = it } }
             )
             if (f.skipped > 0) {
                 Text(

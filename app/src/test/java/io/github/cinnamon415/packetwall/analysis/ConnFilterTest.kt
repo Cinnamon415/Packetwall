@@ -42,4 +42,14 @@ class ConnFilterTest {
         assertEquals(0, (e as ConnFilter.ParseError).pos)
         assertTrue(runCatching { ConnFilter.compile("(port == 1") }.exceptionOrNull() is ConnFilter.ParseError)
     }
+
+    @Test fun helpExamplesParse() {
+        // the filter help inserts these: each must be a valid expression that does something
+        io.github.cinnamon415.packetwall.ui.FILTER_EXAMPLES.forEach { e ->
+            val f = ConnFilter.compile(e)
+            listOf(tbank, chrome).forEach { f(it) }
+        }
+        assertTrue(ConnFilter.compile("app == \"Chrome\" && port == 443")(chrome.copy(dstPort = 443)))
+        assertTrue(ConnFilter.compile("!(proto == TLS) && port != 53")(chrome))
+    }
 }
