@@ -35,3 +35,7 @@ built-in DoH and an upstream chain (SOCKS5 with UDP, HTTP CONNECT, kill switch, 
 See `docs/SPEC.md` for the decisions and `tools/e2e/` for the end-to-end tests.
 
 Third-party data downloaded on request: DB-IP Lite (CC BY 4.0), AdGuard companiesdb (CC BY-SA 4.0).
+
+## Chain with a proxy client
+
+Packetwall keeps the VPN and forwards traffic to v2rayNG, NekoBox, Hiddify, FlClash, Clash Meta or sing-box running in proxy-only mode: see [docs/CHAIN.md](docs/CHAIN.md) (Russian).
