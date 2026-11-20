@@ -652,6 +652,13 @@ int run_vpn(pcapdroid_t *pd) {
                             zdtun_conn_proxy(conn);
                             data->proxied = true;
                         }
+                    } else if(((tuple->ipproto == IPPROTO_ICMP) || (tuple->ipproto == IPPROTO_ICMPV6)) &&
+                              wants_upstream(pd, data)) {
+                        // Packetwall: SOCKS5 and HTTP CONNECT carry no ICMP, and sending it directly would
+                        // show the real address. Echo requests are answered after a TCP check through the
+                        // proxy (Kotlin, IcmpProbe); nothing goes out directly.
+                        data->icmp_probe = true;
+                        data->proxied = true;
                     } else if(wants_upstream(pd, data) && zdtun_has_udp_relay(zdt) &&
                               (tuple->ipproto == IPPROTO_UDP) &&
                               !((tuple->ipver == 4) && (tuple->dst_ip.ip4 == pd->vpn.ipv4.internal_dns))) {
@@ -684,6 +691,17 @@ int run_vpn(pcapdroid_t *pd) {
                             zdtun_conn_close(zdt, conn, CONN_STATUS_CLOSED);
                         }
                     }
+                }
+
+                if(data->icmp_probe && !data->to_block) {
+                    pd_account_stats(pd, &pctx);
+                    const uint8_t *l4 = (const uint8_t*) pkt.l4;
+                    bool echo = l4 && (pkt.len >= pkt.ip_hdr_len + 8) &&
+                                (((tuple->ipproto == IPPROTO_ICMP) && (l4[0] == 8)) ||
+                                 ((tuple->ipproto == IPPROTO_ICMPV6) && (l4[0] == 128)));
+                    if(echo && pd->cb.icmp_echo)
+                        pd->cb.icmp_echo(pd, pkt.buf, pkt.len);
+                    goto housekeeping;
                 }
 
                 if(data->to_block) {

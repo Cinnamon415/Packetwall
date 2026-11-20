@@ -130,6 +130,7 @@ typedef struct {
     bool fw_app_block;
     bool netd_block_missed;
     bool proxied;
+    bool icmp_probe;      // Packetwall: echo requests are answered by a TCP check through the upstream
     bool decryption_ignored;
     bool port_mapping_applied;
     bool encrypted_l7;
@@ -201,6 +202,7 @@ typedef struct {
     void (*clear_payload_chunks)(struct pcapdroid *pd, const pkt_context_t *pctx);
     bool (*get_country_code)(struct pcapdroid *pd, const char *host, char out[3]);
     void (*check_available_heap)(struct pcapdroid *pd);
+    void (*icmp_echo)(struct pcapdroid *pd, const char *pkt, int len);
 } pd_callbacks_t;
 
 /* ******************************************************* */
@@ -350,6 +352,7 @@ typedef struct {
     jmethodID getCountryCode;
     jmethodID protect;
     jmethodID dumpPcapData;
+    jmethodID onIcmpEcho;
     jmethodID stopPcapDump;
     jmethodID startConnectionsUpdate;
     jmethodID updateConnections;

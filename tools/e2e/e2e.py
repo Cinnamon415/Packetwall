@@ -304,6 +304,33 @@ def s_kill_switch():
     check("fallback: unresolvable proxy -> direct", allowed("www.wikipedia.org"))
 
 
+def ping(ip, n=2):
+    """Echo replies received for n pings."""
+    out = sh(f"ping -c {n} -W 3 -i 0.5 {ip} 2>&1 | grep -o '[0-9]* received'", timeout=20).strip()
+    return int(out.split()[0]) if out else 0
+
+
+def s_icmp_upstream():
+    # SOCKS5/HTTP carry no ICMP: ping is answered after a TCP check through the proxy, never directly
+    n = proxy_log_len()
+    configure(settings={"up": True, "up_host": HOST, "up_port": 1081, "up_type": 0, "up_udp": 1, "up_down": 0})
+    time.sleep(2)
+    got = ping("1.1.1.1")
+    log = proxy_log_since(n)
+    check("ping via SOCKS5: answered", got == 2, f"{got} received")
+    check("ping via SOCKS5: checked through the proxy", any("SOCKS CONNECT 1.1.1.1 443" in l for l in log))
+    n = proxy_log_len()
+    configure(settings={"up": True, "up_host": HOST, "up_port": 3128, "up_type": 1, "up_user": "user", "up_pass": "secret",
+                        "up_udp": 1, "up_down": 0})
+    time.sleep(2)
+    got = ping("1.1.1.1")
+    check("ping via HTTP CONNECT: answered", got == 2 and any("HTTP CONNECT 1.1.1.1:443" in l for l in proxy_log_since(n)), f"{got} received")
+    # proxy down with the kill switch: no answer (nothing goes out directly)
+    configure(settings={"up": True, "up_host": HOST, "up_port": 1, "up_type": 0, "up_udp": 1, "up_down": 0})
+    time.sleep(2)
+    check("ping, proxy down + kill switch: no answer", ping("1.1.1.1") == 0)
+
+
 def s_route_rule():
     n = proxy_log_len()
     configure([rule(10, 1, G, "DOMAIN", "example.org", True, "ALLOW", route="UPSTREAM")],
@@ -384,7 +411,7 @@ def s_stress():
 
 
 SCENARIOS = [s_baseline, s_toggle_guard, s_rapid_toggle, s_domain_rules, s_app_rules, s_set_priority, s_ip_port_reject, s_blocklist, s_disabled_set,
-             s_doh, s_upstream_socks, s_upstream_http, s_kill_switch, s_route_rule, s_geo, s_streaming, s_stream_lan, s_stress]
+             s_doh, s_upstream_socks, s_upstream_http, s_kill_switch, s_icmp_upstream, s_route_rule, s_geo, s_streaming, s_stream_lan, s_stress]
 
 
 def main():

@@ -135,6 +135,16 @@ class CaptureService : VpnService() {
             return
         }
         pfd = fd
+        if (monitor != null) {
+            // replies to ping go straight into the tun interface, towards the app
+            val tun = java.io.FileOutputStream(fd.fileDescriptor)
+            b.icmp = IcmpProbe(
+                proxy = { (monitor.ip ?: b.upstreamIp)?.let { java.net.InetSocketAddress(it, st.upPort) } },
+                http = st.upType == TYPE_HTTP,
+                user = st.upUser,
+                pass = st.upPass
+            ) { packet -> synchronized(tun) { tun.write(packet) } }
+        }
         app.connections.reset()
         CaptureStatus.alwaysOn.value = isAlwaysOn to isLockdownEnabled
         val startedAt = System.currentTimeMillis()
@@ -214,6 +224,8 @@ class CaptureService : VpnService() {
 
     /** Releases everything started by [startCapture]. Control thread only, after the loop exited. */
     private fun cleanup() {
+        bridge?.icmp?.stop()
+        bridge?.icmp = null
         networks?.stop()
         networks = null
         NativeBridge.setPrivateDnsBlocked(false)

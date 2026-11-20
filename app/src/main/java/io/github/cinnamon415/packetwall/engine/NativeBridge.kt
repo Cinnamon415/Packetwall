@@ -53,6 +53,14 @@ class NativeBridge(private val vpn: VpnService, private val app: PacketwallApp, 
 
     fun getCountryCode(host: String): String = app.geo.country(host)
 
+    /** Answers ping through the upstream (set while the upstream is on), see [IcmpProbe]. */
+    @Volatile var icmp: IcmpProbe? = null
+
+    /** An ICMP echo request that would have gone through the upstream (capture thread). */
+    fun onIcmpEcho(packet: ByteArray) {
+        icmp?.onEcho(packet)
+    }
+
     fun dumpPcapData(data: ByteArray) {
         if (!CaptureStatus.paused) app.packets.feed(data)
     }

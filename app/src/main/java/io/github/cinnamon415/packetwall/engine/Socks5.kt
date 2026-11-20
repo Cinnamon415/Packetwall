@@ -10,6 +10,9 @@ import javax.net.SocketFactory
 
 /** SOCKS5 client side (RFC 1928, login per RFC 1929), shared by the UDP association and the DoH tunnel. */
 object Socks5 {
+    /** The proxy refused the request; [code] is the SOCKS5 reply (5 = the host refused the connection). */
+    class Refused(val code: Int) : IOException("request refused ($code)")
+
     const val CMD_CONNECT = 1
     const val CMD_UDP_ASSOCIATE = 3
 
@@ -45,7 +48,7 @@ object Socks5 {
         out.flush()
         if (inp.readUnsignedByte() != 5) throw IOException("bad reply")
         val rep = inp.readUnsignedByte()
-        if (rep != 0) throw IOException("request refused ($rep)")
+        if (rep != 0) throw Refused(rep)
         inp.readUnsignedByte()
         val boundAddr = when (inp.readUnsignedByte()) {
             1 -> ByteArray(4).also { inp.readFully(it) }.let { InetAddress.getByAddress(it) }

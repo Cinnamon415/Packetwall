@@ -115,7 +115,7 @@ Ordered by risk: first what lets traffic or data leak or get lost, then speed, t
   - size limits and catch Throwable make a crash from hostile input (lists, imports) unlikely; any other crash in the UI still stops the VPN;
   - capture files, the largest risk, are parsed in their own process (":parser") as a stream onto disk; the main process holds only the connection table (a 441 MB file: +8 MB);
   - Settings → Network shows whether Always-on VPN + lockdown is on (with help and a link), and a one-time dialog suggests it after protection first starts; with both on, a crash drops the internet for seconds instead of leaking.
-- **ICMP through the proxy (S-L11).** SOCKS5 and HTTP CONNECT do not carry ICMP. **Not fixed yet:** with "everything through upstream" ICMP currently goes out directly (real address). Options are being chosen (block / reject / local reply / direct by choice).
+- **ICMP through the proxy (S-L11).** SOCKS5 and HTTP CONNECT do not carry ICMP. Done differently: an echo request that would go through the upstream never leaves directly; it is answered after a TCP check through the proxy (CONNECT to port 443, then 80; a refusal from the host also counts as an answer), with the time that took (`engine/IcmpProbe.kt`). Proxy down with the kill switch: no answer. Other ICMP to such destinations is dropped.
 
 ## Testing
 

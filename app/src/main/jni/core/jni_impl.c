@@ -130,6 +130,21 @@ static void sendPcapDump(struct pcapdroid *pd, const int8_t *buf, int dump_size)
 
 /* ******************************************************* */
 
+// Packetwall: an ICMP echo request that should go through the upstream, which cannot carry ICMP.
+// The Kotlin side answers it after a TCP check through the proxy (IcmpProbe).
+static void icmpEcho(struct pcapdroid *pd, const char *pkt, int len) {
+    JNIEnv *env = pd->env;
+    jbyteArray barray = (*env)->NewByteArray(env, len);
+    if(jniCheckException(env))
+        return;
+    (*env)->SetByteArrayRegion(env, barray, 0, len, (const jbyte*) pkt);
+    (*env)->CallVoidMethod(env, pd->capture_service, mids.onIcmpEcho, barray);
+    jniCheckException(env);
+    (*env)->DeleteLocalRef(env, barray);
+}
+
+/* ******************************************************* */
+
 static void stopPcapDump(pcapdroid_t *pd) {
     JNIEnv *env = pd->env;
 
@@ -607,6 +622,7 @@ static void init_jni(JNIEnv *env) {
     mids.getCountryCode = jniGetMethodID(env, cls.vpn_service, "getCountryCode", "(Ljava/lang/String;)Ljava/lang/String;"),
     mids.protect = jniGetMethodID(env, cls.vpn_service, "protect", "(I)Z");
     mids.dumpPcapData = jniGetMethodID(env, cls.vpn_service, "dumpPcapData", "([B)V");
+    mids.onIcmpEcho = jniGetMethodID(env, cls.vpn_service, "onIcmpEcho", "([B)V");
     mids.stopPcapDump = jniGetMethodID(env, cls.vpn_service, "stopPcapDump", "()V");
     mids.startConnectionsUpdate = jniGetMethodID(env, cls.vpn_service, "startConnectionsUpdate", "()V");
     mids.updateConnections = jniGetMethodID(env, cls.vpn_service, "updateConnections", "([Lio/github/cinnamon415/packetwall/engine/model/ConnectionDescriptor;[Lio/github/cinnamon415/packetwall/engine/model/ConnectionUpdate;)V");
@@ -682,6 +698,7 @@ Java_io_github_cinnamon415_packetwall_engine_NativeBridge_runPacketLoop(JNIEnv *
                     .clear_payload_chunks = clearPayloadChunks,
                     .get_country_code = getCountryCode,
                     .check_available_heap = checkAvailableHeap,
+                    .icmp_echo = icmpEcho,
             },
             .mitm_addon_uid = getIntPref(env, vpn, "getMitmAddonUid"),
             .vpn_capture = (bool) getIntPref(env, vpn, "isVpnCapture"),

@@ -40,6 +40,10 @@ New exported functions, all in `jni_impl.c`:
 | `setUpstreamAddress(ip, port)` | The proxy's resolved address; `0.0.0.0` = unknown, proxied flows are blocked (0.7) |
 | `setLogLevel(level)` | Native log level; release builds use WARN, so host names do not reach logcat (0.7) |
 
+New callback (0.7): `onIcmpEcho([B)V` gets each ICMP/ICMPv6 echo request of a flow that would go
+through the upstream (`pd_conn_t.icmp_probe`, set in `capture_vpn.c` when `wants_upstream()`); such
+flows are never forwarded, the Kotlin side writes the echo reply into the tun device itself.
+
 Changed callbacks (0.7): `getSocks5ProxyAuth` is replaced by `getSocks5ProxyUser` and
 `getSocks5ProxyPass`, each read into its own 256-byte field, so long logins and passwords are no
 longer cut at 64 bytes.
