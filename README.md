@@ -1,5 +1,7 @@
 # Packetwall
 
+[![Build](https://github.com/Cinnamon415/Packetwall/actions/workflows/build.yml/badge.svg)](https://github.com/Cinnamon415/Packetwall/actions/workflows/build.yml)
+
 Android firewall and traffic analyzer (VPN-based, no root required).
 
 - Rules: global (domains, IPs, countries, ports) and per-app, grouped in prioritized rule sets and profiles.
@@ -18,6 +20,11 @@ git submodule update --init --depth 1
 ```
 
 Release signing reads `../Packetwall-keys/keystore.properties` (outside the repository); without it the release build is unsigned.
+
+GitHub Actions (`.github/workflows/build.yml`) runs the unit tests and lint and builds the debug APK
+on every push and pull request; the APK is attached to the run as an artifact. A signed release APK
+is built too when the repository has these secrets: `SIGNING_KEYSTORE_BASE64` (the keystore,
+base64), `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS`, `SIGNING_KEY_PASSWORD`.
 
 ## License
 
