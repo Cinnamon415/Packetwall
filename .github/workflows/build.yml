@@ -34,7 +34,7 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
-            "platforms;android-37" "ndk;28.2.13676358" "cmake;3.22.1" > /dev/null
+            "platforms;android-37.0" "ndk;28.2.13676358" "cmake;3.22.1" > /dev/null
 
       - name: Unit tests, lint, debug APK
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
