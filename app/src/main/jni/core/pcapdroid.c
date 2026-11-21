@@ -38,6 +38,9 @@ bool running = false;
 uint32_t new_dns_server = 0;
 bool block_private_dns = false;
 uint16_t dns_server_port = 53;
+// Packetwall: UID of the local proxy app (chain mode), -1 = none; its DNS goes to dns_direct_port
+int proxy_app_uid = -1;
+uint16_t dns_direct_port = 0;
 bool upstream_active = true;
 bool upstream_block_udp = false;
 bool upstream_http = false;
@@ -505,7 +508,9 @@ static bool pw_fw_apply(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t 
     data->fw_reject = false;
     data->fw_route = PW_ROUTE_DEFAULT;
 
-    if(e && pd->vpn_capture) {
+    if(is_proxy_app(data))
+        data->fw_route = PW_ROUTE_DIRECT;
+    else if(e && pd->vpn_capture) {
         zdtun_ip_t dst_ip = tuple->dst_ip;
         uint16_t dport = ntohs(tuple->dst_port);
         pw_query_t q = {
@@ -602,6 +607,10 @@ pd_conn_t* pd_new_connection(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, int u
             log_d("Whitelisted app: %s [%s]", zdtun_5tuple2str(tuple, buf, sizeof(buf)), appbuf);
         }
     }
+
+    // Packetwall: the proxy app's own connections are never blocked (see is_proxy_app)
+    if(is_proxy_app(data))
+        data->whitelisted_app = true;
 
     // Query country info
     const zdtun_ip_t dst_ip = tuple->dst_ip;

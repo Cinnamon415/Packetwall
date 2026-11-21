@@ -410,8 +410,99 @@ def s_stress():
     check("stress: still filtering", refused(http("example.org")) and allowed("www.wikipedia.org"))
 
 
+PROXY_APP_PORT = 1090
+
+
+def proxy_app():
+    """(package, uid) of an installed app with INTERNET that plays the local proxy app (like FlClash)."""
+    for line in sh("pm list packages -U -3; pm list packages -U -s").splitlines():
+        m = re.match(r"package:(\S+) uid:(\d+)", line.strip())
+        if not m or int(m.group(2)) < 10000 or m.group(1).startswith("io.github.cinnamon415") or "," in m.group(2):
+            continue
+        pkg, uid = m.group(1), int(m.group(2))
+        if "android.permission.INTERNET: granted=true" in sh(f"dumpsys package {pkg} | grep 'android.permission.INTERNET'"):
+            return pkg, uid
+    raise RuntimeError("no app with INTERNET permission")
+
+
+def relay(uid, target_port):
+    """A SOCKS relay on 127.0.0.1:PROXY_APP_PORT running as [uid]: forwards to the host proxy (or a closed port)."""
+    sh("pkill -f 'nc -s 127.0.0.1 -p %d' ; true" % PROXY_APP_PORT)
+    # Android 15+ cuts idle background apps off; a real proxy app runs a foreground service
+    sh(f"cmd connectivity set-background-networking-enabled-for-uid {uid} true")
+    sh(f"su {uid},{uid},3003 sh -c 'nohup toybox nc -s 127.0.0.1 -p {PROXY_APP_PORT} -L toybox nc {HOST} {target_port} "
+       f"> /dev/null 2>&1 &'")
+    time.sleep(1)
+
+
+def resolves(name, uid=None):
+    """Does [name] resolve on the device (as [uid], else as the shell)? getaddrinfo goes through netd and the VPN DNS."""
+    pre = f"su {uid},{uid},3003 " if uid is not None else ""
+    out = sh(f"{pre}toybox timeout 8 toybox ping -c 1 -W 1 {name} 2>&1 | head -1")
+    return out.lower().startswith("ping ") and "(" in out
+
+
+def lockdown(on):
+    """Android's Always-on VPN + "Block connections without VPN" for Packetwall (applied at boot)."""
+    if on:
+        sh(f"settings put secure always_on_vpn_app {PKG}; settings put secure always_on_vpn_lockdown 1")
+    else:
+        sh("settings delete secure always_on_vpn_app; settings delete secure always_on_vpn_lockdown")
+    adb("reboot")
+    adb("wait-for-device", timeout=300)
+    for _ in range(120):
+        if sh("getprop sys.boot_completed").strip() == "1":
+            break
+        time.sleep(1)
+    time.sleep(8)
+    adb("root"); time.sleep(3); adb("wait-for-device")
+
+
+def chain_checks(tag, pkg, uid):
+    n = proxy_log_len()
+    relay(uid, 1081)
+    configure(settings={"up": True, "up_host": "127.0.0.1", "up_port": PROXY_APP_PORT, "up_type": 0, "up_udp": 1,
+                        "up_down": 0, "up_app": pkg})
+    time.sleep(2)
+    check(f"{tag}: TCP through the proxy app", allowed("example.org"))
+    log = proxy_log_since(n)
+    check(f"{tag}: the host proxy saw it via the relay", any("SOCKS CONNECT" in l for l in log), " | ".join(log[-4:]))
+    check(f"{tag}: the proxy app itself reaches the network", resolves("www.wikipedia.org", uid))
+    # the relay now leads to a closed port: the upstream is "up" (its port answers) but carries nothing,
+    # so DNS through it fails; the proxy app's own DNS must still work (direct DoH)
+    relay(uid, 1)
+    configure(settings={"up": True, "up_host": "127.0.0.1", "up_port": PROXY_APP_PORT, "up_type": 0, "up_udp": 1,
+                        "up_down": 0, "up_app": pkg})
+    time.sleep(2)
+    check(f"{tag}: proxy app's DNS does not go through itself", resolves("www.mozilla.org", uid))
+    check(f"{tag}: others' DNS goes through the proxy (fails here)", not resolves("www.debian.org"))
+    sh("pkill -f 'nc -s 127.0.0.1 -p %d' ; true" % PROXY_APP_PORT)
+
+
+def s_proxy_app():
+    if not ROOTED:
+        return skip("proxy app", "needs su")
+    pkg, uid = proxy_app()
+    print(f"  proxy app: {pkg} uid {uid}", flush=True)
+    chain_checks("proxy app", pkg, uid)
+
+
+def s_proxy_app_lockdown():
+    if not ROOTED:
+        return skip("proxy app + lockdown", "needs su")
+    pkg, uid = proxy_app()
+    stop()
+    lockdown(True)
+    try:
+        check("lockdown is on", sh("settings get secure always_on_vpn_lockdown").strip() == "1")
+        chain_checks("lockdown", pkg, uid)
+    finally:
+        stop()
+        lockdown(False)
+
+
 SCENARIOS = [s_baseline, s_toggle_guard, s_rapid_toggle, s_domain_rules, s_app_rules, s_set_priority, s_ip_port_reject, s_blocklist, s_disabled_set,
-             s_doh, s_upstream_socks, s_upstream_http, s_kill_switch, s_icmp_upstream, s_route_rule, s_geo, s_streaming, s_stream_lan, s_stress]
+             s_doh, s_upstream_socks, s_upstream_http, s_kill_switch, s_icmp_upstream, s_route_rule, s_proxy_app, s_proxy_app_lockdown, s_geo, s_streaming, s_stream_lan, s_stress]
 
 
 def main():

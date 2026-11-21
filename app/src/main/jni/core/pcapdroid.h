@@ -422,10 +422,19 @@ extern bool running;
 extern uint32_t new_dns_server;
 extern bool block_private_dns;
 extern uint16_t dns_server_port;
+extern int proxy_app_uid;         // the local upstream proxy app: its traffic goes directly
+extern uint16_t dns_direct_port;  // DoH proxy port that never uses the upstream (0 = dns_server_port)
 extern bool upstream_active;     // SOCKS5 upstream reachable (or kill switch on)
 extern bool upstream_block_udp;  // block UDP while the upstream is active
 extern bool upstream_http;       // the upstream is an HTTP CONNECT proxy
 extern bool upstream_all;        // proxy everything (true) or only "via upstream" rules (false)
+
+/* Packetwall: a connection of the local proxy app (chain mode). The app stays inside the VPN, because
+ * Android's "Block connections without VPN" cuts off apps excluded from it, and its connections go
+ * straight out through Packetwall: never into the upstream (that would loop), and no rules apply. */
+static inline bool is_proxy_app(const pd_conn_t *data) {
+    return (proxy_app_uid >= 0) && (data->uid == proxy_app_uid);
+}
 extern pthread_mutex_t upstream_lock;
 extern volatile bool upstream_addr_dirty;
 extern zdtun_ip_t upstream_new_ip;

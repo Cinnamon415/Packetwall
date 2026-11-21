@@ -160,6 +160,7 @@ static bool check_dns_req_allowed(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_conte
 
     if(pctx->tuple->ipproto == IPPROTO_ICMP)
         return true;
+    bool proxy_app = pctx->data && is_proxy_app(pctx->data);
 
     bool is_internal_dns = pd->vpn.ipv4.enabled && (tuple->ipver == 4) && (tuple->dst_ip.ip4 == pd->vpn.ipv4.internal_dns);
     bool is_dns_server = is_internal_dns
@@ -204,7 +205,9 @@ static bool check_dns_req_allowed(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_conte
                 zdtun_ip_t ip = {0};
                 ip.ip4 = pd->vpn.ipv4.dns_server;
                 // Packetwall: the port is not 53 when the built-in DoH proxy (127.0.0.1) is used
-                zdtun_conn_dnat(conn, &ip, htons(dns_server_port), 4);
+                // the proxy app's own queries must not go through the proxy (it may need them to connect)
+                uint16_t port = (proxy_app && dns_direct_port) ? dns_direct_port : dns_server_port;
+                zdtun_conn_dnat(conn, &ip, htons(port), 4);
             }
 
             return(true);
@@ -214,7 +217,7 @@ static bool check_dns_req_allowed(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_conte
     // Packetwall: only DNS-over-TLS (853, what Android's Private DNS uses) is dropped to force plain DNS.
     // Other traffic to DNS servers (e.g. HTTPS to 1.1.1.1, an app's own DoH) is left to the rules:
     // without rules traffic is not touched (spec 2.4).
-    if(block_private_dns && (ntohs(tuple->dst_port) == 853)) {
+    if(block_private_dns && !proxy_app && (ntohs(tuple->dst_port) == 853)) {
         log_d("blocking DoT packet directed to the DNS server");
         return(false);
     }
@@ -418,7 +421,7 @@ static bool matches_decryption_whitelist(pcapdroid_t *pd, const zdtun_5tuple_t *
 // NOTE: this handles both user-specified SOCKS5 and TLS decryption
 // Packetwall: is this connection meant to go through the upstream? (rule route, else the scope)
 static bool wants_upstream(pcapdroid_t *pd, const pd_conn_t *data) {
-    if(!pd->socks5.enabled || !upstream_active)
+    if(!pd->socks5.enabled || !upstream_active || is_proxy_app(data))
         return false;
     if(data->fw_route == PW_ROUTE_DIRECT)
         return false;
@@ -456,6 +459,9 @@ static bool should_proxify(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn
 /* ******************************************************* */
 
 void vpn_process_ndpi(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data) {
+    if(is_proxy_app(data))
+        return; // its QUIC (Hysteria, TUIC…) and DoH must work
+
     if(data->l7proto == NDPI_PROTOCOL_QUIC) {
         block_quic_mode_t block_mode = pd->vpn.block_quic_mode;
 

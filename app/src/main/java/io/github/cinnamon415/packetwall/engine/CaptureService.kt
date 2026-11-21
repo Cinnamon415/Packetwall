@@ -48,6 +48,7 @@ class CaptureService : VpnService() {
     @Volatile private var bridge: NativeBridge? = null
 
     @Volatile private var dohProxy: DnsProxy? = null
+    @Volatile private var dohDirect: DnsProxy? = null
 
     @Volatile private var upstream: UpstreamMonitor? = null
 
@@ -116,13 +117,14 @@ class CaptureService : VpnService() {
         val monitor = if (st.upstream) UpstreamMonitor(st.upHost, b.upstreamIp, st) else null
         upstream = monitor
 
-        startDoh(st, b, monitor)
+        startDoh(st, b, monitor, proxyAppUid(st))
         Log.i(TAG, "starting capture, DNS ${b.forwardDns}")
 
         val builder = Builder().setConfigureIntent(CaptureNotification.openApp(this))
-        // Packetwall's own traffic (DoH, list downloads) and the upstream proxy app go straight to the network
-        val excluded = listOfNotNull(packageName, st.upApp.takeIf { st.upstream && it.isNotEmpty() && it != packageName })
-        VpnSetup.configure(builder, getString(R.string.app_name), st.lanBypass, excluded)
+        // Packetwall's own traffic (DoH, list downloads, the upstream connections) goes straight to the network.
+        // The local proxy app is NOT excluded: with "Block connections without VPN" Android cuts excluded
+        // apps off. Its connections pass through the engine, which sends them out directly (setProxyApp).
+        VpnSetup.configure(builder, getString(R.string.app_name), st.lanBypass, listOf(packageName))
         val fd = try {
             builder.establish()
         } catch (e: Exception) {
@@ -178,9 +180,11 @@ class CaptureService : VpnService() {
      * that DNS does not leak around it (plain DNS to the network's resolver would). Through the
      * upstream it follows the proxy: blocked while it is down with the kill switch.
      */
-    private fun startDoh(st: Settings.Values, b: NativeBridge, monitor: UpstreamMonitor?) {
+    private fun startDoh(st: Settings.Values, b: NativeBridge, monitor: UpstreamMonitor?, proxyUid: Int) {
         dohProxy?.stop()
         dohProxy = null
+        dohDirect?.stop()
+        dohDirect = null
         val viaUpstream = monitor != null && st.upAll
         if (st.dnsMode == DNS_DOH || viaUpstream) {
             val route: () -> DnsRoute = if (monitor != null && viaUpstream) monitor::dnsRoute else ({ DnsRoute.Direct })
@@ -200,6 +204,27 @@ class CaptureService : VpnService() {
             NativeBridge.setDnsServerPort(53)
         }
         CaptureStatus.dohActive.value = p?.let { st.dohUrl }
+        // The proxy app may need DNS to reach its server: its queries never go through itself
+        if (proxyUid >= 0 && p != null && viaUpstream) {
+            dohDirect = try {
+                DnsProxy(st.dohUrl).also { it.start() }
+            } catch (e: Exception) {
+                Log.e(TAG, "direct DoH proxy", e)
+                null
+            }
+        }
+        NativeBridge.setProxyApp(proxyUid, dohDirect?.port ?: 0)
+    }
+
+    /** UID of the local upstream proxy app, or -1 (none, not installed, or Packetwall itself). */
+    private fun proxyAppUid(st: Settings.Values): Int {
+        val pkg = st.upApp.takeIf { st.upstream && it.isNotEmpty() && it != packageName } ?: return -1
+        return try {
+            packageManager.getApplicationInfo(pkg, 0).uid
+        } catch (e: Exception) {
+            Log.w(TAG, "proxy app $pkg not found")
+            -1
+        }
     }
 
     /**
@@ -233,6 +258,9 @@ class CaptureService : VpnService() {
         upstream = null
         dohProxy?.stop()
         dohProxy = null
+        dohDirect?.stop()
+        dohDirect = null
+        NativeBridge.setProxyApp(-1, 0)
         CaptureStatus.dohActive.value = null
         NativeBridge.setDnsServerPort(53)
         try {

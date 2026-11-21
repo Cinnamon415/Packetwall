@@ -11,6 +11,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -367,7 +368,8 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
     val scope = rememberCoroutineScope()
     var test by remember { mutableStateOf<String?>(null) }
     var pickApp by remember { mutableStateOf(false) }
-    val appName = remember(s.upApp) { if (s.upApp.isEmpty()) null else app.apps.byPackage(s.upApp)?.name ?: s.upApp }
+    val upAppInfo = remember(s.upApp) { if (s.upApp.isEmpty()) null else app.apps.byPackage(s.upApp) }
+    val appName = upAppInfo?.name ?: s.upApp.ifEmpty { null }
     RoundedGroup {
         Row(
             Modifier.fillMaxWidth().clickable { app.settings.update { it.copy(upstream = !it.upstream) } }
@@ -441,7 +443,11 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
                         visualTransformation = PasswordVisualTransformation()
                     )
                 }
-                Row(Modifier.fillMaxWidth().clickable { pickApp = true }.padding(vertical = 6.dp)) {
+                Row(Modifier.fillMaxWidth().clickable { pickApp = true }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    upAppInfo?.let {
+                        AppIcon(it, 32.dp)
+                        Spacer(Modifier.width(10.dp))
+                    }
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(R.string.upstream_app))
                         Text(
@@ -481,7 +487,7 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
         }
     }
     if (pickApp) {
-        AppPickerDialog(app, onDismiss = { pickApp = false }) { pkg ->
+        ProxyAppPicker(app, s.upApp, onDismiss = { pickApp = false }) { pkg ->
             pickApp = false
             app.settings.update { it.copy(upApp = pkg) }
         }
@@ -545,46 +551,6 @@ private fun udpTest(s: Settings.Values): String {
     } finally {
         a.close()
     }
-}
-
-@Composable
-private fun AppPickerDialog(app: PacketwallApp, onDismiss: () -> Unit, onPick: (String) -> Unit) {
-    val all by produceState<List<AppInfo>>(emptyList()) {
-        value = withContext(Dispatchers.IO) {
-            app.apps.installed().filter { it.uid >= 10000 }.sortedBy { it.name.lowercase() }
-        }
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.upstream_app)) },
-        text = {
-            LazyColumn(Modifier.height(400.dp)) {
-                item {
-                    Row(Modifier.fillMaxWidth().clickable { onPick("") }.padding(vertical = 10.dp)) {
-                        Text(stringResource(R.string.upstream_app_none))
-                    }
-                }
-                items(all.size) { i ->
-                    val a = all[i]
-                    Row(
-                        Modifier.fillMaxWidth().clickable { onPick(a.packageName) }.padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AppIcon(a, 28.dp)
-                        Column(Modifier.padding(start = 10.dp)) {
-                            Text(a.name)
-                            Text(
-                                a.packageName,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
-    )
 }
 
 @Composable

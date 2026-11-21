@@ -205,8 +205,11 @@
     <string name="host">Host</string>
     <string name="username">User</string>
     <string name="password">Password</string>
-    <string name="upstream_app">Proxy app (excluded from the VPN)</string>
+    <string name="upstream_app">Proxy app (its traffic goes directly)</string>
     <string name="upstream_app_none">None</string>
+    <string name="upstream_app_pick">Proxy app</string>
+    <string name="upstream_app_vpn_clients">VPN clients</string>
+    <string name="upstream_app_others">Other apps</string>
     <string name="upstream_udp">UDP</string>
     <string name="upstream_udp_block">Block (apps fall back to TCP)</string>
     <string name="upstream_udp_direct">Send directly</string>
@@ -487,7 +490,7 @@
     <string name="help_lan_t">Local network outside the VPN</string>
     <string name="help_lan">10/8, 172.16/12, 192.168/16, link-local and multicast addresses are routed past the VPN: no filtering and no log for them.\n\nTurn it on if adb over Wi-Fi, casting to a TV or devices on your home network stop working while protection is on.</string>
     <string name="help_upstream_t">Upstream proxy</string>
-    <string name="help_upstream">Packetwall can send traffic on to a SOCKS5 or HTTP CONNECT proxy, for example sing-box, v2rayNG or FlClash in “proxy only” mode. Only one VPN can be active, so this is how the two work together.\n\n“All traffic”: everything allowed goes through the proxy. “Only rules with route via upstream”: only allow rules with the route \"via upstream\".\n\nIf the proxy app is on this phone, choose it as “Proxy app”: its own traffic then goes directly and does not loop.</string>
+    <string name="help_upstream">Packetwall can send traffic on to a SOCKS5 or HTTP CONNECT proxy, for example sing-box, v2rayNG or FlClash in “proxy only” mode. Only one VPN can be active, so this is how the two work together.\n\n“All traffic”: everything allowed goes through the proxy. “Only rules with route via upstream”: only allow rules with the route \"via upstream\".\n\nIf the proxy app is on this phone, choose it as “Proxy app”: its own traffic then goes directly and does not loop. It stays inside the VPN, so it also works with Android’s “Block connections without VPN”: its connections appear in the log, and rules do not apply to them.</string>
     <string name="help_udp_t">UDP through the proxy</string>
     <string name="help_udp">HTTP CONNECT carries only TCP. SOCKS5 can carry UDP too (UDP ASSOCIATE), if the proxy supports it.\n\n“Block”: UDP that should go through the proxy is dropped; apps fall back to TCP (QUIC → HTTPS). “Send directly”: UDP bypasses the proxy and shows your real address.</string>
     <string name="help_kill_t">If the proxy is unreachable</string>
@@ -564,6 +567,7 @@
     <string name="guide_7">The log shows every connection: app, address, protocol, size and decision. Packets are kept in a memory buffer: view them, save them as pcapng, open them in Wireshark or stream them to a computer.\n\nPause stops the log and packets; the rules keep working.</string>
     <string name="guide_9_t">No leaks</string>
     <string name="guide_9">So that no traffic goes around Packetwall while it is not running (after a reboot or a crash), turn on “Always-on VPN” and “Block connections without VPN” for Packetwall in Android settings.\n\nStrict Private DNS hides names: domain rules then work by SNI only.</string>
+    <string name="changes_071">Chain with a proxy app (FlClash, v2rayNG…) works with Android’s “Block connections without VPN”: the proxy app stays inside the VPN and its own traffic and DNS go out directly\nProxy app choice: search, VPN clients first, system apps hidden by default</string>
     <string name="changes_070">Light theme: system, light or dark\nPause: rules keep working, log and packets stop\nSeparate “Keep packets in memory” and “Write to disk”\nFile analysis: open pcap and pcapng\nBlocklists: catalog by category and your own edits on top\nApp groups: Members and Rules tabs, easier app picking\nSearch: every rule for an app, domain or IP and where it lives\nⓘ help for settings that are not obvious, log filter help\nStream to PC: only via adb, or with a one-time token over Wi-Fi\nUpstream proxy: kill switch and DNS without leaks, all IPv6 through the VPN\nOther apps can no longer turn protection off\nUndo for deleted rules, groups and profiles\nFaster: rule index, log, list updates\nPing through the upstream proxy: answered after a TCP check through the proxy, the real address does not leak\nFirewall-only mode: no pause when packets are not kept\nHome: new status block, two columns on wide screens\nFile analysis: large pcap files are read from disk in a separate process</string>
     <string name="changes_060">Proxy password stored encrypted\nLocal network outside the VPN\nClear, localized errors\nNavigation and settings saving fixes</string>
     <string name="changes_050">Upstream: HTTP CONNECT and UDP over SOCKS5, route per rule\npcap streaming and continuous recording\nAS rules, import from other firewalls, tracker labels, TLS fingerprints\nBulk rule actions</string>

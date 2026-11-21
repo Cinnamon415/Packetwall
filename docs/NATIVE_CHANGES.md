@@ -89,6 +89,13 @@ longer cut at 64 bytes.
 - **UDP through the upstream.** UDP goes through the SOCKS5 relay (`zdtun_conn_udp_relay`) when one
   is set. Otherwise it is blocked while `upstream_block_udp` is on, so QUIC falls back to TCP through
   the proxy. Queries to the VPN DNS address are excluded from both.
+- **Local proxy app (`proxy_app_uid`, `is_proxy_app()`).** The chain's proxy app stays inside the
+  VPN, because Android's "Block connections without VPN" cuts off apps excluded from it. Its
+  connections are recognised by UID and go out directly: `wants_upstream()` returns false, no rules
+  are evaluated (`fw_route` = direct), malware lists treat it as whitelisted, and the internal QUIC
+  and private-DNS blocks skip it. Its queries to the VPN DNS address are DNATed to
+  `dns_direct_port`, a DoH proxy that never uses the upstream. Set from Java with
+  `setProxyApp(uid, dnsPort)`.
 - **Packet dump.** Packets dropped by the firewall are dumped with the new `dropped` flag.
 
 ## `core/pcap_dump.c`, `core/pcap_dump.h`, `core/capture_pcap.c`

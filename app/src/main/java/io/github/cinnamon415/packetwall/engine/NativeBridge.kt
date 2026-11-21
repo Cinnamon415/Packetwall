@@ -200,6 +200,12 @@ class NativeBridge(private val vpn: VpnService, private val app: PacketwallApp, 
         /** Port the VPN DNS address is redirected to (53, or the DoH proxy's local port). */
         @JvmStatic external fun setDnsServerPort(port: Int)
 
+        /**
+         * The local upstream proxy app ([uid], -1 = none): it stays inside the VPN and its connections
+         * go out directly, without rules; its DNS queries go to [dnsPort] (0 = the usual port).
+         */
+        @JvmStatic external fun setProxyApp(uid: Int, dnsPort: Int)
+
         /** [active]: send through the upstream proxy; [blockUdp]: drop UDP that would go through it. */
         @JvmStatic external fun setUpstreamState(active: Boolean, blockUdp: Boolean)
 

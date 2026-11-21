@@ -301,7 +301,7 @@ fun GuideScreen(onBack: () -> Unit) {
 /** What changed, newest first. */
 @Composable
 fun ChangelogScreen(onBack: () -> Unit) {
-    val versions = listOf("0.7.0" to R.string.changes_070, "0.6.0" to R.string.changes_060, "0.5.0" to R.string.changes_050)
+    val versions = listOf("0.7.1" to R.string.changes_071, "0.7.0" to R.string.changes_070, "0.6.0" to R.string.changes_060, "0.5.0" to R.string.changes_050)
     ScreenScaffold(title = stringResource(R.string.changelog_title), onBack = onBack) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),

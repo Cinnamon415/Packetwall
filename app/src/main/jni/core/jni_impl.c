@@ -1572,6 +1572,15 @@ Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setDnsServerPort(JNIEn
 
 /* ******************************************************* */
 
+// Packetwall: UID of the local proxy app (-1 = none) and the DoH port its own queries use (0 = the usual one)
+JNIEXPORT void JNICALL
+Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setProxyApp(JNIEnv *env, jclass clazz, jint uid, jint dns_port) {
+    proxy_app_uid = uid;
+    dns_direct_port = (uint16_t) dns_port;
+}
+
+/* ******************************************************* */
+
 // Packetwall: upstream (SOCKS5) runtime state
 JNIEXPORT void JNICALL
 Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setUpstreamState(JNIEnv *env, jclass clazz,
