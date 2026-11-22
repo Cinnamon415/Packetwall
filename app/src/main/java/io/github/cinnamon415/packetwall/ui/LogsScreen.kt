@@ -182,6 +182,7 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
         } else {
             val listState = rememberLazyListState()
             val today = stringResource(R.string.today)
+            var barDragging by remember { mutableStateOf(false) }
             Box(Modifier.fillMaxSize()) {
                 LazyColumn(state = listState) {
                     items(shown, key = { it.id }) { c ->
@@ -194,8 +195,9 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
                     }
                 }
                 // time of the row under the middle of the screen, for the scrollbar bubble
-                DragScrollbar(listState) { i -> shown.getOrNull(i)?.let { formatTime(it.firstSeen) to formatDay(it.firstSeen, today) } }
-                JumpToEndButton(listState, stringResource(R.string.logs_to_bottom))
+                DragScrollbar(listState, onDragging = { barDragging = it }) { i -> shown.getOrNull(i)?.let { formatTime(it.firstSeen) to formatDay(it.firstSeen, today) } }
+                // the time bubble would lie on the button near the bottom
+                JumpToEndButton(listState, stringResource(R.string.logs_to_bottom), hidden = barDragging)
             }
         }
     }

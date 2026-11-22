@@ -21,10 +21,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,9 +45,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.cinnamon415.packetwall.R
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -89,11 +91,14 @@ suspend fun LazyListState.scrollToFraction(position: Float) {
 }
 
 /**
- * Small "to the bottom" button: appears while the list is scrolled, hides 3 s after scrolling stops
- * or once the bottom is within half a screen. Sits at the bottom end of the enclosing [Box].
+ * Sizes follow the chosen mockup (К1, П3), drawn in a 286 px wide screen, scaled to a 448 dp phone.
+ *
+ * "To the bottom" button: appears while the list is scrolled, hides 3 s after scrolling stops
+ * or once the bottom is within half a screen; never while [hidden] (the scrollbar is being dragged).
+ * Sits at the bottom end of the enclosing [Box].
  */
 @Composable
-fun BoxScope.JumpToEndButton(state: LazyListState, label: String, modifier: Modifier = Modifier) {
+fun BoxScope.JumpToEndButton(state: LazyListState, label: String, modifier: Modifier = Modifier, hidden: Boolean = false) {
     var active by remember { mutableStateOf(false) }
     LaunchedEffect(state) {
         snapshotFlow { state.isScrollInProgress }.collect { scrolling ->
@@ -108,18 +113,20 @@ fun BoxScope.JumpToEndButton(state: LazyListState, label: String, modifier: Modi
     val far by remember(state) { derivedStateOf { state.scrollEstimate()?.let { it.remaining > it.viewport / 2 } ?: false } }
     val scope = rememberCoroutineScope()
     AnimatedVisibility(
-        active && far,
-        modifier.align(Alignment.BottomEnd).padding(end = 22.dp, bottom = 16.dp),
+        active && far && !hidden,
+        modifier.align(Alignment.BottomEnd).padding(end = 34.dp, bottom = 25.dp),
         enter = fadeIn(tween(180)) + scaleIn(tween(180), initialScale = 0.6f),
         exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.6f)
     ) {
-        SmallFloatingActionButton(
+        FloatingActionButton(
             onClick = { scope.launch { state.animateScrollToItem((state.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) } },
+            modifier = Modifier.size(63.dp),
+            shape = RoundedCornerShape(19.dp),
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            elevation = FloatingActionButtonDefaults.elevation(3.dp, 3.dp, 4.dp, 4.dp)
+            elevation = FloatingActionButtonDefaults.elevation(4.dp, 4.dp, 5.dp, 5.dp)
         ) {
-            Icon(painterResource(R.drawable.ic_arrow_down), label)
+            Icon(painterResource(R.drawable.ic_arrow_down), label, Modifier.size(31.dp))
         }
     }
 }
@@ -130,7 +137,11 @@ fun BoxScope.JumpToEndButton(state: LazyListState, label: String, modifier: Modi
  * (the time of that connection). Fills the enclosing [Box] on its end side.
  */
 @Composable
-fun BoxScope.DragScrollbar(state: LazyListState, label: (index: Int) -> Pair<String, String>?) {
+fun BoxScope.DragScrollbar(
+    state: LazyListState,
+    onDragging: (Boolean) -> Unit = {},
+    label: (index: Int) -> Pair<String, String>?
+) {
     var shown by remember { mutableStateOf(false) }
     var dragging by remember { mutableStateOf(false) }
     var dragPos by remember { mutableFloatStateOf(0f) }
@@ -146,24 +157,25 @@ fun BoxScope.DragScrollbar(state: LazyListState, label: (index: Int) -> Pair<Str
         }
     }
     LaunchedEffect(dragPos, dragging) { if (dragging) state.scrollToFraction(dragPos) }
+    LaunchedEffect(dragging) { onDragging(dragging) }
     val est by remember(state) { derivedStateOf { state.scrollEstimate() } }
     val s = est ?: return
     if (s.visible >= 1f) return
     val alpha by animateFloatAsState(if (shown || dragging) 1f else 0f, tween(300), label = "bar")
-    val width by animateDpAsState(if (dragging) 10.dp else 6.dp, tween(120), label = "thumb")
+    val width by animateDpAsState(if (dragging) 16.dp else 9.dp, tween(120), label = "thumb")
     val density = LocalDensity.current
     BoxWithConstraints(
-        Modifier.matchParentSize().padding(vertical = 3.dp).alpha(alpha)
+        Modifier.matchParentSize().padding(vertical = 5.dp).alpha(alpha)
     ) {
         val trackPx = constraints.maxHeight.toFloat()
-        val thumbPx = maxOf(with(density) { 36.dp.toPx() }, s.visible * trackPx).coerceAtMost(trackPx)
+        val thumbPx = maxOf(with(density) { 56.dp.toPx() }, s.visible * trackPx).coerceAtMost(trackPx)
         val pos = if (dragging) dragPos else s.position
         val topPx = pos * (trackPx - thumbPx)
         Box(
             Modifier
                 .align(Alignment.TopEnd)
                 .offset { IntOffset(0, topPx.roundToInt()) }
-                .size(22.dp, with(density) { thumbPx.toDp() })
+                .size(34.dp, with(density) { thumbPx.toDp() })
                 .then(
                     if (shown || dragging) {
                         Modifier.pointerInput(trackPx, thumbPx) {
@@ -192,11 +204,11 @@ fun BoxScope.DragScrollbar(state: LazyListState, label: (index: Int) -> Pair<Str
             Box(
                 Modifier
                     .align(Alignment.CenterEnd)
-                    .padding(end = 3.dp)
+                    .padding(end = 5.dp)
                     .width(width)
                     .fillMaxHeight()
                     .alpha(if (dragging) 1f else 0.75f)
-                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(5.dp))
+                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
             )
         }
         if (dragging) {
@@ -208,19 +220,19 @@ fun BoxScope.DragScrollbar(state: LazyListState, label: (index: Int) -> Pair<Str
             label(mid)?.let { (time, day) ->
                 var bubbleH by remember { mutableIntStateOf(0) }
                 Surface(
-                    shape = RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp),
+                    shape = RoundedCornerShape(25.dp, 25.dp, 6.dp, 25.dp),
                     color = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shadowElevation = 3.dp,
+                    shadowElevation = 5.dp,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(end = 30.dp)
+                        .padding(end = 47.dp)
                         .offset { IntOffset(0, (topPx + thumbPx / 2 - bubbleH / 2).roundToInt()) }
                         .onSizeChanged { bubbleH = it.height }
                 ) {
-                    Column(Modifier.padding(horizontal = 11.dp, vertical = 6.dp)) {
-                        Text(time, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.End)
-                        Text(day, style = MaterialTheme.typography.labelSmall, modifier = Modifier.alpha(0.85f))
+                    Column(Modifier.padding(horizontal = 17.dp, vertical = 9.dp)) {
+                        Text(time, fontSize = 20.sp, lineHeight = 27.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.End)
+                        Text(day, fontSize = 16.sp, lineHeight = 22.sp, modifier = Modifier.alpha(0.85f))
                     }
                 }
             }
