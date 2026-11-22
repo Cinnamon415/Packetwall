@@ -149,6 +149,7 @@ class CaptureService : VpnService() {
         }
         app.connections.reset()
         CaptureStatus.alwaysOn.value = isAlwaysOn to isLockdownEnabled
+        CaptureStatus.alwaysOnProbe = { isAlwaysOn to isLockdownEnabled }
         val startedAt = System.currentTimeMillis()
         CaptureStatus.sessionStart.value = startedAt
         CaptureStatus.packetsKept.value = st.capturePackets
@@ -271,6 +272,9 @@ class CaptureService : VpnService() {
         pfd = null
         loopThread = null
         bridge = null
+        // unknown until the next start: Android may change it meanwhile without telling us
+        CaptureStatus.alwaysOnProbe = null
+        CaptureStatus.alwaysOn.value = null
         CaptureStatus.state.value = CaptureState.Stopped
         CaptureStatus.pausedSince.value = null
         // a start that came in meanwhile keeps the service (and its notification) alive

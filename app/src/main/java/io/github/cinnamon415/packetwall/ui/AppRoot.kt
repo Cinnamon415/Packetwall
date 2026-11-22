@@ -48,11 +48,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.engine.CaptureState
 import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import io.github.cinnamon415.packetwall.fw.Who
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -219,6 +221,11 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
             }
             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 8.dp))
             AlwaysOnAdvice(app)
+        }
+        // back from Android's VPN settings (or anywhere else): Always-on / lockdown may have changed
+        LifecycleResumeEffect(Unit) {
+            val job = scope.launch(Dispatchers.IO) { CaptureStatus.refreshAlwaysOn() }
+            onPauseOrDispose { job.cancel() }
         }
     }
 }

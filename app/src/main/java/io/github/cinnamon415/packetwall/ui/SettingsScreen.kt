@@ -178,12 +178,10 @@ fun SettingsScreen(app: PacketwallApp, openDrawer: () -> Unit) {
                         Text(
                             when (val a = always) {
                                 null -> stringResource(R.string.always_on_unknown)
-                                else -> if (a.first &&
-                                    a.second
-                                ) {
-                                    stringResource(R.string.always_on_ok)
-                                } else {
-                                    stringResource(R.string.always_on_off)
+                                else -> when {
+                                    a.first && a.second -> stringResource(R.string.always_on_ok)
+                                    a.first -> stringResource(R.string.always_on_no_lockdown)
+                                    else -> stringResource(R.string.always_on_off)
                                 }
                             },
                             style = MaterialTheme.typography.bodySmall,

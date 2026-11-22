@@ -605,6 +605,7 @@
     <string name="always_on_title">Постоянная VPN</string>
     <string name="always_on_ok">Включена, соединения без VPN блокируются</string>
     <string name="always_on_off">Не включена: пока Packetwall не запущен, трафик идёт мимо</string>
+    <string name="always_on_no_lockdown">Включена, но соединения без VPN не блокируются: пока Packetwall не запустился, трафик идёт мимо</string>
     <string name="always_on_unknown">Состояние видно после включения защиты · открыть настройки Android</string>
     <string name="help_always_on_t">Постоянная VPN</string>
     <string name="help_always_on">Если Packetwall не запущен — после перезагрузки, обновления или сбоя — Android пускает трафик напрямую, без фильтрации.\n\nВ настройках Android → Сеть и интернет → VPN → Packetwall (⚙) включите «Постоянная VPN» и «Блокировать соединения без VPN». Тогда Android сам запускает Packetwall и не пускает трафик, пока он не работает.\n\nИнтерфейс и защита работают в одном процессе, поэтому редкий сбой интерфейса тоже останавливает защиту. С этими двумя настройками в такой момент интернет просто пропадёт на несколько секунд, а не пойдёт мимо.</string>

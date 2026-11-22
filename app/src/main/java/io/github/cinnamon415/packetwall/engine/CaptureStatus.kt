@@ -21,8 +21,26 @@ object CaptureStatus {
     /** DoH URL while the built-in DNS-over-HTTPS proxy is in use. */
     val dohActive = MutableStateFlow<String?>(null)
 
-    /** Android's "Always-on VPN" and "Block connections without VPN" for Packetwall, as seen at the last start. */
+    /**
+     * Android's "Always-on VPN" and "Block connections without VPN" for Packetwall, read at start and
+     * again by [refreshAlwaysOn] (Android does not tell a running VPN when the user changes them);
+     * null while protection is off.
+     */
     val alwaysOn = MutableStateFlow<Pair<Boolean, Boolean>?>(null)
+
+    /** Reads both settings from the running VPN service; null while it is not running. */
+    @Volatile
+    var alwaysOnProbe: (() -> Pair<Boolean, Boolean>)? = null
+
+    /** Re-reads [alwaysOn] from the running service (a binder call: not on the main thread). */
+    fun refreshAlwaysOn() {
+        val probe = alwaysOnProbe ?: return
+        try {
+            alwaysOn.value = probe()
+        } catch (e: Exception) {
+            // the service stopped meanwhile: keep the last value
+        }
+    }
 
     /** Private DNS is in strict mode: queries are encrypted, rules by name only see SNI. */
     val privateDnsStrict = MutableStateFlow(false)
