@@ -189,7 +189,7 @@ fun HomeScreen(
                                 Modifier.fillMaxWidth().combinedClickable(onLongClick = { quick = c }) {
                                     LogsLink.ids = recent.map { it.id }
                                     onOpenConn(c.id)
-                                }.padding(start = 10.dp, top = 2.dp, bottom = 2.dp),
+                                }.padding(horizontal = 10.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 AppIcon(c.app, 28.dp)
@@ -208,8 +208,6 @@ fun HomeScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-                                // quick allow (spec: recent blocks with a quick allow)
-                                TextButton({ quick = c }) { Text(stringResource(R.string.action_allow)) }
                             }
                         }
                     }

@@ -613,4 +613,6 @@
     <string name="always_on_dialog">While Packetwall is not running (after a reboot, an update or a crash), Android sends traffic unfiltered. Turn on “Always-on VPN” and “Block connections without VPN” for Packetwall in the VPN settings.</string>
     <string name="later">Later</string>
     <string name="chart_paused_since">Recording paused since %1$s</string>
+    <string name="logs_to_bottom">To the bottom</string>
+    <string name="today">today</string>
 </resources>

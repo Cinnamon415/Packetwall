@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -179,15 +180,22 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
                 )
             }
         } else {
-            LazyColumn {
-                items(shown, key = { it.id }) { c ->
-                    when (tab) {
-                        LogTab.DNS -> DnsRow(app, c, onLongClick = { quick = c }) { open(c.id) }
-                        LogTab.HTTP -> HttpRow(c, onLongClick = { quick = c }) { open(c.id) }
-                        else -> ConnRow(c, compact, c.tracker, onLongClick = { quick = c }) { open(c.id) }
+            val listState = rememberLazyListState()
+            val today = stringResource(R.string.today)
+            Box(Modifier.fillMaxSize()) {
+                LazyColumn(state = listState) {
+                    items(shown, key = { it.id }) { c ->
+                        when (tab) {
+                            LogTab.DNS -> DnsRow(app, c, onLongClick = { quick = c }) { open(c.id) }
+                            LogTab.HTTP -> HttpRow(c, onLongClick = { quick = c }) { open(c.id) }
+                            else -> ConnRow(c, compact, c.tracker, onLongClick = { quick = c }) { open(c.id) }
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceContainerHigh)
                 }
+                // time of the row under the middle of the screen, for the scrollbar bubble
+                DragScrollbar(listState) { i -> shown.getOrNull(i)?.let { formatTime(it.firstSeen) to formatDay(it.firstSeen, today) } }
+                JumpToEndButton(listState, stringResource(R.string.logs_to_bottom))
             }
         }
     }
