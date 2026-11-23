@@ -1,10 +1,9 @@
 package io.github.cinnamon415.packetwall.ui
 
+import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
-import androidx.lifecycle.SavedStateHandle
 import io.github.cinnamon415.packetwall.analysis.ConnFilter
 import io.github.cinnamon415.packetwall.engine.Conn
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +26,16 @@ object LogsLink {
 
     /** Ids of the list a connection was opened from, in its order; null = the whole log. */
     @Volatile var ids: List<Int>? = null
+
+    /**
+     * The log's filter text and status chip. They live as long as the app, not the screen: leaving
+     * the log and coming back finds them as they were. Only an explicit [request] replaces them.
+     */
+    val filter = MutableStateFlow("")
+    val status = MutableStateFlow(StatusFilter.ALL)
+
+    /** [filter] and [status] were read from the saved preferences (once per process). */
+    @Volatile var loaded = false
 }
 
 enum class LogTab { CONNECTIONS, DNS, HTTP, CAPTURES }
@@ -46,32 +55,57 @@ fun selectConns(conns: List<Conn>, filter: ((Conn) -> Boolean)?, status: StatusF
         (filter == null || filter(c))
 }
 
-/** The connection log: filter state (kept across process death) and the filtered list, computed off the main thread. */
-class LogsViewModel(conns: StateFlow<List<Conn>>, private val saved: SavedStateHandle) : ScreenViewModel() {
+/**
+ * The connection log: what is shown (filter, status chip, tab, compact view) and the filtered list,
+ * computed off the main thread. The choices are kept in [prefs]: leaving the log, closing the app or
+ * a restart of the process finds them as they were.
+ */
+class LogsViewModel(conns: StateFlow<List<Conn>>, private val prefs: SharedPreferences) : ScreenViewModel() {
+    init {
+        if (!LogsLink.loaded) {
+            LogsLink.loaded = true
+            LogsLink.filter.value = prefs.getString(K_FILTER, null) ?: ""
+            LogsLink.status.value = prefs.getString(K_STATUS, null).enumOr(StatusFilter.ALL)
+        }
+    }
+
     /** The filter expression. Compose state, so the text field updates synchronously while typing. */
-    var filter by mutableStateOf(saved[K_FILTER] ?: "")
+    var filter by mutableStateOf(LogsLink.filter.value)
         private set
-    val status = saved.getStateFlow(K_STATUS, StatusFilter.ALL)
-    val tab = saved.getStateFlow(K_TAB, LogTab.CONNECTIONS)
-    val compact = saved.getStateFlow(K_COMPACT, false)
+    val status: StateFlow<StatusFilter> = LogsLink.status
+    private val _tab = MutableStateFlow(prefs.getString(K_TAB, null).enumOr(LogTab.CONNECTIONS))
+    val tab: StateFlow<LogTab> = _tab
+    private val _compact = MutableStateFlow(prefs.getBoolean(K_COMPACT, false))
+    val compact: StateFlow<Boolean> = _compact
 
     fun updateFilter(v: String) {
         filter = v
-        saved[K_FILTER] = v
+        LogsLink.filter.value = v
+        prefs.edit().putString(K_FILTER, v).apply()
     }
 
-    fun setStatus(v: StatusFilter) = saved.set(K_STATUS, v)
+    fun setStatus(v: StatusFilter) {
+        LogsLink.status.value = v
+        prefs.edit().putString(K_STATUS, v.name).apply()
+    }
 
-    fun setTab(v: LogTab) = saved.set(K_TAB, v)
+    fun setTab(v: LogTab) {
+        _tab.value = v
+        prefs.edit().putString(K_TAB, v.name).apply()
+    }
 
-    fun toggleCompact() = saved.set(K_COMPACT, !compact.value)
+    fun toggleCompact() {
+        _compact.value = !_compact.value
+        prefs.edit().putBoolean(K_COMPACT, _compact.value).apply()
+    }
 
     /** Filter expression state: [valid] false shows the field as an error, [error] explains a parse error. */
     data class FilterCheck(val valid: Boolean = true, val error: ConnFilter.ParseError? = null)
 
     data class Shown(val list: List<Conn> = emptyList(), val total: Int = 0)
 
-    private val compiled = snapshotFlow { filter }.map { runCatching { ConnFilter.compile(it) } }
+    // from the shared StateFlow, not snapshotFlow: every change arrives, also without a frame in between
+    private val compiled = LogsLink.filter.map { runCatching { ConnFilter.compile(it) } }
 
     val filterCheck: StateFlow<FilterCheck> = compiled.map { r ->
         FilterCheck(r.isSuccess, r.exceptionOrNull() as? ConnFilter.ParseError)
@@ -81,10 +115,15 @@ class LogsViewModel(conns: StateFlow<List<Conn>>, private val saved: SavedStateH
         Shown(selectConns(list, pred.getOrNull(), st, t), list.size)
     }.flowOn(Dispatchers.Default).whileShown(Shown(total = conns.value.size))
 
-    private companion object {
-        const val K_FILTER = "logs.filter"
-        const val K_STATUS = "logs.status"
-        const val K_TAB = "logs.tab"
-        const val K_COMPACT = "logs.compact"
+    companion object {
+        /** The SharedPreferences file of the log's choices. */
+        const val PREFS = "logs"
+        private const val K_FILTER = "logs.filter"
+        private const val K_STATUS = "logs.status"
+        private const val K_TAB = "logs.tab"
+        private const val K_COMPACT = "logs.compact"
+
+        private inline fun <reified E : Enum<E>> String?.enumOr(default: E): E =
+            this?.let { n -> enumValues<E>().firstOrNull { it.name == n } } ?: default
     }
 }

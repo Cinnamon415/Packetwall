@@ -2,6 +2,7 @@ package io.github.cinnamon415.packetwall.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -48,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -88,7 +90,8 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, onOpenConn: (Int) -> Unit, onOpenFiles: () -> Unit) {
-    val vm = appViewModel(app) { a, saved -> LogsViewModel(a.connections.conns, saved) }
+    val vm =
+        appViewModel(app) { a, _ -> LogsViewModel(a.connections.conns, a.getSharedPreferences(LogsViewModel.PREFS, Context.MODE_PRIVATE)) }
     val fw by app.firewall.state.collectAsState()
     val shownState by vm.shown.collectAsStateWithLifecycle()
     val shown = shownState.list
@@ -181,6 +184,16 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
             }
         } else {
             val listState = rememberLazyListState()
+            // New rows arrive on top. By key the list would keep the old first row in place and the new
+            // ones would pile up above the screen; at the very top it follows them instead.
+            val atTop by remember(listState) {
+                derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 }
+            }
+            val first = shown.first().id
+            remember(first) {
+                if (atTop) listState.requestScrollToItem(0)
+                first
+            }
             val today = stringResource(R.string.today)
             var barDragging by remember { mutableStateOf(false) }
             Box(Modifier.fillMaxSize()) {
@@ -195,9 +208,14 @@ fun LogsScreen(app: PacketwallApp, state: CaptureState, openDrawer: () -> Unit, 
                     }
                 }
                 // time of the row under the middle of the screen, for the scrollbar bubble
-                DragScrollbar(listState, onDragging = { barDragging = it }) { i -> shown.getOrNull(i)?.let { formatTime(it.firstSeen) to formatDay(it.firstSeen, today) } }
+                DragScrollbar(listState, onDragging = { barDragging = it }) { i ->
+                    shown.getOrNull(i)?.let {
+                        formatTime(it.firstSeen) to
+                            formatDay(it.firstSeen, today)
+                    }
+                }
                 // the time bubble would lie on the button near the bottom
-                JumpToEndButton(listState, stringResource(R.string.logs_to_bottom), hidden = barDragging)
+                JumpToTopButton(listState, stringResource(R.string.logs_to_top), hidden = barDragging)
             }
         }
     }
@@ -387,7 +405,7 @@ private fun CapturesTab(app: PacketwallApp, onOpenFiles: () -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(enabled = info.packets > 0, onClick = {
-                            scope.launch {
+                            scope.launch(Dispatchers.Main) {
                                 withContext(Dispatchers.IO) {
                                     File(capturesDir(app), "packetwall-${stamp()}.pcapng").outputStream().use {
                                         app.packets.writePcapng(it)

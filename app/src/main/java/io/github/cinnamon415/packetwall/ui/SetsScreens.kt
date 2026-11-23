@@ -70,6 +70,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
@@ -456,7 +457,7 @@ private fun ImportListDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
             } else {
                 val okMsg = stringResource(R.string.import_done_sets)
                 TextButton(enabled = plan?.empty == false && name.isNotBlank(), onClick = {
-                    scope.launch {
+                    scope.launch(Dispatchers.Main) {
                         val ids = withContext(Dispatchers.IO) { app.firewall.applyImport(name.trim(), plan!!, action) }
                         done = String.format(okMsg, ids.size)
                     }
@@ -690,7 +691,7 @@ private fun ReorderableSets(app: PacketwallApp, st: FwState, onEdit: (RuleSet) -
                             if (s.kind == SetKind.BLOCKLIST) {
                                 stringResource(R.string.set_blocklist_line, s.entries)
                             } else {
-                                stringResource(R.string.rules_count, ruleCounts[s.id] ?: 0)
+                                (ruleCounts[s.id] ?: 0).let { n -> pluralStringResource(R.plurals.rules_n, n, n) }
                             },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -789,7 +790,7 @@ private fun ImportJsonDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
     fun run() {
         val text = file?.first ?: return
         busy = true
-        scope.launch {
+        scope.launch(Dispatchers.Main) {
             try {
                 val sum = withContext(Dispatchers.IO) { app.firewall.importJson(text, replace) }
                 replaced = replace
@@ -864,7 +865,7 @@ private fun ImportJsonDialog(app: PacketwallApp, uri: Uri, onDismiss: () -> Unit
             when {
                 result != null && replaced -> Row {
                     TextButton({
-                        scope.launch {
+                        scope.launch(Dispatchers.Main) {
                             val ok = withContext(Dispatchers.IO) { app.firewall.restoreReplaceBackup() }
                             if (ok) Toast.makeText(ctx, restoredMsg, Toast.LENGTH_SHORT).show()
                             onDismiss()

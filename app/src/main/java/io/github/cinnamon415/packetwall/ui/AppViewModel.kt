@@ -12,6 +12,7 @@ import io.github.cinnamon415.packetwall.PacketwallApp
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 
 /**
@@ -27,5 +28,9 @@ inline fun <reified VM : ViewModel> appViewModel(
 
 abstract class ScreenViewModel : ViewModel() {
     /** Computed while the screen collects it, and five more seconds (so a rotation does not restart it). */
-    protected fun <T> Flow<T>.whileShown(initial: T): StateFlow<T> = stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), initial)
+    // onEach keeps stateIn from fusing with a flowOn upstream: fused, the sharing coroutine runs on that
+    // dispatcher and the screen (seen in the log's filter) kept showing an older value. The work itself
+    // still runs where flowOn puts it.
+    protected fun <T> Flow<T>.whileShown(initial: T): StateFlow<T> =
+        onEach { }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), initial)
 }

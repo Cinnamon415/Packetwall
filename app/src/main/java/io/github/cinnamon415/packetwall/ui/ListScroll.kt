@@ -58,9 +58,16 @@ import kotlinx.coroutines.launch
 /**
  * Where a lazy list is, estimated from the visible rows (rows of a log are about the same height):
  * [position] 0…1 from top to bottom, [visible] the part of the content on screen, [remaining] pixels
- * below the viewport.
+ * below the viewport, [scrolled] pixels above it.
  */
-data class ListScroll(val position: Float, val visible: Float, val remaining: Float, val content: Float, val viewport: Float)
+data class ListScroll(
+    val position: Float,
+    val visible: Float,
+    val remaining: Float,
+    val content: Float,
+    val viewport: Float,
+    val scrolled: Float
+)
 
 fun LazyListState.scrollEstimate(): ListScroll? {
     val info = layoutInfo
@@ -76,7 +83,8 @@ fun LazyListState.scrollEstimate(): ListScroll? {
         visible = (viewport / content).coerceIn(0f, 1f),
         remaining = (content - viewport - scrolled).coerceAtLeast(0f),
         content = content,
-        viewport = viewport
+        viewport = viewport,
+        scrolled = scrolled
     )
 }
 
@@ -91,14 +99,14 @@ suspend fun LazyListState.scrollToFraction(position: Float) {
 }
 
 /**
- * Sizes follow the chosen mockup (К1, П3), drawn in a 286 px wide screen, scaled to a 448 dp phone.
+ * "To the top" button (the log shows the newest rows first). Sizes in dp, read off the mockup.
  *
- * "To the bottom" button: appears while the list is scrolled, hides 3 s after scrolling stops
- * or once the bottom is within half a screen; never while [hidden] (the scrollbar is being dragged).
- * Sits at the bottom end of the enclosing [Box].
+ * Appears while the list is scrolled, hides 3 s after scrolling stops or once the top is within
+ * half a screen; never while [hidden] (the scrollbar is being dragged). Sits at the bottom end of
+ * the enclosing [Box].
  */
 @Composable
-fun BoxScope.JumpToEndButton(state: LazyListState, label: String, modifier: Modifier = Modifier, hidden: Boolean = false) {
+fun BoxScope.JumpToTopButton(state: LazyListState, label: String, modifier: Modifier = Modifier, hidden: Boolean = false) {
     var active by remember { mutableStateOf(false) }
     LaunchedEffect(state) {
         snapshotFlow { state.isScrollInProgress }.collect { scrolling ->
@@ -110,25 +118,40 @@ fun BoxScope.JumpToEndButton(state: LazyListState, label: String, modifier: Modi
             }
         }
     }
-    val far by remember(state) { derivedStateOf { state.scrollEstimate()?.let { it.remaining > it.viewport / 2 } ?: false } }
+    val far by remember(state) { derivedStateOf { state.scrollEstimate()?.let { it.scrolled > it.viewport / 2 } ?: false } }
     val scope = rememberCoroutineScope()
     AnimatedVisibility(
         active && far && !hidden,
-        modifier.align(Alignment.BottomEnd).padding(end = 34.dp, bottom = 25.dp),
+        modifier.align(Alignment.BottomEnd).padding(end = JumpButton.END, bottom = JumpButton.BOTTOM),
         enter = fadeIn(tween(180)) + scaleIn(tween(180), initialScale = 0.6f),
         exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.6f)
     ) {
         FloatingActionButton(
-            onClick = { scope.launch { state.animateScrollToItem((state.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) } },
-            modifier = Modifier.size(63.dp),
-            shape = RoundedCornerShape(19.dp),
+            onClick = {
+                scope.launch {
+                    // far down a long log: jump close first, the animation covers only the last screen
+                    if (state.firstVisibleItemIndex > 30) state.scrollToItem(15)
+                    state.animateScrollToItem(0)
+                }
+            },
+            modifier = Modifier.size(JumpButton.SIZE),
+            shape = RoundedCornerShape(JumpButton.RADIUS),
             containerColor = MaterialTheme.colorScheme.secondaryContainer,
             contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
             elevation = FloatingActionButtonDefaults.elevation(4.dp, 4.dp, 5.dp, 5.dp)
         ) {
-            Icon(painterResource(R.drawable.ic_arrow_down), label, Modifier.size(31.dp))
+            Icon(painterResource(R.drawable.ic_arrow_up), label, Modifier.size(JumpButton.ICON))
         }
     }
+}
+
+/** The jump button's geometry (the "up" button mockup). */
+object JumpButton {
+    val SIZE = 63.dp
+    val RADIUS = 19.dp
+    val ICON = 31.dp
+    val END = 34.dp
+    val BOTTOM = 25.dp
 }
 
 /**
@@ -137,11 +160,7 @@ fun BoxScope.JumpToEndButton(state: LazyListState, label: String, modifier: Modi
  * (the time of that connection). Fills the enclosing [Box] on its end side.
  */
 @Composable
-fun BoxScope.DragScrollbar(
-    state: LazyListState,
-    onDragging: (Boolean) -> Unit = {},
-    label: (index: Int) -> Pair<String, String>?
-) {
+fun BoxScope.DragScrollbar(state: LazyListState, onDragging: (Boolean) -> Unit = {}, label: (index: Int) -> Pair<String, String>?) {
     var shown by remember { mutableStateOf(false) }
     var dragging by remember { mutableStateOf(false) }
     var dragPos by remember { mutableFloatStateOf(0f) }

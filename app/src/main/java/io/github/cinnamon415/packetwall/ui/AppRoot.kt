@@ -127,7 +127,7 @@ fun AppRoot(app: PacketwallApp, onToggleProtection: (Boolean) -> Unit) {
                                 onToggleProtection,
                                 openDrawer,
                                 onOpenLogs = { r ->
-                                    LogsLink.request.value = r
+                                    r?.let { LogsLink.request.value = it }
                                     nav.root(Dest.Logs)
                                 },
                                 onOpenStats = { nav.root(Dest.Stats) },

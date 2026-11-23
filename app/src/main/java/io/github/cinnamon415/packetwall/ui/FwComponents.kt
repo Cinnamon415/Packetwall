@@ -55,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -64,7 +65,9 @@ import androidx.compose.ui.unit.dp
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.analysis.GeoIp
+import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import io.github.cinnamon415.packetwall.engine.Conn
+import io.github.cinnamon415.packetwall.engine.VpnSetup
 import io.github.cinnamon415.packetwall.fw.Action
 import io.github.cinnamon415.packetwall.fw.FwState
 import io.github.cinnamon415.packetwall.fw.ListParser
@@ -122,8 +125,10 @@ fun internalBlockReason(c: Conn, app: PacketwallApp): Int {
     val udp = c.ipproto == 17
     return when {
         c.dstPort == 853 || (c.l7proto == "TLS" && c.host != null && DNS_HOSTS.any { c.host.endsWith(it) }) -> R.string.reason_private_dns
+        s.upstream && s.upOnDown == 0 && CaptureStatus.upstreamUp.value == false -> R.string.reason_kill_switch
+        // the engine blocks UDP for the upstream before it looks at DNS; only its own DNS server is let through
+        s.upstream && udp && s.upUdp == 1 && c.dstIp != VpnSetup.DNS4 -> R.string.reason_upstream_udp
         c.dstPort == 53 || c.l7proto == "DNS" -> R.string.reason_dns
-        s.upstream && udp && s.upUdp == 1 -> R.string.reason_upstream_udp
         s.upstream && s.upOnDown == 0 -> R.string.reason_kill_switch
         c.l7proto == "QUIC" -> R.string.reason_quic
         else -> R.string.reason_internal
@@ -332,8 +337,9 @@ fun RuleEditorDialog(initial: Rule, st: FwState, onSave: (Rule) -> Unit, onDelet
                         SegmentedButton(action == a, { action = a }, SegmentedButtonDefaults.itemShape(i, 2)) { Text(stringResource(s)) }
                     }
                 }
+                val app = LocalContext.current.applicationContext as? PacketwallApp
                 Text(
-                    whoLabel(initial.who, st, null).let { stringResource(R.string.rule_for, it) },
+                    whoLabel(initial.who, st, app).let { stringResource(R.string.rule_for, it) },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -535,7 +541,8 @@ fun QuickRuleSheet(c: Conn, app: PacketwallApp, st: FwState, onDismiss: () -> Un
     // unblocking: start from the deciding rule's own target (an exact host stays exact), else the base domain
     val initialChoice = decidingRule?.target?.let { t -> options.indexOfFirst { it == t } }?.takeIf { it >= 0 }
         ?: if (host != null) 1 else 0
-    var choice by rememberSaveable(options.size) { mutableStateOf(initialChoice) }
+    // kept across "for this app" / "globally"; only "all traffic of the app" (app rules only) falls back to the domain
+    var choice by rememberSaveable { mutableStateOf(initialChoice) }
     val sel = options.getOrElse(choice) { options.first() }
     val doneMsg = stringResource(R.string.rule_added)
 
@@ -588,11 +595,7 @@ fun QuickRuleSheet(c: Conn, app: PacketwallApp, st: FwState, onDismiss: () -> Un
                 }
                 SegmentedButton(!forApp, {
                     forApp = false
-                    if (sel.kind ==
-                        TargetKind.ALL
-                    ) {
-                        choice = 0
-                    }
+                    if (sel.kind == TargetKind.ALL) choice = if (host != null) 1 else 0
                 }, SegmentedButtonDefaults.itemShape(1, 2)) {
                     Text(stringResource(R.string.who_global), maxLines = 1)
                 }

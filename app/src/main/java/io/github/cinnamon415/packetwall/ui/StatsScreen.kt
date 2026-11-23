@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.R
+import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import io.github.cinnamon415.packetwall.engine.ConnectionsRegister
 import io.github.cinnamon415.packetwall.ui.theme.LocalExtraColors
 import kotlin.math.max
@@ -78,7 +79,8 @@ fun StatsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenLogs: (LogsLin
                 }
             }
             SectionHeader(stringResource(R.string.speed), null, null)
-            RoundedGroup { SpeedChart(history, up, down) }
+            val pausedAt by CaptureStatus.pausedSince.collectAsState()
+            RoundedGroup { SpeedChart(history, up, down, pausedSince = pausedAt, paused = LocalExtraColors.current.warn) }
 
             if (byApp.isNotEmpty()) {
                 SectionHeader(stringResource(R.string.top_apps), null, null)

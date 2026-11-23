@@ -106,6 +106,16 @@ fun ListScreen(app: PacketwallApp, id: Int, onBack: () -> Unit, initialQuery: St
     }
     val disabled = set.disabled.toHashSet()
     val edits = set.disabled.size + set.added.size
+    // opened from a search hit that only an added entry has (entries switched off are not found): show it among "My edits"
+    LaunchedEffect(entries) {
+        val q = initialQuery.trim().lowercase()
+        val all = entries ?: return@LaunchedEffect
+        if (q.isNotEmpty() && query == initialQuery && all.none { it.contains(q) && it !in disabled } &&
+            set.added.any { it.contains(q) }
+        ) {
+            tab = 1
+        }
+    }
 
     ScreenScaffold(
         title = set.name,

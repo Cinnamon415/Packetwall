@@ -67,6 +67,12 @@ class ScreenLogicTest {
         assertEquals(listOf("com.android.chrome"), search.apps!!.map { it.packageName })
 
         assertNull(buildAppList(null, rules, traffic, AppQuery()).apps)
+
+        // an uninstalled app with rules is still listed (uid -1), so its rules can be reached
+        val gone =
+            buildAppList(installed, rules + rule(5, 1, Who.App("com.gone"), TargetKind.ALL, ""), traffic, AppQuery(onlyWithRules = true))
+        assertEquals(listOf("com.bank", "android", "com.gone"), gone.apps!!.map { it.packageName })
+        assertEquals(-1, gone.apps!!.last().uid)
     }
 
     @Test fun globalRulesFilterAndSort() {

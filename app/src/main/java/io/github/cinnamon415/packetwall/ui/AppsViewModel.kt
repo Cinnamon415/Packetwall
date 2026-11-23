@@ -46,7 +46,12 @@ fun buildAppList(installed: List<AppInfo>?, rules: List<Rule>, traffic: Map<Stri
     val groupCounts = scoped.mapNotNull { (it.who as? Who.Group)?.id }.groupingBy { it }.eachCount()
     val needle = q.text.trim().lowercase()
     val byName = compareBy<AppInfo> { it.name.lowercase() }
-    val apps = installed?.filter { a ->
+    // apps that are gone keep their rules: listed (uid -1) so the rules can still be edited or deleted
+    val gone = installed?.let { list ->
+        val have = list.map { it.packageName }.toSet()
+        counts.keys.filter { it !in have && !it.startsWith("uid:") }.map { AppInfo(-1, it, it, false) }
+    }.orEmpty()
+    val apps = installed?.plus(gone)?.filter { a ->
         (q.showSystem || !a.isSystem || a.packageName in counts) &&
             (!q.onlyWithRules || a.packageName in counts) &&
             (needle.isEmpty() || a.name.lowercase().contains(needle) || a.packageName.contains(needle))

@@ -13,14 +13,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -38,7 +35,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -57,7 +53,6 @@ import io.github.cinnamon415.packetwall.PacketwallApp
 import io.github.cinnamon415.packetwall.Problem
 import io.github.cinnamon415.packetwall.R
 import io.github.cinnamon415.packetwall.Settings
-import io.github.cinnamon415.packetwall.engine.AppInfo
 import io.github.cinnamon415.packetwall.engine.CaptureStatus
 import io.github.cinnamon415.packetwall.engine.DnsProxy
 import io.github.cinnamon415.packetwall.engine.UdpAssociation
@@ -441,7 +436,12 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
                         visualTransformation = PasswordVisualTransformation()
                     )
                 }
-                Row(Modifier.fillMaxWidth().clickable { pickApp = true }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth().clickable {
+                        pickApp = true
+                    }.padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     upAppInfo?.let {
                         AppIcon(it, 32.dp)
                         Spacer(Modifier.width(10.dp))
@@ -472,7 +472,7 @@ private fun UpstreamSettings(app: PacketwallApp, s: Settings.Values) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedButton(onClick = {
                         test = "…"
-                        scope.launch { test = upstreamTest(s, ctx) }
+                        scope.launch(Dispatchers.Main) { test = upstreamTest(s, ctx) }
                     }) { Text(stringResource(R.string.check)) }
                     test?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 10.dp)) }
                 }
@@ -603,7 +603,7 @@ private fun SchedulesSettings(app: PacketwallApp, s: Settings.Values) {
                 OutlinedButton({ pickDir.launch(null) }) { Text(stringResource(R.string.backup_choose)) }
                 if (s.backupUri.isNotEmpty()) {
                     OutlinedButton({
-                        scope.launch {
+                        scope.launch(Dispatchers.Main) {
                             val ok = withContext(Dispatchers.IO) {
                                 Schedules.backupNow(ctx)
                             }

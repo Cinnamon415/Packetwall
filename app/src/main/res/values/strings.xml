@@ -85,7 +85,6 @@
     <string name="exported">Exported</string>
     <string name="for_app">For this app</string>
     <string name="from_file">from a file</string>
-    <string name="group_members">%1$d apps</string>
     <string name="group_new">New app group</string>
     <string name="groups">Groups</string>
     <string name="import_action">Import</string>
@@ -120,7 +119,6 @@
     <string name="rule_for">For: %1$s</string>
     <string name="rule_new">New rule</string>
     <string name="rule_set">Set</string>
-    <string name="rules_count">%1$d rules</string>
     <string name="save">Save</string>
     <string name="search">Search</string>
     <string name="set_blocklist_line">Blocklist · %1$d entries</string>
@@ -615,6 +613,6 @@
     <string name="always_on_dialog">While Packetwall is not running (after a reboot, an update or a crash), Android sends traffic unfiltered. Turn on “Always-on VPN” and “Block connections without VPN” for Packetwall in the VPN settings.</string>
     <string name="later">Later</string>
     <string name="chart_paused_since">Recording paused since %1$s</string>
-    <string name="logs_to_bottom">To the bottom</string>
+    <string name="logs_to_top">To the top</string>
     <string name="today">today</string>
 </resources>

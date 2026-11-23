@@ -55,7 +55,8 @@ fun rememberFileExport(mime: String, onDone: (ok: Boolean) -> Unit = {}): FileEx
         when {
             uri == null -> {}
             write == null -> Toast.makeText(ctx, R.string.export_failed, Toast.LENGTH_SHORT).show()
-            else -> scope.launch {
+            // Main: the toast and the callback after the IO work (the scope's own dispatcher may differ)
+            else -> scope.launch(Dispatchers.Main) {
                 val ok = writeTo(ctx, uri, write)
                 Toast.makeText(ctx, if (ok) R.string.exported else R.string.export_failed, Toast.LENGTH_SHORT).show()
                 done(ok)

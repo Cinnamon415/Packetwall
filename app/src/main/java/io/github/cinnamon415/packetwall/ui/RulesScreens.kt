@@ -182,7 +182,7 @@ fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -
                         Column(Modifier.weight(1f)) {
                             Text(g.name, fontWeight = FontWeight.SemiBold)
                             Text(
-                                stringResource(R.string.group_members, g.packages.size),
+                                pluralStringResource(R.plurals.apps_n, g.packages.size, g.packages.size),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -218,7 +218,7 @@ fun AppsScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpenApp: (String) -
                         Text(a.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             listOfNotNull(
-                                a.packageName,
+                                if (a.uid < 0) stringResource(R.string.app_not_installed_short, a.packageName) else a.packageName,
                                 traffic[a.packageName]?.takeIf {
                                     it > 0
                                 }?.let { formatBytes(it) }

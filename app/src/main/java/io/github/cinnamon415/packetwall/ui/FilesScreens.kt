@@ -122,7 +122,7 @@ fun FilesScreen(app: PacketwallApp, openDrawer: () -> Unit, onOpened: () -> Unit
     fun open(name: String, uri: String?, path: String? = null) {
         busy = true
         problem = null
-        scope.launch {
+        scope.launch(Dispatchers.Main) {
             try {
                 val n = openCapture(app, name, uri, path)
                 if (uri != null) {

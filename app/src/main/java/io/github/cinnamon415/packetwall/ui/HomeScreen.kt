@@ -69,7 +69,7 @@ fun HomeScreen(
     state: CaptureState,
     onToggle: (Boolean) -> Unit,
     openDrawer: () -> Unit,
-    onOpenLogs: (LogsLink.Request) -> Unit,
+    onOpenLogs: (LogsLink.Request?) -> Unit,
     onOpenStats: () -> Unit,
     onOpenConn: (Int) -> Unit,
     onOpenSets: () -> Unit = {}
@@ -99,7 +99,8 @@ fun HomeScreen(
         onMenu = openDrawer,
         actions = {
             IconButton(onClick = onOpenStats) { Icon(painterResource(R.drawable.ic_chart), stringResource(R.string.nav_stats)) }
-            IconButton(onClick = { onOpenLogs(LogsLink.Request(StatusFilter.ALL, "")) }) {
+            // just the log, as it was left (filter and chip kept); the tiles open filtered views
+            IconButton(onClick = { onOpenLogs(null) }) {
                 Icon(painterResource(R.drawable.ic_logs), stringResource(R.string.nav_logs))
             }
         }
