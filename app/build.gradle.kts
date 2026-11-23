@@ -25,6 +25,11 @@ android {
         versionCode = 702
         versionName = "0.7.2"
 
+        // instrumented e2e tests (app/src/androidTest, docs/E2E.md): every test runs in a fresh process
+        // with cleared app data, so no test sees what another one left behind
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunnerArguments["clearPackageData"] = "true"
+
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
@@ -70,6 +75,8 @@ android {
     testOptions {
         // android.util.Log & co. return defaults in JVM unit tests instead of throwing
         unitTests.isReturnDefaultValues = true
+        execution = "ANDROIDX_TEST_ORCHESTRATOR"
+        animationsDisabled = true
     }
 
     buildFeatures {
@@ -106,4 +113,14 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    androidTestImplementation("com.squareup.okhttp3:okhttp:4.12.0")
+    androidTestUtil("androidx.test:orchestrator:1.5.1")
 }

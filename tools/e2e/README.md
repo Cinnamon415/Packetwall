@@ -1,5 +1,26 @@
 # End-to-end tests
 
+Two layers:
+
+- **Instrumented tests** (`app/src/androidTest/.../e2e`) drive the real UI on an emulator and prove each
+  behaviour of `docs/E2E.md` on traffic, the log and the saved state. Every test runs in a fresh process with
+  cleared data. Run them with
+
+  ```
+  tools/e2e/run-instrumented.sh                         # all (about 1.5 h)
+  tools/e2e/run-instrumented.sh SettingsTest 'LogTest#search'
+  python3 tools/e2e/coverage.py                         # catalog items with / without a test
+  ```
+
+  The emulator needs internet (example.org, the tracker and GeoIP downloads). `host.py` runs beside it: list
+  fixtures and an `ETag` server (`/lists/…`), SOCKS5 :1081 with UDP ASSOCIATE and HTTP CONNECT :3128
+  (`user`/`secret`) whose log the tests read (`/log`), and `/forward` for the USB stream test (`adb forward`).
+  The emulator reaches the host at 10.0.2.2.
+
+- **Root scenarios** (`e2e.py`, below) for what needs `su` or reboots.
+
+## Root scenarios
+
 Run on a rooted emulator (AOSP x86_64 image, `adb root` works) with the debug APK.
 
 ```

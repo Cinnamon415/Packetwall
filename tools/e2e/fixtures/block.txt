@@ -1,0 +1,8 @@
+! Title: Packetwall e2e list
+! one entry of each kind the parser knows
+||example.net^
+@@||www.example.net^
+iana.org
+0.0.0.0 example.com
+# a line no format knows
+example.com##.ad-banner

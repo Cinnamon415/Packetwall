@@ -29,6 +29,26 @@ async def socks(r, w):
         try: ver, n = await r.readexactly(2)
         except asyncio.IncompleteReadError: w.close(); return
         await r.readexactly(n); w.write(b"\x05\x00")
+        await socks_request(r, w, "SOCKS")
+    except Exception as e: w.close()
+async def socks_auth(r, w):
+    # SOCKS5 with a login (RFC 1929): user / secret
+    try:
+        try: ver, n = await r.readexactly(2)
+        except asyncio.IncompleteReadError: w.close(); return
+        methods = await r.readexactly(n)
+        if 2 not in methods:
+            w.write(b"\x05\xff"); await w.drain(); w.close(); log("SOCKS AUTH no login offered"); return
+        w.write(b"\x05\x02"); await w.drain()
+        _, ul = await r.readexactly(2); u = await r.readexactly(ul)
+        pl = (await r.readexactly(1))[0]; pw = await r.readexactly(pl)
+        if u != b"user" or pw != b"secret":
+            w.write(b"\x01\x01"); await w.drain(); w.close(); log("SOCKS AUTH bad login"); return
+        w.write(b"\x01\x00"); await w.drain()
+        await socks_request(r, w, "SOCKS AUTH")
+    except Exception as e: w.close()
+async def socks_request(r, w, tag):
+    if True:
         ver, cmd, _, at = await r.readexactly(4)
         if at == 1: host = socket.inet_ntoa(await r.readexactly(4))
         elif at == 3: host = (await r.readexactly((await r.readexactly(1))[0])).decode()
@@ -44,9 +64,8 @@ async def socks(r, w):
             t.close(); log("ASSOCIATE closed"); return
         rr, ww = await asyncio.open_connection(host, port)
         w.write(b"\x05\x00\x00\x01" + socket.inet_aton("0.0.0.0") + b"\x00\x00"); await w.drain()
-        log("SOCKS CONNECT", host, port)
+        log(tag + " CONNECT", host, port)
         await asyncio.gather(pipe(r, ww), pipe(rr, w))
-    except Exception as e: w.close()
 async def http(r, w):
     try:
         head=b""
@@ -64,6 +83,7 @@ async def http(r, w):
         await asyncio.gather(pipe(r, ww), pipe(rr, w))
     except Exception as e: log("http err", e); w.close()
 async def main():
-    a=await asyncio.start_server(socks,"0.0.0.0",1081); b=await asyncio.start_server(http,"0.0.0.0",3128); log("listening")
+    a=await asyncio.start_server(socks,"0.0.0.0",1081); b=await asyncio.start_server(http,"0.0.0.0",3128); c=await asyncio.start_server(socks_auth,"0.0.0.0",1082); log("listening")
     async with a, b: await asyncio.gather(a.serve_forever(), b.serve_forever())
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())

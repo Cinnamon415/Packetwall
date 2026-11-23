@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- another VPN app (SYS-08): runs in the test package and takes the VPN over from Packetwall -->
+        <service
+            android:name="io.github.cinnamon415.packetwall.e2e.OtherVpn"
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+        <!-- started by the test from the shell: starts or stops OtherVpn inside the test package -->
+        <activity
+            android:name="io.github.cinnamon415.packetwall.e2e.OtherVpnSwitch"
+            android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+    </application>
+</manifest>

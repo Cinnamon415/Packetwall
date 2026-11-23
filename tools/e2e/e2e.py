@@ -129,7 +129,8 @@ def http(host, ip=None, port=80, timeout=6):
     """(first line of the reply or error, milliseconds)"""
     target = ip or host
     out = sh(f"s=$(date +%s%N); r=$(printf 'GET / HTTP/1.0\\r\\nHost: {host}\\r\\n\\r\\n' | timeout {timeout} toybox nc {target} {port} 2>&1 | head -1); "
-             f"e=$(date +%s%N); echo \"$r|$(( (e-s)/1000000 ))\"", timeout=timeout + 15).strip()
+             # mksh arithmetic is 32-bit: nanosecond sums overflow there, awk computes in doubles
+             f"e=$(date +%s%N); echo \"$r|$(echo $s $e | awk '{{print int(($2-$1)/1000000)}}')\"", timeout=timeout + 15).strip()
     line, _, ms = out.rpartition("|")
     return line.strip(), int(ms or 0)
 
