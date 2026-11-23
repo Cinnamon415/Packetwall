@@ -59,6 +59,8 @@ object RuleScore {
      */
     fun allowWins(st: FwState, allow: Rule, block: Rule?, blockSet: Int): Boolean {
         if (!st.isEnabled(allow.setId)) return false
+        // a global allow never lifts an app's or group's block, in whatever set (spec 2.5.4)
+        if (block != null && whoLevel(allow.who) == 0 && whoLevel(block.who) > 0) return false
         val pa = st.order.indexOfFirst { it.id == allow.setId }
         val pb = st.order.indexOfFirst { it.id == blockSet }
         if (pa != pb) return pb < 0 || pa < pb

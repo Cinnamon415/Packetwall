@@ -1,6 +1,7 @@
 package io.github.cinnamon415.packetwall.fw
 
 import android.util.Log
+import io.github.cinnamon415.packetwall.BadDataException
 import io.github.cinnamon415.packetwall.Limits
 import io.github.cinnamon415.packetwall.Problem
 import io.github.cinnamon415.packetwall.cappedLines
@@ -104,14 +105,18 @@ class FirewallStore(
     }
 
     /** Applies a change, persists it and schedules a recompile. */
-    fun update(fn: (FwState) -> FwState) {
+    /**
+     * [compileDelayMs]: edits wait a moment so a burst of them compiles once; switching a set or a
+     * profile compiles at once, the user expects the next connection to follow it.
+     */
+    fun update(compileDelayMs: Long = 250, fn: (FwState) -> FwState) {
         synchronized(lock) {
             val old = _state.value
             val n = fn(old)
             if (n === old) return
             _state.value = syncProfiles(old, n)
         }
-        scheduleCompile()
+        scheduleCompile(compileDelayMs)
     }
 
     private fun syncProfiles(old: FwState, n: FwState): FwState {
@@ -186,11 +191,11 @@ class FirewallStore(
         File(listsDir, "$id.edited.txt").delete()
     }
 
-    fun setEnabled(id: Int, enabled: Boolean) = update { st ->
+    fun setEnabled(id: Int, enabled: Boolean) = update(0) { st ->
         st.copy(order = st.order.map { if (it.id == id) it.copy(enabled = enabled) else it })
     }
 
-    fun moveSet(from: Int, to: Int) = update { st ->
+    fun moveSet(from: Int, to: Int) = update(0) { st ->
         if (from !in st.order.indices || to !in st.order.indices || from == to) {
             st
         } else {
@@ -205,7 +210,7 @@ class FirewallStore(
         s2.copy(profiles = s2.profiles + Profile(nid, name.trim(), s2.order), activeProfile = nid)
     }
 
-    fun activateProfile(id: Int) = update { st -> withProfile(st, id) }
+    fun activateProfile(id: Int) = update(0) { st -> withProfile(st, id) }
 
     /** Undo of a deletion: back to [prev] (ids keep growing, so nothing new is reused). */
     fun restore(prev: FwState) = update { st -> prev.copy(nextId = maxOf(prev.nextId, st.nextId)) }
@@ -446,6 +451,9 @@ class FirewallStore(
                 return
             }
             val (res, validators) = fetched
+            // a page or file without a single usable line (an HTML error page, a binary) is not a list:
+            // keep the previous copy and say so instead of silently blocking nothing
+            if (res.entries.isEmpty()) throw BadDataException("no list entries (${res.skipped} lines skipped)")
             val hash = res.entries.hashCode()
             if (hash != set.contentHash || !listFile(id).exists()) withContext(io) { writeList(id, res.entries) }
             update { st ->

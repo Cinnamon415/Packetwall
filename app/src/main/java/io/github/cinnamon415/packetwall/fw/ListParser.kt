@@ -44,7 +44,30 @@ object ListParser {
     private val asnRe = Regex("^(as)?\\d{1,10}$", RegexOption.IGNORE_CASE)
     fun isAsn(s: String) = asnRe.matches(s.trim())
     fun asnNumber(s: String): Long? = s.trim().lowercase().removePrefix("as").toLongOrNull()
-    fun isIp(s: String) = ipv4Re.matches(s) || (s.contains(':') && ipv6Re.matches(s))
+
+    /** An IPv4/IPv6 address or CIDR with real ranges (octets ≤ 255, prefix ≤ 32 / 128). No resolver call. */
+    fun isIp(s: String): Boolean {
+        val addr = s.substringBefore('/')
+        val prefix = if ('/' in s) s.substringAfter('/').toIntOrNull() ?: return false else null
+        if (ipv4Re.matches(s)) return isIp4(addr) && (prefix == null || prefix in 0..32)
+        if (!s.contains(':') || !ipv6Re.matches(s)) return false
+        return isIp6(addr) && (prefix == null || prefix in 0..128)
+    }
+
+    private fun isIp4(a: String) = a.split('.').let { p -> p.size == 4 && p.all { it.isNotEmpty() && it.length <= 3 && it.toInt() <= 255 } }
+
+    private fun isIp6(a: String): Boolean {
+        if (a.split("::").size > 2) return false
+        // an embedded IPv4 tail counts as two groups
+        val v4 = a.substringAfterLast(':').takeIf { '.' in it }
+        if (v4 != null && !isIp4(v4)) return false
+        val head = if (v4 != null) a.dropLast(v4.length).let { if (it.endsWith("::")) it else it.dropLast(1) } else a
+        val compressed = "::" in a
+        val groups = head.split("::").flatMap { part -> if (part.isEmpty()) emptyList() else part.split(':') }
+        if (groups.any { it.isEmpty() || it.length > 4 || !it.all { c -> c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F' } }) return false
+        val n = groups.size + if (v4 != null) 2 else 0
+        return if (compressed) n <= 7 else n == 8
+    }
 
     fun parse(lines: Sequence<String>): Result {
         val out = LinkedHashSet<String>()

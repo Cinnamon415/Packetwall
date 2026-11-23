@@ -1,7 +1,9 @@
 package io.github.cinnamon415.packetwall.fw
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ListParserTest {
@@ -50,5 +52,20 @@ class ListParserTest {
         assertEquals("example.com", ListParser.baseDomain("a.b.example.com"))
         assertEquals("example.co.uk", ListParser.baseDomain("x.example.co.uk"))
         assertEquals("tbank.ru", ListParser.baseDomain("api.tbank.ru"))
+    }
+
+    @Test fun ipRanges() {
+        for (ok in listOf(
+            "203.0.113.7", "10.0.0.0/8", "0.0.0.0/0", "255.255.255.255/32", "2001:db8::/32", "::1", "::", "fe80::1",
+            "2001:db8:0:0:0:0:0:1", "::ffff:192.0.2.1", "2001:db8::/128"
+        )) {
+            assertTrue(ok, ListParser.isIp(ok))
+        }
+        for (bad in listOf(
+            "300.1.1.1", "1.2.3.256", "10.0.0.0/33", "1.2.3", "1.2.3.4/", "2001:db8::/129", "1::2::3", "12345::1",
+            "1:2:3:4:5:6:7:8:9", "1:2:3:4:5:6:7", "::ffff:300.0.2.1", "example.com"
+        )) {
+            assertFalse(bad, ListParser.isIp(bad))
+        }
     }
 }

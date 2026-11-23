@@ -43,6 +43,10 @@ class RuleScoreTest {
         // app beats global in the same set whatever the targets
         val global = dom("t.example.com", false, Action.BLOCK, who = Who.Global)
         assertTrue(RuleScore.allowWins(st, dom("example.com", true, Action.ALLOW), global, 1))
+        // a global allow, even in a higher set, does not lift an app's block (spec 2.5.4, pw_rules.c)
+        assertFalse(RuleScore.allowWins(st, dom("t.example.com", false, Action.ALLOW, set = 1, who = Who.Global), block, 2))
+        // a global allow in a higher set does lift a global block
+        assertTrue(RuleScore.allowWins(st, dom("t.example.com", false, Action.ALLOW, set = 1, who = Who.Global), global.copy(setId = 2), 2))
         // a disabled set never wins
         assertFalse(RuleScore.allowWins(st, dom("t.example.com", false, Action.ALLOW, set = 3), null, 2))
         // a blocklist decided: any enabled set above it wins
