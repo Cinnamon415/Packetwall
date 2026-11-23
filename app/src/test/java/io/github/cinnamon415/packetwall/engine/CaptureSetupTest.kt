@@ -16,8 +16,8 @@ class CaptureSetupTest {
     }
 
     @Test fun killSwitchKeepsProxyingAndBlocksUdpWithoutRelay() {
-        // proxy down, kill switch: still "active" so connections fail instead of leaking
-        assertEquals(UpstreamDecision(true, false), upstreamDecision(false, false, false, s(UDP_DIRECT, ON_DOWN_KILL)))
+        // proxy down, kill switch: still "active" (nothing leaks) and the engine blocks what would use it
+        assertEquals(UpstreamDecision(true, false, kill = true), upstreamDecision(false, false, false, s(UDP_DIRECT, ON_DOWN_KILL)))
         // relay wanted but missing: UDP must not go out directly
         assertEquals(UpstreamDecision(true, true), upstreamDecision(true, true, false, s(UDP_PROXY, ON_DOWN_KILL)))
     }

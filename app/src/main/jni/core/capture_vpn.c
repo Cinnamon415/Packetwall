@@ -261,8 +261,10 @@ static bool spoof_dns_reply(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_context_t *
 
     const zdtun_5tuple_t *tuple = pctx->tuple;
     uint8_t alen = (qtype == 0x01) ? 4 : 16;
+    // Packetwall: a rule with "reject" answers NXDOMAIN instead of 0.0.0.0 / ::
+    bool nx = pctx->data && pctx->data->fw_reject;
     int iplen = zdtun_iphdr_len(pd->zdt, conn);
-    unsigned int len = iplen + 8 /* UDP */ + sizeof(dns_packet_t) + qlen + 5 /* type, ... */ + 12 /* answer */ + alen;
+    unsigned int len = iplen + 8 /* UDP */ + sizeof(dns_packet_t) + qlen + 5 /* type, ... */ + (nx ? 0 : 12 /* answer */ + alen);
     char buf[len];
     memset(buf, 0, len);
 
@@ -275,9 +277,9 @@ static bool spoof_dns_reply(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_context_t *
 
     dns_packet_t *dns = (dns_packet_t*)(buf + iplen + 8);
     dns->transaction_id = req->transaction_id;
-    dns->flags = htons(0x8180);
+    dns->flags = htons(nx ? 0x8183 : 0x8180);
     dns->questions = req->questions;
-    dns->answ_rrs = dns->questions;
+    dns->answ_rrs = nx ? 0 : dns->questions;
     dns->auth_rrs = dns->additional_rrs = 0;
 
     // Queries
@@ -285,6 +287,8 @@ static bool spoof_dns_reply(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_context_t *
 
     // Answers
     uint8_t *answ = dns->queries + qlen + 5;
+    if(nx)
+        goto checksum;
 
     answ[0] = 0xc0, answ[1] = 0x0c;        // name ptr
     answ[2] = 0x00, answ[3] = qtype;       // type
@@ -293,7 +297,7 @@ static bool spoof_dns_reply(pcapdroid_t *pd, zdtun_conn_t *conn, pkt_context_t *
     answ[10] = 0x00, answ[11] = alen;      // addr length
     memset(answ + 12, 0, alen);      // addr: 0.0.0.0/::
 
-    // checksum
+checksum:
     udp->uh_sum = 0;
     udp->uh_sum = zdtun_l3_checksum(pd->zdt, conn, buf, (char*)udp, len - iplen);
 
@@ -571,6 +575,8 @@ int run_vpn(pcapdroid_t *pd) {
             if(size > 0) {
                 zdtun_pkt_t pkt;
                 pd_refresh_time(pd);
+                // rules loaded since the last packet decide this one already (housekeeping comes after it)
+                pd_apply_pending_rules(pd);
 
                 if(zdtun_parse_pkt(zdt, buffer, size, &pkt) != 0) {
                     log_d("zdtun_parse_pkt failed");
@@ -649,7 +655,12 @@ int run_vpn(pcapdroid_t *pd) {
                 if(data->sent_pkts == 0) {
                     if(pd_check_port_map(conn, data->uid))
                         data->port_mapping_applied = true;
-                    else if(should_proxify(pd, tuple, data)) {
+                    else if(upstream_kill && wants_upstream(pd, data)) {
+                        // Packetwall: the proxy is down and the kill switch is on. Nothing that would use it
+                        // goes out; DNS queries get the usual spoofed reply, so apps fail at once.
+                        data->blacklisted_internal = true;
+                        data->to_block = true;
+                    } else if(should_proxify(pd, tuple, data)) {
                         if(upstream_unknown(pd)) {
                             // Packetwall: the proxy host could not be resolved (kill switch): block
                             data->blacklisted_internal = true;

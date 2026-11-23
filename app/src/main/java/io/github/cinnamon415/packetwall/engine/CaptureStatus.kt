@@ -63,4 +63,11 @@ object CaptureStatus {
     val paused get() = pausedSince.value != null
 
     val running get() = state.value is CaptureState.Running
+
+    /**
+     * What the last command asked for: on after a start, off after a stop. Starting and stopping take
+     * a moment, so a quick second tap on the tile or the widget must toggle this, not [state]: two taps
+     * are off and on again, not two stops. Back to false when the capture ends on its own.
+     */
+    val wanted = MutableStateFlow(false)
 }

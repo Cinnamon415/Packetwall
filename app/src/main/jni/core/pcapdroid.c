@@ -43,6 +43,7 @@ int proxy_app_uid = -1;
 uint16_t dns_direct_port = 0;
 bool upstream_active = true;
 bool upstream_block_udp = false;
+bool upstream_kill = false;
 bool upstream_http = false;
 bool upstream_all = true;
 // SOCKS5 UDP relay requested by the app, applied by the capture thread
@@ -1258,10 +1259,14 @@ static void stop_pcap_dump(pcapdroid_t *pd) {
 
 /* Perfom periodic tasks. This should be called after processing a packet or after some time has
  * passed (e.g. after a select with no packet). */
-void pd_housekeeping(pcapdroid_t *pd) {
-    // Packetwall: new rules loaded from the UI
+void pd_apply_pending_rules(pcapdroid_t *pd) {
     if(pw_fw_swap_pending() && pd->vpn_capture)
         iter_active_connections(pd, recompute_conn_block_cb);
+}
+
+void pd_housekeeping(pcapdroid_t *pd) {
+    // Packetwall: new rules loaded from the UI
+    pd_apply_pending_rules(pd);
 
     if(dump_capture_stats_now ||
             (pd->capture_stats.new_stats && ((pd->now_ms - pd->capture_stats.last_update_ms) >= CAPTURE_STATS_UPDATE_FREQUENCY_MS))) {

@@ -19,7 +19,8 @@ class ProtectionTile : TileService() {
     override fun onStartListening() = refresh()
 
     override fun onClick() {
-        val running = CaptureStatus.state.value is CaptureState.Running
+        // the last command, not the state: a second quick tap turns protection on again
+        val running = CaptureStatus.wanted.value
         if (running) {
             CaptureService.stop(this)
         } else if (VpnService.prepare(this) != null) {

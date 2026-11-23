@@ -207,7 +207,7 @@ class NativeBridge(private val vpn: VpnService, private val app: PacketwallApp, 
         @JvmStatic external fun setProxyApp(uid: Int, dnsPort: Int)
 
         /** [active]: send through the upstream proxy; [blockUdp]: drop UDP that would go through it. */
-        @JvmStatic external fun setUpstreamState(active: Boolean, blockUdp: Boolean)
+        @JvmStatic external fun setUpstreamState(active: Boolean, blockUdp: Boolean, kill: Boolean)
 
         /** The upstream is an HTTP CONNECT proxy (else SOCKS5). */
         @JvmStatic external fun setUpstreamHttp(http: Boolean)

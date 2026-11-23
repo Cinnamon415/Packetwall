@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lists can be added by any http(s):// address the user types (and come with imported configurations):
+  plain http has to be allowed for those. Every address built into the app is https.
+  System CAs only, no user-added ones.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

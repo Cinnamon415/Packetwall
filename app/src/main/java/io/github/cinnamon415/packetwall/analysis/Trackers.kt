@@ -6,6 +6,7 @@ import io.github.cinnamon415.packetwall.BadDataException
 import io.github.cinnamon415.packetwall.HttpStatusException
 import io.github.cinnamon415.packetwall.Limits
 import io.github.cinnamon415.packetwall.Problem
+import io.github.cinnamon415.packetwall.engine.OwnTraffic
 import io.github.cinnamon415.packetwall.readCapped
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,7 +16,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 
 /**
@@ -94,7 +95,9 @@ class Trackers(dir: File) {
     fun download() {
         _info.value = _info.value.copy(busy = true, error = null)
         try {
-            val text = OkHttpClient().newCall(Request.Builder().url(URL).header("User-Agent", "Packetwall").build())
+            val text = OwnTraffic.client(
+                URL.toHttpUrl().host
+            ).newCall(Request.Builder().url(URL).header("User-Agent", "Packetwall").build())
                 .execute().use { r ->
                     if (r.code != 200) throw HttpStatusException(r.code)
                     r.body!!.byteStream().readCapped(Limits.TRACKERS_BYTES, "trackers").toString(Charsets.UTF_8)

@@ -8,14 +8,12 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
-import java.net.Proxy
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -45,27 +43,7 @@ class DnsProxy(private val url: String, private val route: () -> DnsRoute = { Dn
 
     private fun clientFor(r: DnsRoute): OkHttpClient {
         client?.let { (cr, c) -> if (cr == r) return c }
-        val c = when (r) {
-            DnsRoute.Direct, DnsRoute.Blocked -> baseClient
-            is DnsRoute.ViaHttp -> baseClient.newBuilder().proxy(Proxy(Proxy.Type.HTTP, r.proxy)).apply {
-                if (r.user.isNotEmpty()) {
-                    proxyAuthenticator { _, resp ->
-                        if (resp.request.header("Proxy-Authorization") != null) {
-                            null
-                        } else {
-                            resp.request.newBuilder().header("Proxy-Authorization", Credentials.basic(r.user, r.pass)).build()
-                        }
-                    }
-                }
-            }.build()
-            is DnsRoute.ViaSocks -> if (r.user.isEmpty()) {
-                baseClient.newBuilder().proxy(Proxy(Proxy.Type.SOCKS, r.proxy)).build()
-            } else {
-                baseClient.newBuilder().proxy(Proxy.NO_PROXY).socketFactory(Socks5.TunnelSocketFactory(r.proxy, r.user, r.pass)).build()
-            }
-        }
-        client = r to c
-        return c
+        return UpstreamHttp.client(baseClient, r).also { client = r to it }
     }
 
     data class Stats(val queries: Long = 0, val failures: Long = 0, val avgMs: Long = 0, val lastError: Problem? = null)

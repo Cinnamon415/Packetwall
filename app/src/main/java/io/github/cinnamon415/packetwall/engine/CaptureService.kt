@@ -32,10 +32,8 @@ class CaptureService : VpnService() {
     private val app get() = application as PacketwallApp
     private val handler = Handler(Looper.getMainLooper())
 
-    // Start and stop run one after another on this thread (compiling, resolving the proxy and
-    // establishing the VPN take time and must not block the main thread or race each other).
-    private val control = Executors.newSingleThreadExecutor { Thread(it, "CaptureControl") }
-    private val pendingStarts = AtomicInteger()
+    private val control get() = Companion.control
+    private val pendingStarts get() = Companion.pendingStarts
 
     @Volatile private var lastStartId = 0
 
@@ -43,11 +41,16 @@ class CaptureService : VpnService() {
 
     @Volatile private var pfd: ParcelFileDescriptor? = null
 
-    @Volatile private var loopThread: Thread? = null
+    private var loopThread: Thread?
+        get() = Companion.loopThread
+        set(v) {
+            Companion.loopThread = v
+        }
 
     @Volatile private var bridge: NativeBridge? = null
 
     @Volatile private var dohProxy: DnsProxy? = null
+
     @Volatile private var dohDirect: DnsProxy? = null
 
     @Volatile private var upstream: UpstreamMonitor? = null
@@ -63,9 +66,11 @@ class CaptureService : VpnService() {
             return START_STICKY
         }
         if (intent?.action == ACTION_STOP) {
+            CaptureStatus.wanted.value = false
             control.execute { stopCapture() }
             return START_NOT_STICKY
         }
+        CaptureStatus.wanted.value = true
         // the notification offers Pause only when packets are kept (read again at start below)
         CaptureStatus.packetsKept.value = app.settings.current.capturePackets
         // within 5 s of startForegroundService(): here, not on the control thread, which may be busy
@@ -86,7 +91,6 @@ class CaptureService : VpnService() {
 
     override fun onDestroy() {
         control.execute { stopCapture() }
-        control.shutdown()
         super.onDestroy()
     }
 
@@ -118,10 +122,17 @@ class CaptureService : VpnService() {
         upstream = monitor
 
         startDoh(st, b, monitor, proxyAppUid(st))
+        // Packetwall's own downloads go the same way as everything else
+        OwnTraffic.route = if (monitor != null && st.upAll) {
+            { host -> if (isLocalHost(host, st.lanBypass)) DnsRoute.Direct else monitor.dnsRoute() }
+        } else {
+            { DnsRoute.Direct }
+        }
         Log.i(TAG, "starting capture, DNS ${b.forwardDns}")
 
         val builder = Builder().setConfigureIntent(CaptureNotification.openApp(this))
-        // Packetwall's own traffic (DoH, list downloads, the upstream connections) goes straight to the network.
+        // Packetwall's own traffic (DoH, list downloads, the upstream connections) is not tunnelled: it goes to
+        // the network itself, through the upstream where OwnTraffic / the DoH route say so.
         // The local proxy app is NOT excluded: with "Block connections without VPN" Android cuts excluded
         // apps off. Its connections pass through the engine, which sends them out directly (setProxyApp).
         VpnSetup.configure(builder, getString(R.string.app_name), st.lanBypass, listOf(packageName))
@@ -160,7 +171,7 @@ class CaptureService : VpnService() {
         if (monitor != null) {
             monitor.start()
         } else {
-            NativeBridge.setUpstreamState(true, false)
+            NativeBridge.setUpstreamState(true, false, false)
             NativeBridge.setUdpRelay("", 0)
         }
         val mySession = ++session
@@ -257,6 +268,7 @@ class CaptureService : VpnService() {
         NativeBridge.setPrivateDnsBlocked(false)
         upstream?.stop()
         upstream = null
+        OwnTraffic.route = { DnsRoute.Direct }
         dohProxy?.stop()
         dohProxy = null
         dohDirect?.stop()
@@ -279,6 +291,7 @@ class CaptureService : VpnService() {
         CaptureStatus.pausedSince.value = null
         // a start that came in meanwhile keeps the service (and its notification) alive
         if (pendingStarts.get() == 0) {
+            CaptureStatus.wanted.value = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelfResult(lastStartId)
         }
@@ -315,6 +328,16 @@ class CaptureService : VpnService() {
 
     companion object {
         private const val TAG = "CaptureService"
+
+        // Start and stop run one after another on this thread (compiling, resolving the proxy and
+        // establishing the VPN take time and must not block the main thread or race each other).
+        // One per process, not per service: a quick off/on destroys the service and creates a new
+        // one, and the new start must wait for the old stop, or two packet loops would run at once.
+        private val control = Executors.newSingleThreadExecutor { Thread(it, "CaptureControl") }
+        private val pendingStarts = AtomicInteger()
+
+        /** The packet loop of whichever service instance runs it (control thread writes it). */
+        @Volatile private var loopThread: Thread? = null
         const val ACTION_START = "io.github.cinnamon415.packetwall.START"
         const val ACTION_STOP = "io.github.cinnamon415.packetwall.STOP"
         const val ACTION_PAUSE = "io.github.cinnamon415.packetwall.PAUSE"
@@ -323,6 +346,7 @@ class CaptureService : VpnService() {
         private const val LOOP_STOP_TIMEOUT_MS = 5000L
 
         fun start(ctx: Context) {
+            CaptureStatus.wanted.value = true
             ContextCompat.startForegroundService(ctx, Intent(ctx, CaptureService::class.java).setAction(ACTION_START))
         }
 
@@ -332,6 +356,7 @@ class CaptureService : VpnService() {
         }
 
         fun stop(ctx: Context) {
+            CaptureStatus.wanted.value = false
             ctx.startService(Intent(ctx, CaptureService::class.java).setAction(ACTION_STOP))
         }
     }

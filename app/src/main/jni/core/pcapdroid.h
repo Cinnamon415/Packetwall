@@ -426,6 +426,7 @@ extern int proxy_app_uid;         // the local upstream proxy app: its traffic g
 extern uint16_t dns_direct_port;  // DoH proxy port that never uses the upstream (0 = dns_server_port)
 extern bool upstream_active;     // SOCKS5 upstream reachable (or kill switch on)
 extern bool upstream_block_udp;  // block UDP while the upstream is active
+extern bool upstream_kill;       // the upstream is down and the kill switch is on: block what would use it
 extern bool upstream_http;       // the upstream is an HTTP CONNECT proxy
 extern bool upstream_all;        // proxy everything (true) or only "via upstream" rules (false)
 
@@ -464,6 +465,8 @@ void pd_account_stats(pcapdroid_t *pd, pkt_context_t *pctx);
 void pd_dump_packet(pcapdroid_t *pd, const char *pktbuf, int pktlen, const struct timeval *tv,
                     int uid, u_int ifidx, bool is_tx, bool dropped);
 void pd_housekeeping(pcapdroid_t *pd);
+/* Packetwall: swaps in rules loaded since the last packet, before the next packet is decided. */
+void pd_apply_pending_rules(pcapdroid_t *pd);
 pd_conn_t* pd_new_connection(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, int uid);
 void pd_purge_connection(pcapdroid_t *pd, pd_conn_t *data);
 int pd_notify_connection_update(pcapdroid_t *pd, const zdtun_5tuple_t *tuple, pd_conn_t *data);

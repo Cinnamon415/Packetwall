@@ -599,20 +599,34 @@ static void getSocks5ProxyAuth(pcapdroid_t *pd) {
     //log_d("SOCKS5: user=%s pass=%s", pd->socks5.proxy_user, pd->socks5.proxy_pass);
 }
 
+/* A class reference that stays valid on every thread and across packet loops: a local reference
+ * belongs to one native call, and a loop that is still ending while the next one starts would use
+ * the other call's references (JNI abort). */
+static jclass global_class(JNIEnv *env, const char *name) {
+    jclass local = jniFindClass(env, name);
+    if(local == NULL)
+        return NULL;
+    jclass global = (*env)->NewGlobalRef(env, local);
+    (*env)->DeleteLocalRef(env, local);
+    return global;
+}
+
 static void init_jni(JNIEnv *env) {
-    // NOTE: these are bound to this specific env
+    // classes once per process (global references); method and field IDs are valid everywhere
+    if(cls.vpn_service != NULL)
+        return;
 
     /* Classes */
-    cls.vpn_service = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/NativeBridge");
-    cls.conn = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/model/ConnectionDescriptor");
-    cls.conn_update = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/model/ConnectionUpdate");
-    cls.stats = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/model/CaptureStats");
-    cls.blacklist_status = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/Blacklists$NativeBlacklistStatus");
-    cls.blacklist_descriptor = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/model/BlacklistDescriptor");
-    cls.matchlist_descriptor = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/model/MatchList$ListDescriptor");
-    cls.list = jniFindClass(env, "java/util/List");
-    cls.arraylist = jniFindClass(env, "java/util/ArrayList");
-    cls.payload_chunk = jniFindClass(env, "io/github/cinnamon415/packetwall/engine/model/PayloadChunk");
+    cls.vpn_service = global_class(env, "io/github/cinnamon415/packetwall/engine/NativeBridge");
+    cls.conn = global_class(env, "io/github/cinnamon415/packetwall/engine/model/ConnectionDescriptor");
+    cls.conn_update = global_class(env, "io/github/cinnamon415/packetwall/engine/model/ConnectionUpdate");
+    cls.stats = global_class(env, "io/github/cinnamon415/packetwall/engine/model/CaptureStats");
+    cls.blacklist_status = global_class(env, "io/github/cinnamon415/packetwall/engine/Blacklists$NativeBlacklistStatus");
+    cls.blacklist_descriptor = global_class(env, "io/github/cinnamon415/packetwall/engine/model/BlacklistDescriptor");
+    cls.matchlist_descriptor = global_class(env, "io/github/cinnamon415/packetwall/engine/model/MatchList$ListDescriptor");
+    cls.list = global_class(env, "java/util/List");
+    cls.arraylist = global_class(env, "java/util/ArrayList");
+    cls.payload_chunk = global_class(env, "io/github/cinnamon415/packetwall/engine/model/PayloadChunk");
 
     /* Methods */
     mids.reportError = jniGetMethodID(env, cls.vpn_service, "reportError", "(Ljava/lang/String;)V");
@@ -1584,9 +1598,10 @@ Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setProxyApp(JNIEnv *en
 // Packetwall: upstream (SOCKS5) runtime state
 JNIEXPORT void JNICALL
 Java_io_github_cinnamon415_packetwall_engine_NativeBridge_setUpstreamState(JNIEnv *env, jclass clazz,
-        jboolean active, jboolean block_udp) {
+        jboolean active, jboolean block_udp, jboolean kill) {
     upstream_active = active;
     upstream_block_udp = block_udp;
+    upstream_kill = kill;
 }
 
 /* ******************************************************* */

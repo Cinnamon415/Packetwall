@@ -41,10 +41,19 @@ object Socks5 {
             }
             else -> throw IOException("no acceptable auth method ($method)")
         }
-        val addr = dst?.address?.address ?: ByteArray(4)
         val port = dst?.port ?: 0
-        val atyp: Byte = if (addr.size == 16) 4 else 1
-        out.write(byteArrayOf(5, cmd.toByte(), 0, atyp) + addr + byteArrayOf((port shr 8).toByte(), port.toByte()))
+        // a name not resolved here (unresolved, or the placeholder 0.0.0.0 of UpstreamHttp): the proxy resolves it
+        val name = dst?.takeIf { it.isUnresolved || it.address.isAnyLocalAddress }?.hostString
+            ?.takeIf { it.isNotEmpty() && !isIpLiteral(it) }
+        val target = if (name != null) {
+            val n = name.toByteArray()
+            if (n.size > 255) throw IOException("host name too long")
+            byteArrayOf(3, n.size.toByte()) + n
+        } else {
+            val addr = dst?.address?.address ?: ByteArray(4)
+            byteArrayOf(if (addr.size == 16) 4 else 1) + addr
+        }
+        out.write(byteArrayOf(5, cmd.toByte(), 0) + target + byteArrayOf((port shr 8).toByte(), port.toByte()))
         out.flush()
         if (inp.readUnsignedByte() != 5) throw IOException("bad reply")
         val rep = inp.readUnsignedByte()
@@ -59,14 +68,19 @@ object Socks5 {
         return InetSocketAddress(boundAddr, inp.readUnsignedShort())
     }
 
+    private fun isIpLiteral(s: String) = s.contains(':') || s.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$"))
+
     /**
      * Sockets whose connect() goes through the SOCKS5 proxy at [proxy] with a login. java.net's own
-     * SOCKS support cannot log in on Android, so OkHttp gets this factory instead (DoH via upstream).
+     * SOCKS support cannot log in on Android, so OkHttp gets this factory instead (DoH and Packetwall's
+     * own downloads via the upstream). A destination given by name is resolved by the proxy.
      */
     class TunnelSocketFactory(private val proxy: InetSocketAddress, private val user: String, private val pass: String) : SocketFactory() {
         override fun createSocket(): Socket = TunnelSocket()
 
-        override fun createSocket(host: String, port: Int): Socket = TunnelSocket().apply { connect(InetSocketAddress(host, port)) }
+        override fun createSocket(host: String, port: Int): Socket = TunnelSocket().apply {
+            connect(InetSocketAddress.createUnresolved(host, port))
+        }
 
         override fun createSocket(host: String, port: Int, localHost: InetAddress?, localPort: Int): Socket = createSocket(host, port)
 

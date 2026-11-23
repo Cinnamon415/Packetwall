@@ -78,6 +78,10 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
     private val byId = LinkedHashMap<Int, ConnectionDescriptor>()
     private var changed = HashSet<Int>()
     private var evicted = HashSet<Int>()
+
+    // session totals: the list keeps the newest [maxConns] connections, these count every one
+    private var seenTotal = 0
+    private var seenBlocked = 0
     private var cleared = false
 
     // publisher side (scope's single consumer)
@@ -91,6 +95,11 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
 
     private val _conns = MutableStateFlow<List<Conn>>(emptyList())
     val conns: StateFlow<List<Conn>> = _conns
+
+    /** Connections of this session, all of them (the list is capped at [maxConns]), and how many are blocked. */
+    data class Totals(val total: Int = 0, val blocked: Int = 0)
+    private val _totals = MutableStateFlow(Totals())
+    val totals: StateFlow<Totals> = _totals
     private val _stats = MutableStateFlow(Stats())
     val stats: StateFlow<Stats> = _stats
 
@@ -162,18 +171,23 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
             // keep what the previous session did not write yet (still open at the stop)
             val left = view.values.filter { it.id !in saved && (!blockedOnly || it.blocked) }
             persist(left)
+            // what this session wrote (while it ran or just now) is shown as history from now on
+            val wrote = left.isNotEmpty() || saved.isNotEmpty()
             synchronized(lock) {
                 byId.clear()
                 changed.clear()
                 evicted.clear()
+                seenTotal = 0
+                seenBlocked = 0
             }
             view.clear()
             saved.clear()
-            db?.let { if (keepDays > 0 && left.isNotEmpty()) stored = loadStored(it) }
+            db?.let { if (keepDays > 0 && wrote) stored = loadStored(it) }
             viewDirty = true
             dirty = true
         }
         _stats.value = Stats()
+        _totals.value = Totals()
         synchronized(samples) { samples.clear() }
         _history.value = emptyList()
     }
@@ -182,14 +196,20 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
         synchronized(lock) {
             newConns?.forEach { c ->
                 if (c != null) {
-                    byId[c.incr_id] = c
+                    if (byId.put(c.incr_id, c) == null) {
+                        seenTotal++
+                        if (c.is_blocked) seenBlocked++
+                    }
                     changed.add(c.incr_id)
                 }
             }
             updates?.forEach { u ->
                 if (u != null) {
                     byId[u.incr_id]?.let {
+                        val was = it.is_blocked
                         it.processUpdate(u)
+                        // a rule change can block or unblock a known connection
+                        if (it.is_blocked != was) seenBlocked += if (it.is_blocked) 1 else -1
                         changed.add(u.incr_id)
                     }
                 }
@@ -238,12 +258,15 @@ class ConnectionsRegister(private val apps: AppsResolver, private val maxConns: 
         // take the changes under the lock: O(changed), not O(all connections)
         val updated: List<Conn>
         val gone: Set<Int>
+        val totals: Totals
         synchronized(lock) {
             updated = changed.mapNotNull { id -> byId[id]?.let(::toConn) }
             gone = evicted
             changed = HashSet()
             evicted = HashSet()
+            totals = Totals(seenTotal, seenBlocked)
         }
+        _totals.value = totals
         if (updated.isNotEmpty() || gone.isNotEmpty()) viewDirty = true
         val toSave = ArrayList<Conn>()
         for (c in updated) {

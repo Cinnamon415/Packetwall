@@ -8,18 +8,21 @@ import java.net.Socket
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** How the engine treats the upstream proxy right now. */
-data class UpstreamDecision(val active: Boolean, val blockUdp: Boolean)
+/**
+ * How the engine treats the upstream proxy right now. [kill]: the proxy is down with the kill switch
+ * on, so the engine blocks (and logs) what would use it.
+ */
+data class UpstreamDecision(val active: Boolean, val blockUdp: Boolean, val kill: Boolean = false)
 
 /**
- * [up]: the proxy accepts connections. When it is down the engine either keeps proxying (kill
- * switch, connections fail) or sends traffic directly. UDP is blocked when asked to, or when the
+ * [up]: the proxy accepts connections. When it is down the engine either blocks what would use
+ * it (kill switch) or sends traffic directly. UDP is blocked when asked to, or when the
  * relay is wanted but not available and the kill switch is on.
  */
 fun upstreamDecision(up: Boolean, relayWanted: Boolean, relayAlive: Boolean, s: Settings.Values): UpstreamDecision {
     val active = up || s.upOnDown == ON_DOWN_KILL
     val blockUdp = active && (s.upUdp == UDP_BLOCK || (relayWanted && !relayAlive && s.upOnDown == ON_DOWN_KILL))
-    return UpstreamDecision(active, blockUdp)
+    return UpstreamDecision(active, blockUdp, kill = !up && s.upOnDown == ON_DOWN_KILL)
 }
 
 // Settings.Values.upUdp / upOnDown / upType codes
@@ -60,7 +63,7 @@ class UpstreamMonitor(private val host: String, initialIp: String?, private val 
     }
 
     fun start() {
-        NativeBridge.setUpstreamState(true, s.upUdp != UDP_DIRECT)
+        NativeBridge.setUpstreamState(true, s.upUdp != UDP_DIRECT, false)
         thread = Thread(::loop, "UpstreamMonitor").also { it.start() }
     }
 
@@ -107,7 +110,7 @@ class UpstreamMonitor(private val host: String, initialIp: String?, private val 
                 val relayAlive = assoc?.alive == true
                 CaptureStatus.udpRelayUp.value = relayAlive
                 val d = upstreamDecision(reachable, relayWanted, relayAlive, s)
-                NativeBridge.setUpstreamState(d.active, d.blockUdp)
+                NativeBridge.setUpstreamState(d.active, d.blockUdp, d.kill)
                 // down or missing relay: check often; up: back off to a minute (each probe wakes the radio)
                 upStreak = if (reachable && !(relayWanted && !relayAlive)) upStreak + 1 else 0
                 Thread.sleep(if (upStreak == 0) 3_000 else minOf(60_000L, 10_000L shl minOf(upStreak - 1, 3)))

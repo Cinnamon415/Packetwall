@@ -6,6 +6,7 @@ import io.github.cinnamon415.packetwall.CappedInputStream
 import io.github.cinnamon415.packetwall.HttpStatusException
 import io.github.cinnamon415.packetwall.Limits
 import io.github.cinnamon415.packetwall.Problem
+import io.github.cinnamon415.packetwall.engine.OwnTraffic
 import java.io.File
 import java.net.InetAddress
 import java.text.SimpleDateFormat
@@ -14,7 +15,7 @@ import java.util.Locale
 import java.util.zip.GZIPInputStream
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 
 /**
@@ -184,7 +185,9 @@ class GeoIp(dir: File) {
             val url = "https://download.db-ip.com/free/dbip-$kind-lite-${fmt.format(cal.time)}.mmdb.gz"
             try {
                 val tmp = File(geoDir, "${file.name}.tmp")
-                OkHttpClient().newCall(Request.Builder().url(url).header("User-Agent", "Packetwall").build()).execute().use { r ->
+                OwnTraffic.client(
+                    url.toHttpUrl().host
+                ).newCall(Request.Builder().url(url).header("User-Agent", "Packetwall").build()).execute().use { r ->
                     if (r.code != 200) throw HttpStatusException(r.code)
                     CappedInputStream(GZIPInputStream(r.body!!.byteStream()), Limits.UNPACKED_BYTES, "GeoIP").use { input ->
                         tmp.outputStream().use { input.copyTo(it) }

@@ -22,7 +22,8 @@ class ProtectionWidget : AppWidgetProvider() {
     override fun onReceive(ctx: Context, intent: Intent) {
         when (intent.action) {
             ACTION_TOGGLE -> {
-                if (CaptureStatus.state.value is CaptureState.Running) {
+                // the last command, not the state: a second quick tap turns protection on again
+                if (CaptureStatus.wanted.value) {
                     CaptureService.stop(ctx)
                 } else if (VpnService.prepare(ctx) != null) {
                     ctx.startActivity(
