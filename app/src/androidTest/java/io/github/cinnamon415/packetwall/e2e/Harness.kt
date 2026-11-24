@@ -99,6 +99,9 @@ object Net {
             .filter { it.isNotEmpty() }
     }
 
+    /** A ping answered within [tries] single echoes: the emulator's network drops ICMP now and then. */
+    fun pingAnswered(ip: String, tries: Int = 3): Boolean = (1..tries).any { ping(ip, 1) == 1 }
+
     fun ping(ip: String, n: Int = 2): Int =
         Shell.run("ping -c $n -W 3 -i 0.5 $ip 2>&1 | grep -o '[0-9]* received'").trim().split(' ').firstOrNull()?.toIntOrNull() ?: 0
 

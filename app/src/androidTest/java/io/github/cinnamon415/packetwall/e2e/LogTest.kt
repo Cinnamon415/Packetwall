@@ -31,7 +31,7 @@ class LogTest : E2eTest() {
         assertBlocked(Hosts.B, rule = r.id)
         val dns = Net.dnsUdp(Hosts.CF_IP, Hosts.C)
         assertTrue("raw DNS answered", dns.size > 12)
-        assertTrue("ping answered", Net.ping(Hosts.CF_IP, 1) == 1)
+        assertTrue("ping answered", Net.pingAnswered(Hosts.CF_IP))
         Rows.await("udp dns") { it.dstIp == Hosts.CF_IP && it.dstPort == 53 }
         Rows.await("icmp") { it.ipproto == 1 && it.dstIp == Hosts.CF_IP }
         Thread.sleep(1500)

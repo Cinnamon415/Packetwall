@@ -77,7 +77,7 @@ class LeakTest : E2eTest() {
         Net.dnsUdp("8.8.8.8", Hosts.C)
         Rows.await("UDP blocked") { it.dstIp == "8.8.8.8" && it.blocked }
         // ping: answered after a check through the proxy, no ICMP goes out
-        assertEquals("ping answered", 1, Net.ping(Hosts.CF_IP, 1))
+        assertTrue("ping answered", Net.pingAnswered(Hosts.CF_IP))
         Rows.await("ICMP") { it.ipproto == 1 && it.dstIp == Hosts.CF_IP }
         assertNothingDirect(t)
     }
@@ -187,7 +187,7 @@ class LeakTest : E2eTest() {
         // nothing is logged while paused, but the traffic still goes the same way
         assertTrue(Net.http(Hosts.C).ok)
         proxied(mark, Kind.SOCKS, "${Hosts.C} while paused") { it.contains(" 80") }
-        assertEquals("ping answered through the probe", 1, Net.ping(Hosts.CF_IP, 1))
+        assertTrue("ping answered through the probe", Net.pingAnswered(Hosts.CF_IP))
         Net.dnsUdp("8.8.8.8", Hosts.A, timeoutS = 2)
         Thread.sleep(1000)
         assertTrue("UDP still not relayed or sent: ${ProxyLog.since(mark)}", ProxyLog.since(mark).none { it.startsWith("UDP ->") })
