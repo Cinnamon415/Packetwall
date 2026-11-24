@@ -145,13 +145,13 @@ fun BoxScope.JumpToTopButton(state: LazyListState, label: String, modifier: Modi
     }
 }
 
-/** The jump button's geometry (the "up" button mockup). */
+/** The jump button's geometry, as chosen on the "up" button mockup (a 360 dp phone): a circle. */
 object JumpButton {
-    val SIZE = 63.dp
-    val RADIUS = 19.dp
-    val ICON = 31.dp
-    val END = 34.dp
-    val BOTTOM = 25.dp
+    val SIZE = 55.dp
+    val RADIUS = 27.dp
+    val ICON = 27.dp
+    val END = 27.dp
+    val BOTTOM = 27.dp
 }
 
 /**
